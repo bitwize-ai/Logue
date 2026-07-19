@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+# Least privilege: CI only reads the repo. Denies write access to the
+# GITHUB_TOKEN for all workflow runs, including those from fork pull requests.
+permissions:
+  contents: read
+
+jobs:
+  lint-check:
+    name: Lint Check
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install pinned SwiftFormat & SwiftLint
+        # Pinned versions keep CI deterministic. Unpinned `brew install` fetches
+        # the latest release, which silently enables new default rules and breaks
+        # formatting/lint on unchanged code. Bump these deliberately.
+        env:
+          SWIFTFORMAT_VERSION: "0.62.1"
+          SWIFTLINT_VERSION: "0.65.0"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/tools"
+          curl -fsSL -o /tmp/swiftformat.zip \
+            "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip"
+          unzip -o /tmp/swiftformat.zip -d /tmp/swiftformat
+          cp "$(find /tmp/swiftformat -type f -name swiftformat | head -1)" "$HOME/tools/swiftformat"
+          curl -fsSL -o /tmp/swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/portable_swiftlint.zip"
+          unzip -o /tmp/swiftlint.zip -d /tmp/swiftlint
+          cp "$(find /tmp/swiftlint -type f -name swiftlint | head -1)" "$HOME/tools/swiftlint"
+          chmod +x "$HOME/tools/swiftformat" "$HOME/tools/swiftlint"
+          echo "$HOME/tools" >> "$GITHUB_PATH"
+          "$HOME/tools/swiftformat" --version
+          "$HOME/tools/swiftlint" version
+
+      - name: Run SwiftFormat
+        run: swiftformat --lint .
+        working-directory: Logue
+
+      - name: Run SwiftLint
+        run: swiftlint lint --strict Logue/
+
+  build:
+    name: Build
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select latest Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE_PATH"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project Logue.xcodeproj \
+            -scheme Logue \
+            -destination 'platform=macOS,arch=arm64' \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO

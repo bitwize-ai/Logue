@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a problem with Logue
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please fill out the sections below.
+        You can also file a report from inside the app via **Help → Report Bug / Issue**,
+        which pre-fills the diagnostics for you.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: When I do X, Logue does Y. I expected Z.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Logue version
+      description: See **Logue → About Logue** (e.g. 1.0.0).
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: e.g. macOS 26.0 (Tahoe)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Mac model
+      placeholder: e.g. MacBook Pro (M3, 2024)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots or logs
+      description: Drag in any screenshots or console output that help. Please redact anything sensitive.
+    validations:
+      required: false

@@ -1,0 +1,73 @@
+# SwiftFormat configuration for Logue
+
+# File options
+--exclude .build,DerivedData,Packages,.claude
+
+# Format options
+--indent 4
+--indentcase false
+--trimwhitespace always
+--voidtype void
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--wrapconditions after-first
+--closingparen balanced
+--commas always
+--decimalgrouping 3,6
+--elseposition same-line
+--guardelse next-line
+--header ignore
+--ifdef no-indent
+--importgrouping alpha
+--maxwidth 150
+--modifierorder nonisolated,override,private,fileprivate,internal,public,open,final,dynamic,optional,required,convenience,lazy,weak,unowned,static,class,mutating,nonmutating,prefix,postfix
+--operatorfunc spaced
+--patternlet hoist
+--ranges spaced
+--self remove
+--semicolons inline
+--stripunusedargs closure-only
+--swiftversion 5.9
+--trailingclosures
+--typeattributes prev-line
+--funcattributes prev-line
+--varattributes prev-line
+
+# Rules
+--enable blankLinesBetweenScopes
+--enable blankLinesAtEndOfScope
+--enable blankLinesAtStartOfScope
+--enable consecutiveBlankLines
+--enable consecutiveSpaces
+--enable duplicateImports
+--enable elseOnSameLine
+--enable emptyBraces
+--enable leadingDelimiters
+--enable redundantBreak
+--enable redundantLet
+--enable redundantNilInit
+--enable redundantParens
+--enable redundantReturn
+--enable redundantSelf
+--enable redundantVoidReturnType
+--enable sortImports
+--enable spaceAroundBraces
+--enable spaceAroundBrackets
+--enable spaceAroundComments
+--enable spaceAroundGenerics
+--enable spaceAroundOperators
+--enable spaceAroundParens
+--enable spaceInsideBraces
+--enable spaceInsideBrackets
+--enable spaceInsideComments
+--enable spaceInsideGenerics
+--enable spaceInsideParens
+--enable trailingCommas
+--enable trailingSpace
+--enable wrapMultilineStatementBraces
+
+# Disabled rules
+--disable acronyms
+--disable blankLinesBetweenImports
+--disable wrapSwitchCases

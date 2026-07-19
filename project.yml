@@ -1,0 +1,150 @@
+name: Logue
+options:
+  bundleIdPrefix: com.bitwize
+  deploymentTarget:
+    macOS: "26.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  mlx-swift-lm:
+    url: https://github.com/ml-explore/mlx-swift-lm
+    revision: "8c9dd6391139242261bcf27d253c326f9cf2d567"
+  swift-transformers-mlx:
+    url: https://github.com/DePasqualeOrg/swift-transformers-mlx
+    revision: "aabc2420e1d932e7d94736ffd42f2f9ff4fd9c7e"
+  swift-hf-api-mlx:
+    url: https://github.com/DePasqualeOrg/swift-hf-api-mlx
+    revision: "0ef10d58d6c2ed64e769641e44e9d97ed1c96c77"
+  LangGraph:
+    path: Vendor/LangGraph-Swift
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    from: "0.13.6"
+  SwiftMarkdown:
+    path: Vendor/swift-markdown
+  Textual:
+    url: https://github.com/gonzalezreal/textual
+    from: "0.3.1"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.9.1"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  Logue:
+    type: application
+    platform: macOS
+    sources:
+      - path: Logue
+        excludes:
+          - "**/*.md"
+    resources:
+      - Logue/Resources
+    info:
+      path: Logue/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Logue
+        CFBundleIconFile: AppIcon
+        CFBundleIconName: AppIcon
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSUIElement: false
+        NSHumanReadableDescription: "Privacy-first AI writing assistant"
+        NSPrincipalClass: NSApplication
+        NSMicrophoneUsageDescription: "Logue needs microphone access to transcribe meetings on-device."
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.bitwize.logue.workspace-drag-item
+            UTTypeDescription: Logue Workspace Item
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification: {}
+        NSAudioCaptureUsageDescription: "Logue captures system audio to transcribe online meetings on-device."
+        NSCalendarsFullAccessUsageDescription: "Logue reads your calendar to show upcoming meetings. All data stays on your Mac."
+        NSContactsUsageDescription: "Logue lets the agent look up your contacts to draft emails and find people you mention. Reads stay on your Mac."
+        NSLocationUsageDescription: "Logue uses your location only when you ask it to (e.g. \"what's the weather here\"). Lookups stay on your Mac."
+        NSLocationWhenInUseUsageDescription: "Logue uses your location only when you ask it to (e.g. \"what's the weather here\"). Lookups stay on your Mac."
+        NSRemindersFullAccessUsageDescription: "Logue lets the agent read and create reminders so you can capture follow-ups by voice or chat. All data stays on your Mac."
+        NSSpeechRecognitionUsageDescription: "Logue uses speech recognition for voice-to-text input in AI chat. All processing happens on-device."
+        SUFeedURL: "https://raw.githubusercontent.com/bitwize-ai/Logue/main/appcast.xml"
+        SUPublicEDKey: "qW5+1txwxxQGCE1YVV0YgU4o4IAbSFNrEGVTdhhsO7k="
+        SUEnableAutomaticChecks: true
+        SUAutomaticallyUpdate: false
+        SUEnableInstallerLauncherService: true
+    # Entitlements are static files (not generated here) so each build config can
+    # sign with its own: Debug → Logue.entitlements (sandbox off, dev convenience),
+    # Release → Logue.release.entitlements (sandboxed). Wired in settings.configs below.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bitwize.logue
+        INFOPLIST_FILE: Logue/Resources/Info.plist
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        # Debug uses the non-sandboxed dev entitlements for development convenience.
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: Logue/Resources/Logue.entitlements
+        # Release builds are sandboxed, so a local `xcodebuild archive -configuration
+        # Release` matches what the CI release workflow ships instead of silently
+        # producing an unsandboxed app.
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Logue/Resources/Logue.release.entitlements
+    dependencies:
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
+      - package: swift-transformers-mlx
+        product: MLXLMTransformers
+      - package: swift-hf-api-mlx
+        product: MLXLMHFAPI
+      - package: LangGraph
+        product: LangGraph
+      - sdk: Speech.framework
+      - package: FluidAudio
+        product: FluidAudio
+      - package: SwiftMarkdown
+        product: Markdown
+      - package: Textual
+        product: Textual
+      - package: Sparkle
+        product: Sparkle
+
+  LogueTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - LogueTests
+    dependencies:
+      - target: Logue
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bitwize.logue.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Logue:
+    build:
+      targets:
+        Logue: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LogueTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

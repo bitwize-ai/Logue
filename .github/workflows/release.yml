@@ -1,0 +1,489 @@
+name: Release Build
+
+# Builds, signs, notarizes, and publishes a release to GitHub Releases, then
+# opens a PR updating the Sparkle appcast. No backend is involved.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   APPLE_TEAM_ID              — your Apple Developer Team ID
+#   APPLE_CERTIFICATE_BASE64   — base64 of your "Developer ID Application" .p12
+#   APPLE_CERTIFICATE_PASSWORD — password for that .p12
+#   APPLE_ID                   — Apple ID email used for notarization
+#   APPLE_APP_PASSWORD         — app-specific password for that Apple ID
+#   SPARKLE_PRIVATE_KEY        — EdDSA private key from Sparkle's generate_keys
+#                                (its public half is SUPublicEDKey in project.yml)
+# Forking this repo? Set your own values for all of the above, and update
+# SUPublicEDKey + SUFeedURL in project.yml to your fork.
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers on tags like v1.0.0, v1.2.3-beta
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number (e.g. 1.0.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  SCHEME: Logue
+  XCODEPROJ: Logue.xcodeproj
+
+jobs:
+  build-and-release:
+    name: Build, Sign, Notarize, Release
+    # GitHub-hosted runner (matches CI). Swap to a self-hosted runner if your
+    # required Xcode/SDK isn't available on the hosted image.
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ── Parse version ─────────────────────────────────────
+      - name: Extract version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            VERSION="${VERSION#v}"  # Strip leading 'v' if user included it
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
+
+      # ── Verify Xcode ──────────────────────────────────────
+      - name: Verify Xcode
+        run: xcodebuild -version
+
+      # ── Install tools ─────────────────────────────────────
+      - name: Ensure XcodeGen and create-dmg
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          command -v create-dmg >/dev/null || brew install create-dmg
+
+      - name: Install Metal Toolchain
+        run: |
+          echo "Downloading Metal Toolchain..."
+          xcodebuild -downloadComponent MetalToolchain
+          echo "Metal Toolchain downloaded successfully."
+
+      # ── Import certificate ────────────────────────────────
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Decode and import certificate
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          # Allow codesign to access the key without prompting
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to keychain search list
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Verify certificate was imported
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      # ── Determine signing identity ────────────────────────
+      - name: Determine signing identity
+        run: |
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Signing identity: $IDENTITY"
+
+      # ── Generate Xcode project ────────────────────────────
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # ── Resolve SPM dependencies ──────────────────────────
+      - name: Resolve SPM dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project $XCODEPROJ \
+            -scheme $SCHEME \
+            -clonedSourcePackagesDirPath build/SourcePackages
+
+      # ── Archive ───────────────────────────────────────────
+      - name: Archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -project $XCODEPROJ \
+            -scheme $SCHEME \
+            -configuration Release \
+            -destination "platform=macOS,arch=arm64" \
+            -archivePath build/Logue.xcarchive \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="-" \
+            ENABLE_HARDENED_RUNTIME=YES \
+            ARCHS=arm64
+
+      # ── Extract app from archive ─────────────────────────
+      - name: Extract app from archive
+        run: |
+          mkdir -p build/export
+          cp -R build/Logue.xcarchive/Products/Applications/Logue.app build/export/Logue.app
+
+      # ── Deep codesign ─────────────────────────────────────
+      - name: Deep codesign with hardened runtime
+        run: |
+          APP_PATH="build/export/Logue.app"
+          ENTITLEMENTS="Logue/Resources/Logue.release.entitlements"
+
+          # Sign all nested components inside-out (Apple recommends explicit signing over --deep)
+
+          # 1. Sign dylibs
+          find "$APP_PATH" -name "*.dylib" -print0 | while IFS= read -r -d '' item; do
+            echo "Signing dylib: $item"
+            codesign --force --options runtime --sign "$SIGNING_IDENTITY" --timestamp "$item"
+          done
+
+          # 2. Sign standalone executables inside frameworks (e.g. Sparkle's Autoupdate)
+          find "$APP_PATH" -path "*/Frameworks/*/Versions/*/Autoupdate" -print0 | while IFS= read -r -d '' item; do
+            echo "Signing executable: $item"
+            codesign --force --options runtime --sign "$SIGNING_IDENTITY" --timestamp "$item"
+          done
+
+          # 3. Sign XPC services with proper entitlements for sandboxed Sparkle updates.
+          #    - Downloader.xpc: MUST be sandboxed with network access (downloads update ZIP)
+          #    - Installer.xpc: MUST NOT be sandboxed (needs to write to /Applications)
+          DOWNLOADER_ENT=$(mktemp)
+          cat > "$DOWNLOADER_ENT" << 'ENTEOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.app-sandbox</key>
+            <true/>
+            <key>com.apple.security.network.client</key>
+            <true/>
+          </dict>
+          </plist>
+          ENTEOF
+
+          find "$APP_PATH" -name "*.xpc" -print0 | while IFS= read -r -d '' item; do
+            XPC_NAME=$(basename "$item")
+            if [[ "$XPC_NAME" == "Downloader.xpc" ]]; then
+              echo "Signing XPC (sandboxed + network): $item"
+              codesign --force --options runtime --sign "$SIGNING_IDENTITY" --entitlements "$DOWNLOADER_ENT" --timestamp "$item"
+            else
+              echo "Signing XPC (non-sandboxed): $item"
+              codesign --force --options runtime --sign "$SIGNING_IDENTITY" --timestamp "$item"
+            fi
+          done
+          rm -f "$DOWNLOADER_ENT"
+
+          # 4. Sign nested .app bundles inside frameworks (e.g. Sparkle's Updater.app)
+          find "$APP_PATH" -path "*/Frameworks/*/*.app" -print0 | while IFS= read -r -d '' item; do
+            echo "Signing nested app: $item"
+            codesign --force --options runtime --sign "$SIGNING_IDENTITY" --timestamp "$item"
+          done
+
+          # 5. Sign resource bundles (mlx-swift_Cmlx.bundle, etc.)
+          #    Skip nested/resource-only bundles that lack a valid bundle structure
+          find "$APP_PATH" -name "*.bundle" -print0 | while IFS= read -r -d '' item; do
+            if [[ -f "$item/Contents/Info.plist" ]]; then
+              echo "Signing bundle: $item"
+              codesign --force --options runtime --sign "$SIGNING_IDENTITY" --timestamp "$item"
+            else
+              echo "Skipping resource-only bundle: $item"
+            fi
+          done
+
+          # 6. Sign frameworks (after all nested components are signed)
+          find "$APP_PATH" -name "*.framework" -print0 | while IFS= read -r -d '' item; do
+            echo "Signing framework: $item"
+            codesign --force --options runtime --sign "$SIGNING_IDENTITY" --timestamp "$item"
+          done
+
+          # 7. Sign the main app bundle (outermost — must be last)
+          codesign --force --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --entitlements "$ENTITLEMENTS" \
+            --timestamp \
+            "$APP_PATH"
+
+          # 8. Verify signature
+          codesign --verify --verbose=2 --strict "$APP_PATH"
+          echo "Code signing verified successfully."
+
+      # ── Create update ZIP (for auto-updater) ─────────────
+      - name: Create update ZIP
+        run: |
+          APP_PATH="build/export/Logue.app"
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_PATH="build/Logue-${VERSION}.zip"
+
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
+          echo "ZIP_NAME=Logue-${VERSION}.zip" >> "$GITHUB_ENV"
+          echo "Update ZIP created: $ZIP_PATH ($(du -h "$ZIP_PATH" | cut -f1))"
+
+      - name: Upload update ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Logue-${{ steps.version.outputs.version }}-update
+          path: ${{ env.ZIP_PATH }}
+          retention-days: 90
+
+      # ── Sparkle EdDSA signing ──────────────────────────────
+      - name: Download Sparkle tools
+        run: |
+          SPARKLE_VERSION="2.9.1"
+          curl -L -o sparkle.tar.xz "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p sparkle-tools
+          tar xf sparkle.tar.xz -C sparkle-tools
+
+      - name: Sign update with EdDSA
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          SIGN_OUTPUT=$(echo "$SPARKLE_PRIVATE_KEY" | ./sparkle-tools/bin/sign_update "$ZIP_PATH" -f -)
+          # Output format: sparkle:edSignature="..." length="..."
+          ED_SIGNATURE=$(echo "$SIGN_OUTPUT" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)
+          FILE_LENGTH=$(wc -c < "$ZIP_PATH" | tr -d ' ')
+          echo "ED_SIGNATURE=$ED_SIGNATURE" >> "$GITHUB_ENV"
+          echo "FILE_LENGTH=$FILE_LENGTH" >> "$GITHUB_ENV"
+
+      # ── Create styled DMG ────────────────────────────────
+      - name: Create DMG
+        run: |
+          APP_PATH="build/export/Logue.app"
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG_PATH="build/Logue-${VERSION}.dmg"
+
+          DMG_ARGS=(
+            --volname "Logue $VERSION"
+            --window-pos 200 120
+            --window-size 660 400
+            --icon-size 80
+            --icon "Logue.app" 180 190
+            --app-drop-link 480 190
+            --hide-extension "Logue.app"
+            --no-internet-enable
+          )
+
+          # Add background if exists
+          if [[ -f "scripts/dmg_background.png" ]]; then
+            DMG_ARGS+=(--background "scripts/dmg_background.png")
+          fi
+
+          # Add volume icon if app icon exists
+          if [[ -f "$APP_PATH/Contents/Resources/AppIcon.icns" ]]; then
+            DMG_ARGS+=(--volicon "$APP_PATH/Contents/Resources/AppIcon.icns")
+          fi
+
+          # create-dmg uses Finder AppleScript which is flaky (intermittent -10006 errors).
+          # Retry up to 3 times with increasing delay.
+          for attempt in 1 2 3; do
+            echo "create-dmg attempt $attempt..."
+            create-dmg "${DMG_ARGS[@]}" "$DMG_PATH" "$APP_PATH" && break
+            echo "create-dmg attempt $attempt failed, retrying in ${attempt}0s..."
+            sleep $((attempt * 10))
+            # Clean up partial DMG if any
+            rm -f "$DMG_PATH"
+          done
+
+          if [[ ! -f "$DMG_PATH" ]]; then
+            echo "::error::create-dmg failed after 3 attempts"
+            exit 1
+          fi
+
+          # Sign the DMG
+          codesign --force --sign "$SIGNING_IDENTITY" --timestamp "$DMG_PATH"
+
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+          echo "DMG_NAME=Logue-${VERSION}.dmg" >> "$GITHUB_ENV"
+
+      # ── Notarize ──────────────────────────────────────────
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Submit for notarization
+          SUBMIT_OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --output-format json 2>&1)
+
+          SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+
+          if [[ -z "$SUBMISSION_ID" ]]; then
+            echo "ERROR: Failed to submit for notarization"
+            echo "$SUBMIT_OUTPUT"
+            exit 1
+          fi
+
+          echo "Submission ID: $SUBMISSION_ID"
+          echo "Waiting for notarization (up to 45 minutes)..."
+
+          xcrun notarytool wait "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --timeout 45m
+
+          # Validate notarization was accepted
+          STATUS=$(xcrun notarytool info "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --output-format json 2>&1 | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" || true)
+
+          echo "Notarization status: $STATUS"
+          if [[ "$STATUS" != "Accepted" ]]; then
+            echo "ERROR: Notarization was not accepted (status: $STATUS)"
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID"
+            exit 1
+          fi
+
+          xcrun stapler staple "$DMG_PATH"
+
+      # ── Ensure tag exists (for workflow_dispatch) ──────────
+      - name: Create tag if missing
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+
+          # Check if tag already exists locally or on remote
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally, skipping creation"
+          else
+            echo "Creating tag $TAG"
+            git tag "$TAG"
+          fi
+
+          # Push tag to remote (fails explicitly if something goes wrong)
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on remote"
+          else
+            echo "Pushing tag $TAG to origin"
+            git push origin "$TAG"
+          fi
+
+          echo "TAG_NAME=$TAG" >> "$GITHUB_ENV"
+
+      - name: Set tag name from ref
+        if: github.event_name != 'workflow_dispatch'
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+
+      # ── Create GitHub Release (BEFORE appcast — download URL must be live first) ──
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            ${{ env.DMG_PATH }}
+            ${{ env.ZIP_PATH }}
+          name: "Logue ${{ steps.version.outputs.version }}"
+          body: |
+            ## Logue ${{ steps.version.outputs.version }}
+
+            **Build:** ${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+
+            ### Installation
+            1. Download `${{ env.DMG_NAME }}`
+            2. Open the DMG and drag Logue to Applications
+            3. On first launch, right-click > Open if Gatekeeper prompts
+
+            ### Requirements
+            - macOS 26.0 (Tahoe) or later
+            - Apple Silicon Mac
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Update appcast (AFTER GitHub Release — so the download URL resolves) ──
+      - name: Update appcast.xml
+        run: |
+          python3 scripts/update_appcast.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --build "${{ github.run_number }}" \
+            --signature "$ED_SIGNATURE" \
+            --length "$FILE_LENGTH" \
+            --min-os "26.0"
+
+      - name: Create appcast PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="chore/appcast-v${VERSION}"
+          BASE_BRANCH="${GITHUB_REF_NAME}"
+
+          # For tag triggers, target main
+          if [[ "$BASE_BRANCH" == v* ]]; then
+            BASE_BRANCH="main"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin "$BASE_BRANCH"
+          git checkout -b "$BRANCH" "origin/$BASE_BRANCH"
+          git add appcast.xml
+          git commit -m "chore: update appcast for v${VERSION}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$BRANCH" \
+            --title "chore: update appcast for v${VERSION}" \
+            --body "Auto-generated by Release Build #${{ github.run_number }}. Merge to publish the Sparkle update feed for v${VERSION}."
+
+      # ── Cleanup ───────────────────────────────────────────
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          if [[ -n "${KEYCHAIN_PATH:-}" && -f "$KEYCHAIN_PATH" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          fi

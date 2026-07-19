@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<!-- Required by MLX framework for Metal compute shader JIT compilation -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<!-- Required by MLX framework for Metal GPU buffer allocations -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<!-- Required to load MLX and FluidAudio dynamic frameworks -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+	<!-- Required for FetchContactsTool — read access to macOS Contacts via the CN framework. -->
+	<key>com.apple.security.personal-information.contacts</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Required for Sparkle auto-update in sandboxed app: allows Mach IPC with the
+	     out-of-sandbox Installer and StatusInfo helpers launched by Sparkle's XPC services.
+	     See: https://sparkle-project.org/documentation/sandboxing/ -->
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>com.bitwize.logue-spki</string>
+		<string>com.bitwize.logue-spks</string>
+	</array>
+</dict>
+</plist>

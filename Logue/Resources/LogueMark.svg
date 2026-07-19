@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="38 194 73 113" width="73" height="113">
+
+  <!-- Vertical stroke (document page with fold) -->
+  <path d="M41.6,195.8 L53.1,195.8 L59.1,201.8 L59.1,288.6 L39.6,288.6 L39.6,197.8 A2,2 0 0 1 41.6,195.8 Z" fill="#ffffff"/>
+
+  <!-- Fold triangle -->
+  <path d="M53.1,195.8 L53.1,201.8 L59.1,201.8 Z" fill="#000000" fill-opacity="0.15"/>
+
+  <!-- Text lines on document -->
+  <rect x="43" y="205" width="12.7" height="1.6" rx="0.8" fill="#000000" fill-opacity="0.12"/>
+  <rect x="43" y="209.5" width="9.4" height="1.6" rx="0.8" fill="#000000" fill-opacity="0.12"/>
+  <rect x="43" y="214" width="11.3" height="1.6" rx="0.8" fill="#000000" fill-opacity="0.12"/>
+
+  <!-- Horizontal stroke (rounded right corners) -->
+  <path d="M39.6,288.6 L106.7,288.6 A2,2 0 0 1 108.7,290.6 L108.7,303.0 A2,2 0 0 1 106.7,305.0 L39.6,305.0 Z" fill="#ffffff"/>
+
+  <!-- Waveform bars extending upward from horizontal stroke -->
+  <rect x="74.0" y="283.0" width="2.5" height="5.6" rx="1.25" fill="#ffffff" fill-opacity="0.5"/>
+  <rect x="78.3" y="278.1" width="2.5" height="10.5" rx="1.25" fill="#ffffff" fill-opacity="0.65"/>
+  <rect x="82.6" y="273.3" width="2.5" height="15.3" rx="1.25" fill="#ffffff" fill-opacity="0.8"/>
+  <rect x="86.9" y="278.1" width="2.5" height="10.5" rx="1.25" fill="#ffffff" fill-opacity="0.65"/>
+  <rect x="91.2" y="283.0" width="2.5" height="5.6" rx="1.25" fill="#ffffff" fill-opacity="0.5"/>
+</svg>

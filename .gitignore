@@ -1,0 +1,104 @@
+# Claude Code (personal preferences — not committed)
+CLAUDE.local.md
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Xcode
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.xcuserstate
+
+# Logs
+*.log
+
+# Project Root Random Images
+/image*.png
+/image copy*.png
+
+# User-specific project settings
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.pins
+
+# Carthage
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Code Injection
+iOSInjectionProject/
+
+# Release artifacts
+*.dmg
+*.xcarchive
+
+# Sparkle tools (downloaded during CI/local signing)
+sparkle-tools/
+sparkle_keys*
+
+# Signing material & secrets (never commit — supplied via CI secrets)
+*.p12
+*.pem
+*.p8
+*.mobileprovision
+*.cer
+.env
+.env.*
+
+# Vendored package build artifacts
+Vendor/*/.build/
+Vendor/*/.swiftpm/
+
+# AI Assistants
+.claude/
+memory/
+
+# Coverage / build artifacts
+*.profraw
+
+# Package.resolved IS committed for reproducible builds (this is an app, not a library) —
+# it pins exact dependency versions across contributors, CI, and the release runner.
+.vscode/
+# Python
+__pycache__/
+*.pyc

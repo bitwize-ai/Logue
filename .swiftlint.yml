@@ -1,0 +1,93 @@
+# SwiftLint configuration for Logue
+
+included:
+  - Logue
+  - LogueTests
+
+excluded:
+  - .build
+  - DerivedData
+  - Packages
+  - Vendor
+  - .claude
+  - generate_icons.swift
+
+# Rules
+disabled_rules:
+  - trailing_comma
+  - todo
+  - opening_brace  # SwiftFormat handles brace placement; conflicts on multi-line conditions
+
+opt_in_rules:
+  - closure_spacing
+  - contains_over_filter_count
+  - empty_count
+  - empty_string
+  - fatal_error_message
+  - first_where
+  - force_unwrapping
+  - implicit_return
+  - last_where
+  - modifier_order
+  - overridden_super_call
+  - private_action
+  - private_outlet
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - vertical_whitespace_closing_braces
+
+# Configuration
+line_length:
+  warning: 150
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+file_length:
+  warning: 800
+  error: 1200
+
+type_body_length:
+  warning: 450
+  error: 600
+
+function_body_length:
+  warning: 60
+  error: 120
+
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+
+function_parameter_count:
+  warning: 6
+  error: 8
+
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  max_length:
+    warning: 60
+    error: 80
+  excluded:
+    - id
+    - i
+    - j
+    - k
+    - x
+    - y
+    - z
+    - ok
+
+nesting:
+  type_level: 3
+  function_level: 3
+
+large_tuple:
+  warning: 4
+  error: 5
+
+reporter: xcode
