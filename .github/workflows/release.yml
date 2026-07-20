@@ -3,6 +3,9 @@ name: Release Build
 # Builds, signs, notarizes, and publishes a release to GitHub Releases, then
 # opens a PR updating the Sparkle appcast. No backend is involved.
 #
+# Full setup guide (how to generate each secret, repo settings, key rotation):
+#   docs/RELEASE_SETUP.md
+#
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   APPLE_TEAM_ID              — your Apple Developer Team ID
 #   APPLE_CERTIFICATE_BASE64   — base64 of your "Developer ID Application" .p12
@@ -11,6 +14,15 @@ name: Release Build
 #   APPLE_APP_PASSWORD         — app-specific password for that Apple ID
 #   SPARKLE_PRIVATE_KEY        — EdDSA private key from Sparkle's generate_keys
 #                                (its public half is SUPublicEDKey in project.yml)
+#
+# The built-in GITHUB_TOKEN opens the appcast PR — enable "Allow GitHub Actions
+# to create and approve pull requests" (Settings → Actions → General) or that
+# final step fails after the release is already published.
+#
+# Auto-update requires the repo to be PUBLIC: Sparkle pulls appcast.xml (raw
+# .githubusercontent.com) and the release ZIP (releases/download/...) anonymously,
+# with no token. On a private repo both return 404 and updates break.
+#
 # Forking this repo? Set your own values for all of the above, and update
 # SUPublicEDKey + SUFeedURL in project.yml to your fork.
 
