@@ -138,6 +138,14 @@ jobs:
       - name: Determine signing identity
         run: |
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::No 'Developer ID Application' identity in the signing keychain."
+            echo "APPLE_CERTIFICATE_BASE64 must be a *Developer ID Application* certificate"
+            echo "(exported as .p12 with its private key) — an 'Apple Development' cert cannot"
+            echo "notarize or distribute. Certificates the keychain does contain:"
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+            exit 1
+          fi
           echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
           echo "Signing identity: $IDENTITY"
 
