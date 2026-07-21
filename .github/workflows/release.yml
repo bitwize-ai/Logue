@@ -468,17 +468,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Update appcast (AFTER GitHub Release — so the download URL resolves) ──
-      - name: Update appcast.xml
-        run: |
-          python3 scripts/update_appcast.py \
-            --version "${{ steps.version.outputs.version }}" \
-            --build "${{ github.run_number }}" \
-            --signature "$ED_SIGNATURE" \
-            --length "$FILE_LENGTH" \
-            --min-os "26.0"
-
-      - name: Create appcast PR
+      # ── Update appcast + open PR (AFTER GitHub Release — so the download URL resolves) ──
+      # The appcast MUST be regenerated on top of the base branch's current appcast,
+      # not the tag's stale copy. Otherwise the 2nd+ release drops earlier entries and
+      # `git checkout origin/main` aborts on the dirty working-tree appcast.xml.
+      - name: Update appcast and open PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -494,8 +488,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Start from the freshest base branch so the new entry stacks on any
+          # already-merged releases. Discard any working-tree appcast.xml first so a
+          # stale/dirty copy can't block the checkout — it is regenerated below.
+          git checkout -- appcast.xml 2>/dev/null || true
           git fetch origin "$BASE_BRANCH"
           git checkout -b "$BRANCH" "origin/$BASE_BRANCH"
+
+          # Regenerate the entry on top of the base branch's appcast.
+          python3 scripts/update_appcast.py \
+            --version "$VERSION" \
+            --build "${{ github.run_number }}" \
+            --signature "$ED_SIGNATURE" \
+            --length "$FILE_LENGTH" \
+            --min-os "26.0"
+
           git add appcast.xml
           git commit -m "chore: update appcast for v${VERSION}"
           git push origin "$BRANCH"
