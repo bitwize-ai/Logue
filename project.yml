@@ -74,7 +74,7 @@ targets:
         NSRemindersFullAccessUsageDescription: "Logue lets the agent read and create reminders so you can capture follow-ups by voice or chat. All data stays on your Mac."
         NSSpeechRecognitionUsageDescription: "Logue uses speech recognition for voice-to-text input in AI chat. All processing happens on-device."
         SUFeedURL: "https://raw.githubusercontent.com/bitwize-ai/Logue/main/appcast.xml"
-        SUPublicEDKey: "qW5+1txwxxQGCE1YVV0YgU4o4IAbSFNrEGVTdhhsO7k="
+        SUPublicEDKey: "ZjxgaWvBg01MnO4Nsjb/19mzMPmTR4H5Bp3LMV8CJRs="
         SUEnableAutomaticChecks: true
         SUAutomaticallyUpdate: false
         SUEnableInstallerLauncherService: true
