@@ -6,6 +6,11 @@
     <description>Sparkle update feed for Logue. Entries are appended automatically by the release workflow (scripts/update_appcast.py) when a GitHub Release is published.</description>
     <language>en</language>
     <item>
+      <title>Version 0.1.0-beta.2</title>
+      <pubDate>Tue, 21 Jul 2026 21:33:00 +0000</pubDate>
+      <enclosure url="https://github.com/bitwize-ai/Logue/releases/download/v0.1.0-beta.2/Logue-0.1.0-beta.2.zip" length="20018482" type="application/octet-stream" sparkle:edSignature="1jMKZBHWtp82DJpgCFkhkp31tUl+7x5oxi5Mjtn7v1uAxBfWdEVmfwZaifHGvffFWIh9dSg+EYzUVKPnRmQKCw==" sparkle:version="4" sparkle:shortVersionString="0.1.0-beta.2" sparkle:minimumSystemVersion="26.0" />
+    </item>
+    <item>
       <title>Version 0.1.0-beta.1</title>
       <pubDate>Tue, 21 Jul 2026 20:38:51 +0000</pubDate>
       <enclosure url="https://github.com/bitwize-ai/Logue/releases/download/v0.1.0-beta.1/Logue-0.1.0-beta.1.zip" length="20018482" type="application/octet-stream" sparkle:edSignature="vr5rwGYtj7rhwKICOD7AFVvmrdUQ3ZG7N75/T1Erjhl5Xzr8nLHd3DbYqcOywILn2sBFgnMb3BpiUfepgYnYCg==" sparkle:version="3" sparkle:shortVersionString="0.1.0-beta.1" sparkle:minimumSystemVersion="26.0" />
