@@ -77,9 +77,15 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building version: $VERSION"
 
-      # ── Verify Xcode ──────────────────────────────────────
-      - name: Verify Xcode
-        run: xcodebuild -version
+      # ── Select latest Xcode ───────────────────────────────
+      # The default Xcode on the hosted image is too old for the macOS 26 SDK
+      # and does not support `xcodebuild -downloadComponent` (fails exit 64).
+      # Pick the newest installed Xcode, matching ci.yml's build job.
+      - name: Select latest Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE_PATH"
+          xcodebuild -version
 
       # ── Install tools ─────────────────────────────────────
       - name: Ensure XcodeGen and create-dmg
