@@ -10,20 +10,5 @@
       <pubDate>Wed, 22 Jul 2026 05:11:54 +0000</pubDate>
       <enclosure url="https://github.com/bitwize-ai/Logue/releases/download/v1.0.0/Logue-1.0.0.zip" length="20018543" type="application/octet-stream" sparkle:edSignature="LvgtAjzPT31wX2hZ8U73Kf0hhj4fQTkTxYD4a7yYknbaLbh/vD/0y3lYmLoL1m7QTVCfa71gbr0Mg2yy1wnTBw==" sparkle:version="6" sparkle:shortVersionString="1.0.0" sparkle:minimumSystemVersion="26.0" />
     </item>
-    <item>
-      <title>Version 0.1.0-beta.3</title>
-      <pubDate>Wed, 22 Jul 2026 04:11:50 +0000</pubDate>
-      <enclosure url="https://github.com/bitwize-ai/Logue/releases/download/v0.1.0-beta.3/Logue-0.1.0-beta.3.zip" length="20018536" type="application/octet-stream" sparkle:edSignature="EyRJKUAeQ1UDogxHz0hB9xGOkFAnrkMWNTwJ7zfaTJKK5WkzqSXn3Q8VcgMfVBLpEzSShGNISCmZIR3gRCpOBA==" sparkle:version="5" sparkle:shortVersionString="0.1.0-beta.3" sparkle:minimumSystemVersion="26.0" />
-    </item>
-    <item>
-      <title>Version 0.1.0-beta.2</title>
-      <pubDate>Tue, 21 Jul 2026 21:33:00 +0000</pubDate>
-      <enclosure url="https://github.com/bitwize-ai/Logue/releases/download/v0.1.0-beta.2/Logue-0.1.0-beta.2.zip" length="20018482" type="application/octet-stream" sparkle:edSignature="1jMKZBHWtp82DJpgCFkhkp31tUl+7x5oxi5Mjtn7v1uAxBfWdEVmfwZaifHGvffFWIh9dSg+EYzUVKPnRmQKCw==" sparkle:version="4" sparkle:shortVersionString="0.1.0-beta.2" sparkle:minimumSystemVersion="26.0" />
-    </item>
-    <item>
-      <title>Version 0.1.0-beta.1</title>
-      <pubDate>Tue, 21 Jul 2026 20:38:51 +0000</pubDate>
-      <enclosure url="https://github.com/bitwize-ai/Logue/releases/download/v0.1.0-beta.1/Logue-0.1.0-beta.1.zip" length="20018482" type="application/octet-stream" sparkle:edSignature="vr5rwGYtj7rhwKICOD7AFVvmrdUQ3ZG7N75/T1Erjhl5Xzr8nLHd3DbYqcOywILn2sBFgnMb3BpiUfepgYnYCg==" sparkle:version="3" sparkle:shortVersionString="0.1.0-beta.1" sparkle:minimumSystemVersion="26.0" />
-    </item>
   </channel>
 </rss>
