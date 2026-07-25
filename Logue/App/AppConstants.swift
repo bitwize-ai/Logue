@@ -23,6 +23,8 @@ enum AppConstants {
         static let meetingSortOrder = "meetingSortOrder"
         static let actionItemSortOrder = "actionItemSortOrder"
         static let autoSortCheckedItems = "autoSortCheckedItems"
+        /// Editor zoom multiplier applied on top of the base editor font size.
+        static let editorZoomScale = "editorZoomScale"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"
@@ -240,6 +242,21 @@ enum AppConstants {
 
     enum Support {
         static let email = "support@bitwize.ai"
+    }
+
+    // MARK: - Editor
+
+    enum Editor {
+        /// Comfortable measure for prose — roughly 75 characters at the default size.
+        static let normalContentWidth: CGFloat = 720
+        /// Wide measure for tables, diagrams, and generated documents.
+        static let wideContentWidth: CGFloat = 1100
+
+        /// Editor text-zoom bounds. 1.0 is the document's natural size.
+        static let minZoom: CGFloat = 0.5
+        static let maxZoom: CGFloat = 3.0
+        static let zoomStep: CGFloat = 0.1
+        static let defaultZoom: CGFloat = 1.0
     }
 
     // MARK: - Agent Defaults

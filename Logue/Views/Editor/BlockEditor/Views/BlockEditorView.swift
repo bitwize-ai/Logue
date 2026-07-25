@@ -26,14 +26,18 @@ struct BlockEditorView: View {
     @Binding var scrollToText: String?
 
     @Environment(\.undoManager) private var undoManager
-    @State private var document = BlockEditorDocument()
-    @State private var focusedBlockID: BlockID?
+    // Extension-visible: +Reorder
+    @State var document = BlockEditorDocument()
+    // Extension-visible: +Reorder
+    @State var focusedBlockID: BlockID?
     @State private var focusedItemID: UUID?
     @State private var pendingCursorOffset: Int?
-    @State private var isLoaded = false
+    // Extension-visible: +Reorder
+    @State var isLoaded = false
+    // Extension-visible: +Reorder
     /// The last markdown string we synced from blocks → binding.
     /// Used to prevent re-parsing our own output when the binding round-trips.
-    @State private var lastSyncedMarkdown: String?
+    @State var lastSyncedMarkdown: String?
     @State private var selectionToolbarPosition: CGPoint?
     @State private var activeTextView: MarkdownNSTextView?
     @State private var activeSelectionRange: NSRange?
@@ -53,7 +57,8 @@ struct BlockEditorView: View {
 
     // MARK: - Multi-Block Selection State
 
-    @State private var multiBlockSelection = MultiBlockSelectionState()
+    // Extension-visible: +Reorder
+    @State var multiBlockSelection = MultiBlockSelectionState()
     @State private var blockFrames: [BlockID: CGRect] = [:]
     @State private var dragMonitor: Any?
     @State private var mouseUpMonitor: Any?
@@ -187,7 +192,9 @@ struct BlockEditorView: View {
                                 focusedBlockID = firstID
                                 pendingCursorOffset = 0
                             }
-                        }
+                        },
+                        onMoveUp: { moveSelectedBlocks(.up) },
+                        onMoveDown: { moveSelectedBlocks(.down) }
                     )
                     .frame(width: 0, height: 0)
                     .onAppear {
@@ -207,9 +214,11 @@ struct BlockEditorView: View {
                     VStack {
                         HStack {
                             Spacer()
-                            DocumentSearchBar(searchState: searchState) {
-                                navigateToCurrentMatch(proxy: nil)
-                            }
+                            DocumentSearchBar(
+                                searchState: searchState, document: document,
+                                onNavigate: { navigateToCurrentMatch(proxy: nil) },
+                                onReplace: syncMarkdownFromBlocks
+                            )
                             .padding(.trailing, 16)
                             .padding(.top, 8)
                         }
@@ -379,15 +388,6 @@ struct BlockEditorView: View {
             try? await Task.sleep(for: AppConstants.Delays.markdownSyncDebounce)
             guard !Task.isCancelled else { return }
             syncMarkdownFromBlocks()
-        }
-    }
-
-    private func syncMarkdownFromBlocks() {
-        guard isLoaded else { return }
-        let newMarkdown = document.toMarkdown()
-        if newMarkdown != markdownText {
-            lastSyncedMarkdown = newMarkdown
-            markdownText = newMarkdown
         }
     }
 

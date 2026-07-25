@@ -25,6 +25,24 @@ struct WritingDocument: Identifiable, Codable, Sendable {
         case score, spaceID, tags, chatMessages, isTrashed, trashedAt
         case reviewGrade, reviewReactions, factChecks, piiFindings
         case vocabSuggestions, aiDetectionResult, plagiarismResult, rewriteResult
+        case storedWidthMode = "widthMode"
+        case icon
+    }
+
+    /// Optional single-grapheme icon shown in lists and titles.
+    /// Validate user input through `DocumentIcon.sanitised` before assigning.
+    var icon: String?
+
+    /// Backing storage for `widthMode`. Optional so documents persisted before this
+    /// property existed still decode — the synthesised decoder uses
+    /// `decodeIfPresent` for optionals, where a non-optional would throw
+    /// `keyNotFound` and make every existing document unreadable.
+    var storedWidthMode: DocumentWidthMode?
+
+    /// Editor content width for this document. Defaults to `.normal`.
+    var widthMode: DocumentWidthMode {
+        get { storedWidthMode ?? .normal }
+        set { storedWidthMode = newValue }
     }
 
     /// The last computed writing score; nil until first analysis.

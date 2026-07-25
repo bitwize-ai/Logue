@@ -13,6 +13,25 @@ enum BlockSerializer {
             return [.emptyParagraph()]
         }
 
+        // `$$` math fences are not CommonMark: cmark would parse them as a
+        // paragraph and collapse the internal newlines into spaces, destroying
+        // multi-line LaTeX. Split them out before handing the rest to cmark.
+        var blocks: [Block] = []
+        for segment in mathFenceSegments(in: markdown) {
+            switch segment {
+            case let .math(latex):
+                blocks.append(.math(id: UUID(), latex: latex))
+            case let .markdown(text):
+                blocks += parseMarkdownSegment(text)
+            }
+        }
+
+        return blocks.isEmpty ? [.emptyParagraph()] : blocks
+    }
+
+    private static func parseMarkdownSegment(_ markdown: String) -> [Block] {
+        guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+
         let document = Document(parsing: markdown, options: [.parseBlockDirectives])
         var blocks: [Block] = []
 
@@ -22,7 +41,62 @@ enum BlockSerializer {
             }
         }
 
-        return blocks.isEmpty ? [.emptyParagraph()] : blocks
+        return blocks
+    }
+
+    // MARK: - Math Fence Splitting
+
+    private enum MarkdownSegment {
+        case markdown(String)
+        case math(String)
+    }
+
+    private static let mathFence = "$$"
+
+    /// Splits `markdown` into alternating plain-markdown and `$$`-fenced math runs,
+    /// preserving document order. An unterminated fence is treated as ordinary
+    /// markdown so malformed input never silently swallows the rest of the document.
+    private static func mathFenceSegments(in markdown: String) -> [MarkdownSegment] {
+        let lines = markdown.components(separatedBy: "\n")
+        guard lines.contains(where: { $0.trimmingCharacters(in: .whitespaces) == mathFence }) else {
+            return [.markdown(markdown)]
+        }
+
+        var segments: [MarkdownSegment] = []
+        var pending: [String] = []
+        var mathLines: [String] = []
+        var insideMath = false
+
+        for line in lines {
+            let isFence = line.trimmingCharacters(in: .whitespaces) == mathFence
+
+            if isFence, !insideMath {
+                if !pending.isEmpty {
+                    segments.append(.markdown(pending.joined(separator: "\n")))
+                    pending = []
+                }
+                insideMath = true
+            } else if isFence, insideMath {
+                segments.append(.math(mathLines.joined(separator: "\n")))
+                mathLines = []
+                insideMath = false
+            } else if insideMath {
+                mathLines.append(line)
+            } else {
+                pending.append(line)
+            }
+        }
+
+        // Unterminated fence: restore the opening fence and its contents verbatim.
+        if insideMath {
+            pending.append(mathFence)
+            pending += mathLines
+        }
+        if !pending.isEmpty {
+            segments.append(.markdown(pending.joined(separator: "\n")))
+        }
+
+        return segments
     }
 
     // MARK: - Serialize (Blocks → Markdown)
@@ -187,6 +261,10 @@ enum BlockSerializer {
         let code = codeBlock.code.hasSuffix("\n")
             ? String(codeBlock.code.dropLast())
             : codeBlock.code
+        // A `mermaid`-tagged fence is a diagram, not source code to syntax-highlight.
+        if language.lowercased() == Self.mermaidLanguage {
+            return .mermaid(id: UUID(), source: code)
+        }
         return .codeBlock(id: UUID(), language: language, code: code)
     }
 
@@ -322,8 +400,16 @@ enum BlockSerializer {
 
         case .divider:
             return "---"
+
+        case let .mermaid(_, source):
+            return "```\(Self.mermaidLanguage)\n\(source)\n```"
+
+        case let .math(_, latex):
+            return "\(mathFence)\n\(latex)\n\(mathFence)"
         }
     }
+
+    static let mermaidLanguage = "mermaid"
 
     private static func serializeBulletList(_ items: [BlockListItem]) -> String {
         items.map { item in

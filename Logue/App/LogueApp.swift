@@ -20,6 +20,11 @@ extension Notification.Name {
 struct LogueApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    /// Editor zoom multiplier, shared with the editor through AppStorage so both
+    /// scenes stay in sync without a separate observable.
+    @AppStorage(AppConstants.UserDefaultsKeys.editorZoomScale) private var zoomScale: Double =
+        AppConstants.Editor.defaultZoom
+
     var body: some Scene {
         // ── Main document window ──────────────────────────────────────────────
         WindowGroup("Logue") {
@@ -67,6 +72,23 @@ struct LogueApp: App {
                 )
             }
 
+            CommandGroup(after: .pasteboard) {
+                Button("Paste Without Formatting") {
+                    NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+            }
+
+            CommandGroup(after: .toolbar) {
+                Button("Zoom In") { applyZoom { $0.zoomIn() } }
+                    .keyboardShortcut("+", modifiers: .command)
+                Button("Zoom Out") { applyZoom { $0.zoomOut() } }
+                    .keyboardShortcut("-", modifiers: .command)
+                Button("Actual Size") { applyZoom { $0.reset() } }
+                    .keyboardShortcut("0", modifiers: .command)
+                Divider()
+            }
+
             CommandGroup(replacing: .help) {
                 Button("Documentation") { HelpMenuActions.openDocumentation() }
                 Button("Keyboard Shortcuts") { HelpMenuActions.openKeyboardShortcuts() }
@@ -100,6 +122,14 @@ struct LogueApp: App {
         Settings {
             SettingsRootView()
         }
+    }
+
+    /// Applies a zoom mutation through `EditorZoom` so clamping lives in one place.
+    private func applyZoom(_ mutate: (inout EditorZoom) -> Void) {
+        var zoom = EditorZoom()
+        zoom.scale = zoomScale
+        mutate(&zoom)
+        zoomScale = zoom.scale
     }
 }
 

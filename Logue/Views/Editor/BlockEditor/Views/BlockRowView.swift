@@ -107,6 +107,24 @@ struct BlockRowView: View {
 
         case .divider:
             dividerView()
+
+        case let .mermaid(id, source):
+            MermaidBlockView(
+                source: source,
+                isFocused: isFocused,
+                fontSize: fontSize,
+                onSourceChange: { document.replaceBlock(id: id, with: .mermaid(id: id, source: $0)) },
+                onFocusRequested: { focusedBlockID = id }
+            )
+
+        case let .math(id, latex):
+            MathBlockView(
+                latex: latex,
+                isFocused: isFocused,
+                fontSize: fontSize,
+                onLatexChange: { document.replaceBlock(id: id, with: .math(id: id, latex: $0)) },
+                onFocusRequested: { focusedBlockID = id }
+            )
         }
     }
 

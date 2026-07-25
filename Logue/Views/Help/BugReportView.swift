@@ -327,9 +327,7 @@ enum BugReportService {
             "",
             "---",
             "**Diagnostics**",
-            "- App: \(BugReportInfo.appVersion) (\(BugReportInfo.buildNumber))",
-            "- macOS: \(BugReportInfo.macOSVersion)",
-            "- Device: \(BugReportInfo.deviceModel)",
+            DiagnosticsReport.generate(),
         ]
 
         if !screenshots.isEmpty {

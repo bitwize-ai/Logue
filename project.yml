@@ -60,6 +60,13 @@ targets:
         NSHumanReadableDescription: "Privacy-first AI writing assistant"
         NSPrincipalClass: NSApplication
         NSMicrophoneUsageDescription: "Logue needs microphone access to transcribe meetings on-device."
+        # Deep links: logue://document/<uuid>, logue://meeting/<uuid>, logue://space/<uuid>.
+        # Parsed and validated by DeepLink before any navigation happens.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.bitwize.logue.deeplink
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes:
+              - logue
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.bitwize.logue.workspace-drag-item
             UTTypeDescription: Logue Workspace Item

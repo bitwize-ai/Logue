@@ -576,9 +576,37 @@ class MarkdownNSTextView: NSTextView {
         return super.readablePasteboardTypes
     }
 
+    // MARK: - Highlight Mark
+
+    /// Wraps or unwraps the selection in `==` delimiters, delegating the string
+    /// transform to `HighlightMark` so the editor and the serializer agree on syntax.
+    private func toggleHighlight() {
+        let range = selectedRange()
+        guard range.length > 0 else { return }
+
+        let updated = HighlightMark.toggled(in: string, range: range)
+        guard updated != string else { return }
+
+        let fullRange = NSRange(location: 0, length: (string as NSString).length)
+        guard shouldChangeText(in: fullRange, replacementString: updated) else { return }
+        replaceCharacters(in: fullRange, with: updated)
+        didChangeText()
+    }
+
     // MARK: - Keyboard Shortcuts for Formatting
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Cmd+Shift+M toggles the `==highlight==` mark. Checked before the
+        // shift-excluding guard below, which owns the unshifted Cmd shortcuts.
+        if markdownStyleEnabled,
+           event.modifierFlags.contains(.command),
+           event.modifierFlags.contains(.shift),
+           event.charactersIgnoringModifiers?.lowercased() == "m"
+        {
+            toggleHighlight()
+            return true
+        }
+
         guard markdownStyleEnabled,
               event.modifierFlags.contains(.command),
               !event.modifierFlags.contains(.shift)
@@ -602,6 +630,16 @@ class MarkdownNSTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if markdownStyleEnabled,
+           flags.contains(.command),
+           flags.contains(.shift),
+           event.charactersIgnoringModifiers?.lowercased() == "m"
+        {
+            toggleHighlight()
+            return
+        }
+
         if markdownStyleEnabled,
            event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
            !event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.shift)
@@ -956,6 +994,36 @@ final class BlockNSTextView: MarkdownNSTextView {
         // Trim leading/trailing whitespace from entire string
         result = result.trimmingCharacters(in: .whitespacesAndNewlines)
         return result
+    }
+
+    // MARK: - Plain Paste
+
+    /// Cmd+Shift+V — inserts the clipboard as literal text.
+    ///
+    /// Unlike `paste(_:)`, this never splits the clipboard into new blocks and never
+    /// interprets markdown: newlines collapse to spaces so the content lands inside
+    /// the current block exactly as typed.
+    override func pasteAsPlainText(_ sender: Any?) {
+        guard markdownStyleEnabled,
+              let pasteString = NSPasteboard.general.string(forType: .string)
+        else {
+            super.pasteAsPlainText(sender)
+            return
+        }
+
+        let flattened = Self.flattenForPlainPaste(pasteString)
+        guard !flattened.isEmpty else { return }
+
+        let range = selectedRange()
+        guard shouldChangeText(in: range, replacementString: flattened) else { return }
+        insertText(flattened, replacementRange: range)
+    }
+
+    /// Collapses all whitespace runs (including newlines) into single spaces.
+    static func flattenForPlainPaste(_ raw: String) -> String {
+        let sanitized = sanitizePastedText(raw)
+        let pieces = sanitized.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        return pieces.joined(separator: " ")
     }
 
     // MARK: - Multi-Block Paste

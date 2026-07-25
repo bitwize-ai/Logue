@@ -19,9 +19,12 @@ enum BlockType: String, CaseIterable {
     case heading1, heading2, heading3
     case bulletList, numberedList, todoList
     case quote, divider, codeBlock, table
+    case mermaid, math
 
     var displayName: String {
         switch self {
+        case .mermaid: "Diagram"
+        case .math: "Equation"
         case .text: "Text"
         case .heading1: "Heading 1"
         case .heading2: "Heading 2"
@@ -38,6 +41,8 @@ enum BlockType: String, CaseIterable {
 
     var iconName: String {
         switch self {
+        case .mermaid: "flowchart"
+        case .math: "function"
         case .text: "text.alignleft"
         case .heading1: "textformat.size.larger"
         case .heading2: "textformat.size"
@@ -54,6 +59,8 @@ enum BlockType: String, CaseIterable {
 
     var description: String {
         switch self {
+        case .mermaid: "Mermaid diagram, stored as markdown"
+        case .math: "LaTeX equation block"
         case .text: "Plain text paragraph"
         case .heading1: "Large section heading"
         case .heading2: "Medium section heading"
@@ -78,9 +85,47 @@ enum BlockType: String, CaseIterable {
         switch self {
         case .text, .heading1, .heading2, .heading3: .text
         case .bulletList, .numberedList, .todoList: .lists
-        case .quote, .divider, .codeBlock, .table: .advanced
+        case .quote, .divider, .codeBlock, .table, .mermaid, .math: .advanced
         }
     }
+
+    /// Builds the `Block` this menu entry inserts, carrying any existing text into
+    /// the new block's source so converting a paragraph does not discard it.
+    func makeBlock(id: BlockID, text: String) -> Block {
+        switch self {
+        case .mermaid:
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Start from a usable template rather than an empty diagram.
+            return trimmed.isEmpty ? .mermaid(id: id, source: Self.mermaidTemplate)
+                : .mermaid(id: id, source: trimmed)
+        case .math:
+            return .math(id: id, latex: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .heading1:
+            return .heading(id: id, level: 1, text: text)
+        case .heading2:
+            return .heading(id: id, level: 2, text: text)
+        case .heading3:
+            return .heading(id: id, level: 3, text: text)
+        case .bulletList:
+            return .bulletList(id: id, items: [BlockListItem(text: text)])
+        case .numberedList:
+            return .numberedList(id: id, items: [BlockListItem(text: text)])
+        case .todoList:
+            return .checkboxList(id: id, items: [CheckboxItem(text: text)])
+        case .quote:
+            return .blockQuote(id: id, text: text)
+        case .codeBlock:
+            return .codeBlock(id: id, language: "", code: text)
+        case .divider:
+            return .divider(id: id)
+        case .table:
+            return .emptyTable()
+        case .text:
+            return .paragraph(id: id, text: text)
+        }
+    }
+
+    private static let mermaidTemplate = "flowchart LR\n  A --> B"
 
     /// Block types grouped by category, preserving order.
     static var groupedByCategory: [(category: Category, types: [BlockType])] {
@@ -103,6 +148,8 @@ enum BlockType: String, CaseIterable {
         case .divider: "---"
         case .codeBlock: "```"
         case .table: ""
+        case .mermaid: "```mermaid"
+        case .math: "$$"
         }
     }
 
@@ -113,19 +160,7 @@ enum BlockType: String, CaseIterable {
 
     /// Creates a new empty block of this type.
     func makeEmptyBlock() -> Block {
-        switch self {
-        case .text: .emptyParagraph()
-        case .heading1: .emptyHeading(level: 1)
-        case .heading2: .emptyHeading(level: 2)
-        case .heading3: .emptyHeading(level: 3)
-        case .bulletList: .emptyBulletList()
-        case .numberedList: .emptyNumberedList()
-        case .todoList: .emptyCheckboxList()
-        case .quote: .emptyBlockQuote()
-        case .divider: .newDivider()
-        case .codeBlock: .emptyCodeBlock()
-        case .table: .emptyTable()
-        }
+        makeBlock(id: UUID(), text: "")
     }
 }
 

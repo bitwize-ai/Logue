@@ -12,6 +12,10 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
     var onEscape: () -> Void
     /// Called when user types a character — clears selection and starts typing.
     var onTyping: ((_ character: String) -> Void)?
+    /// Cmd+Shift+Up — move the selected blocks up one position.
+    var onMoveUp: (() -> Void)?
+    /// Cmd+Shift+Down — move the selected blocks down one position.
+    var onMoveDown: (() -> Void)?
 
     func makeNSView(context: Context) -> KeyHandlerNSView {
         let view = KeyHandlerNSView()
@@ -30,7 +34,9 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
             onDelete: onDelete,
             onSelectAll: onSelectAll,
             onEscape: onEscape,
-            onTyping: onTyping
+            onTyping: onTyping,
+            onMoveUp: onMoveUp,
+            onMoveDown: onMoveDown
         )
     }
 
@@ -41,6 +47,8 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
         var onSelectAll: () -> Void
         var onEscape: () -> Void
         var onTyping: ((_ character: String) -> Void)?
+        var onMoveUp: (() -> Void)?
+        var onMoveDown: (() -> Void)?
 
         init(
             onCopy: @escaping () -> Void,
@@ -48,7 +56,9 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
             onDelete: @escaping () -> Void,
             onSelectAll: @escaping () -> Void,
             onEscape: @escaping () -> Void,
-            onTyping: ((_ character: String) -> Void)?
+            onTyping: ((_ character: String) -> Void)?,
+            onMoveUp: (() -> Void)?,
+            onMoveDown: (() -> Void)?
         ) {
             self.onCopy = onCopy
             self.onCut = onCut
@@ -56,6 +66,8 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
             self.onSelectAll = onSelectAll
             self.onEscape = onEscape
             self.onTyping = onTyping
+            self.onMoveUp = onMoveUp
+            self.onMoveDown = onMoveDown
         }
     }
 }
@@ -63,6 +75,9 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
 /// NSView that captures keyboard events during multi-block selection.
 final class KeyHandlerNSView: NSView {
     var coordinator: MultiBlockKeyHandler.Coordinator?
+
+    private static let upArrowKeyCode: UInt16 = 126
+    private static let downArrowKeyCode: UInt16 = 125
 
     override var acceptsFirstResponder: Bool {
         true
@@ -90,6 +105,20 @@ final class KeyHandlerNSView: NSView {
 
     override func keyDown(with event: NSEvent) {
         let keyCode = event.keyCode
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        // Cmd+Shift+Up/Down (126/125) — reorder the selection. Checked before the
+        // fall-through below, which clears the selection on any other arrow key.
+        if flags.contains(.command), flags.contains(.shift) {
+            if keyCode == Self.upArrowKeyCode {
+                coordinator?.onMoveUp?()
+                return
+            }
+            if keyCode == Self.downArrowKeyCode {
+                coordinator?.onMoveDown?()
+                return
+            }
+        }
 
         // Escape (53)
         if keyCode == 53 {
