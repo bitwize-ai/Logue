@@ -37,6 +37,9 @@ struct DocumentWorkspaceView: View {
     @State var showWordCount = true
     @State private var chatMessages: [ChatMessage] = []
     @AppStorage("editorFontSize") private var fontSize: Double = 15
+    /// Zoom multiplier applied on top of `fontSize`. Driven by the View menu (Cmd +/-/0).
+    @AppStorage(AppConstants.UserDefaultsKeys.editorZoomScale) private var zoomScale: Double =
+        AppConstants.Editor.defaultZoom
     @State private var aiChatPendingMessage: String?
     // Extension-visible: +Toolbar
     @State var isSidebarCollapsed = false
@@ -78,14 +81,18 @@ struct DocumentWorkspaceView: View {
                     BlockEditorView(
                         markdownText: documentBodyBinding(doc: doc),
                         suggestions: suggestions,
-                        fontSize: fontSize,
+                        fontSize: zoomedFontSize,
                         onCursorPositionChange: { cursorOffset = $0 },
                         onSuggestionAccepted: { acceptFromEditor(suggestion: $0) },
                         onSuggestionDismissed: { dismiss(suggestion: $0) },
                         scrollToSuggestion: $scrollToSuggestion,
                         scrollToText: $scrollToText
                     )
-                    .frame(maxWidth: focusState.isActive ? focusState.columnWidth : .infinity)
+                    .frame(
+                        maxWidth: focusState.isActive
+                            ? focusState.columnWidth
+                            : doc.widthMode.maxContentWidth
+                    )
                     .frame(maxWidth: .infinity)
 
                     if !focusState.isActive {
@@ -152,6 +159,13 @@ struct DocumentWorkspaceView: View {
                     .environment(templateStore)
             }
         }
+    }
+
+    /// Base font size scaled by the current View-menu zoom, clamped by `EditorZoom`.
+    private var zoomedFontSize: Double {
+        var zoom = EditorZoom()
+        zoom.scale = zoomScale
+        return Double(zoom.scaled(CGFloat(fontSize)))
     }
 
     // MARK: - Right Panel Router

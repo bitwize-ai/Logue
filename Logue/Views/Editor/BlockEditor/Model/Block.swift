@@ -44,6 +44,10 @@ enum Block: Identifiable {
     case codeBlock(id: BlockID, language: String, code: String)
     case table(id: BlockID, data: TableBlockData)
     case divider(id: BlockID)
+    /// A Mermaid diagram, stored as its source so it stays durable in markdown.
+    case mermaid(id: BlockID, source: String)
+    /// A display-math block, stored as LaTeX between `$$` fences.
+    case math(id: BlockID, latex: String)
 
     var id: BlockID {
         switch self {
@@ -55,7 +59,9 @@ enum Block: Identifiable {
              let .blockQuote(id, _),
              let .codeBlock(id, _, _),
              let .table(id, _),
-             let .divider(id):
+             let .divider(id),
+             let .mermaid(id, _),
+             let .math(id, _):
             id
         }
     }
@@ -123,6 +129,10 @@ enum Block: Identifiable {
             items.map(\.text).filter { !$0.isEmpty }
         case let .checkboxList(_, items):
             items.map(\.text).filter { !$0.isEmpty }
+        case let .mermaid(_, source):
+            source.isEmpty ? [] : [source]
+        case let .math(_, latex):
+            latex.isEmpty ? [] : [latex]
         default:
             []
         }
@@ -149,6 +159,10 @@ enum Block: Identifiable {
             data.rows.allSatisfy { $0.allSatisfy(\.isEmpty) }
         case .divider:
             false
+        case let .mermaid(_, source):
+            source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case let .math(_, latex):
+            latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 }
@@ -176,6 +190,10 @@ extension Block: Equatable {
             lid == rid && ld === rd && ld.version == rd.version
         case let (.divider(lid), .divider(rid)):
             lid == rid
+        case let (.mermaid(lid, ls), .mermaid(rid, rs)):
+            lid == rid && ls == rs
+        case let (.math(lid, ll), .math(rid, rl)):
+            lid == rid && ll == rl
         default:
             false
         }
@@ -219,6 +237,14 @@ extension Block {
 
     static func newDivider() -> Block {
         .divider(id: UUID())
+    }
+
+    static func emptyMermaid() -> Block {
+        .mermaid(id: UUID(), source: "flowchart LR\n  A --> B")
+    }
+
+    static func emptyMath() -> Block {
+        .math(id: UUID(), latex: "")
     }
 
     /// The first list item ID for list-type blocks, nil for others.

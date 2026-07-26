@@ -271,6 +271,10 @@ extension BlockRowView {
             return .table(id: newID, data: copy)
         case .divider:
             return .divider(id: newID)
+        case let .mermaid(_, source):
+            return .mermaid(id: newID, source: source)
+        case let .math(_, latex):
+            return .math(id: newID, latex: latex)
         }
     }
 

@@ -102,3 +102,6 @@ memory/
 # Python
 __pycache__/
 *.pyc
+
+# Internal planning docs (not for public repo)
+docs/CAPABILITY-ROADMAP.md

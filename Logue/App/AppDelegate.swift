@@ -233,6 +233,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Handles incoming `logue://` deep links.
+    ///
+    /// URLs arrive from outside the app, so `DeepLinkRouter` validates each one before
+    /// any navigation happens. Unrecognised URLs are logged by host only — never by
+    /// full URL — and otherwise ignored.
+    func application(_: NSApplication, open urls: [URL]) {
+        for url in urls {
+            if DeepLinkRouter.route(url: url) {
+                showMainWindow()
+            } else {
+                logger.warning("Ignored unrecognised deep link for host: \(url.host ?? "none", privacy: .public)")
+            }
+        }
+    }
+
     /// Backup handler for dock icon click (may not fire with WindowGroup — Apple bug FB9754295).
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {

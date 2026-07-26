@@ -89,6 +89,40 @@ final class BlockEditorDocument {
         blocks.insert(block, at: adjustedDest)
     }
 
+    /// Direction for a selection move.
+    enum MoveDirection {
+        case up
+        case down
+    }
+
+    /// Moves a contiguous run of selected blocks one position up or down.
+    ///
+    /// A non-contiguous selection is rejected rather than reordered arbitrarily —
+    /// silently collapsing a gapped selection would scramble the document.
+    func moveSelectedBlocks(_ selectedIDs: Set<BlockID>, direction: MoveDirection) {
+        guard !selectedIDs.isEmpty else { return }
+
+        let indices = blocks.indices.filter { selectedIDs.contains(blocks[$0].id) }.sorted()
+        guard indices.count == selectedIDs.count,
+              let first = indices.first,
+              let last = indices.last,
+              last - first + 1 == indices.count
+        else { return }
+
+        switch direction {
+        case .up:
+            guard first > 0 else { return }
+            recordUndo()
+            let above = blocks.remove(at: first - 1)
+            blocks.insert(above, at: last)
+        case .down:
+            guard last + 1 < blocks.count else { return }
+            recordUndo()
+            let below = blocks.remove(at: last + 1)
+            blocks.insert(below, at: first)
+        }
+    }
+
     // MARK: - Update Text
 
     func updateText(blockID: BlockID, text: String) {

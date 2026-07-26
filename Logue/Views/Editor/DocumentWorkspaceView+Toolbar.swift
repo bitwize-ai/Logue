@@ -65,6 +65,13 @@ extension DocumentWorkspaceView {
             NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
         }
         Toggle("Word Count", isOn: $showWordCount)
+        Button {
+            var updated = doc
+            updated.widthMode = doc.widthMode.toggled
+            store.updateDocument(updated)
+        } label: {
+            Label(doc.widthMode.toggled.label, systemImage: doc.widthMode.toggled.symbolName)
+        }
         Divider()
         Button {
             titleGenerationTask?.cancel()
