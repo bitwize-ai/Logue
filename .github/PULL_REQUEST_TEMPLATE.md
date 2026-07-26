@@ -11,8 +11,10 @@ See CONTRIBUTING.md for the standards enforced on every PR.
 
 <!-- Describe how you tested the change: built the app, ran which tests, manual steps. -->
 
+- [ ] Ran `make setup` at least once, so the pre-commit hooks are installed
 - [ ] Builds cleanly (`xcodebuild build -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS'`)
-- [ ] Lints cleanly (`make lint`) — no new `swiftlint:disable` without justification
+- [ ] Lints cleanly (`make lint`) — runs SwiftFormat **and** SwiftLint in strict mode, the same two checks as CI. Use `make format` to auto-fix formatting.
+- [ ] No new `swiftlint:disable` without justification
 - [ ] Added/updated tests where it makes sense
 - [ ] Ran `xcodegen generate` if I added/removed `.swift` files or changed `project.yml`
 
