@@ -1,0 +1,13 @@
+# Code owners for Logue
+#
+# Listed owners are automatically requested for review on every pull request
+# that touches files they own. GitHub skips requesting a review from the PR's
+# own author, so with two owners the other one is always added.
+#
+# Docs: https://docs.github.com/articles/about-code-owners
+#
+# Later, more specific rules win over earlier ones, so keep the catch-all first
+# and add path-specific owners below it as the team grows.
+
+# Everything is owned by the core maintainers.
+*       @shanforge @westerosweb
