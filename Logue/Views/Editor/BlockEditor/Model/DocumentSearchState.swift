@@ -206,29 +206,7 @@ final class DocumentSearchState {
             let foundRange = nsText.range(of: query, options: options, range: searchRange)
             guard foundRange.location != NSNotFound else { break }
 
-            if wholeWord {
-                // Check that characters before and after the match are not word characters
-                let isWordBoundaryBefore: Bool
-                if foundRange.location > 0 {
-                    let ch = text[text.index(text.startIndex, offsetBy: foundRange.location - 1)]
-                    isWordBoundaryBefore = !ch.isLetter && !ch.isNumber && ch != "_"
-                } else {
-                    isWordBoundaryBefore = true
-                }
-
-                let isWordBoundaryAfter: Bool
-                let afterIdx = foundRange.location + foundRange.length
-                if afterIdx < text.count {
-                    let ch = text[text.index(text.startIndex, offsetBy: afterIdx)]
-                    isWordBoundaryAfter = !ch.isLetter && !ch.isNumber && ch != "_"
-                } else {
-                    isWordBoundaryAfter = true
-                }
-
-                if isWordBoundaryBefore, isWordBoundaryAfter {
-                    results.append(SearchMatch(blockID: blockID, itemID: itemID, range: foundRange))
-                }
-            } else {
+            if !wholeWord || isWholeWordMatch(range: foundRange, in: text) {
                 results.append(SearchMatch(blockID: blockID, itemID: itemID, range: foundRange))
             }
 
@@ -237,5 +215,34 @@ final class DocumentSearchState {
         }
 
         return results
+    }
+
+    /// Whether `foundRange` — a UTF-16 range from `NSString.range(of:)` — is bounded
+    /// by non-word characters on both sides.
+    ///
+    /// Converts the range with `Range(_:in:)` so neighbouring characters are read at
+    /// correct grapheme boundaries. Indexing the `String` directly with the raw UTF-16
+    /// `location` traps on emoji and other multi-unit characters, whose UTF-16 offset
+    /// exceeds the grapheme count.
+    private func isWholeWordMatch(range foundRange: NSRange, in text: String) -> Bool {
+        guard let swiftRange = Range(foundRange, in: text) else { return false }
+
+        let boundaryBefore: Bool
+        if swiftRange.lowerBound > text.startIndex {
+            let previous = text[text.index(before: swiftRange.lowerBound)]
+            boundaryBefore = !previous.isLetter && !previous.isNumber && previous != "_"
+        } else {
+            boundaryBefore = true
+        }
+
+        let boundaryAfter: Bool
+        if swiftRange.upperBound < text.endIndex {
+            let next = text[swiftRange.upperBound]
+            boundaryAfter = !next.isLetter && !next.isNumber && next != "_"
+        } else {
+            boundaryAfter = true
+        }
+
+        return boundaryBefore && boundaryAfter
     }
 }
