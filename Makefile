@@ -124,9 +124,13 @@ generate:
 format:
 	swiftformat Logue/
 
-# Lint Swift files with SwiftLint
+# Lint Swift files exactly as CI does: SwiftFormat first, then SwiftLint in
+# strict mode. These two commands must stay in sync with .github/workflows/ci.yml
+# — if `make lint` is more lenient than CI, a green local run means nothing.
+# Run `make format` to auto-fix the SwiftFormat failures this reports.
 lint:
-	swiftlint lint Logue/
+	cd Logue && swiftformat --lint .
+	swiftlint lint --strict Logue/
 
 # Build the project (no code signing for local/CI builds)
 build: generate

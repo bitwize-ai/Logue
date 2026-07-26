@@ -1,0 +1,101 @@
+name: Contribution task
+description: A scoped, ready-to-pick-up task for contributors (usually filed by maintainers)
+labels: ["enhancement", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for work that is already understood and just needs doing —
+        the kind of issue someone new to the codebase can pick up without a long
+        discussion first.
+
+        A good task states **why** it matters, has acceptance criteria that make
+        "done" unambiguous, and names the files involved so nobody has to hunt.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What is missing or wrong today, and why does it matter to someone using the app?
+      placeholder: |
+        Today X isn't possible, so anyone who wants Y has to work around it by ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: existing-work
+    attributes:
+      label: What already exists
+      description: >
+        Any model, helper, or tested logic already in the codebase that this should
+        build on. Say plainly if the hard part is done and only the UI is missing —
+        that is the single most useful thing you can tell a newcomer.
+      placeholder: |
+        `Foo.swift` already provides `bar(_:)` with N passing tests in `LogueTests/FooTests.swift`.
+        This task is UI only — please don't write a second implementation.
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-to-do
+    attributes:
+      label: What to do
+      description: The change being asked for, in a sentence or two. Not a design doc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: A checklist that makes "done" unambiguous. Include the edge cases and the things that must NOT regress.
+      value: |
+        - [ ]
+        - [ ] Existing tests still pass
+        - [ ] No new `swiftlint:disable` without a comment explaining why
+    validations:
+      required: true
+
+  - type: textarea
+    id: pointers
+    attributes:
+      label: Files and pointers
+      description: Where to start looking. Include any existing code that is a good pattern to copy.
+      placeholder: |
+        - `Logue/Views/...` — where the UI goes
+        - `Logue/Models/...` — the model to extend
+        - See how `<similar feature>` was done; same shape.
+    validations:
+      required: true
+
+  - type: textarea
+    id: gotchas
+    attributes:
+      label: Gotchas
+      description: >
+        Traps that would cost someone an hour. Data-format constraints, non-obvious
+        invariants, things that look like bugs but are intentional.
+      placeholder: |
+        `Block`'s `Equatable` compares IDs, and `parse` mints fresh UUIDs — so
+        `parse(serialize(x)) == x` is always false. Compare structural content instead.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Rough size
+      options:
+        - Small — an hour or two, few files
+        - Medium — a focused session
+        - Large — please comment before starting so we can agree the approach
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: discuss-first
+    attributes:
+      label: Before you start
+      options:
+        - label: This task has design decisions worth agreeing on in a comment before building.
+          required: false
