@@ -17,6 +17,25 @@ final class MarkdownMirror {
 
     private let logger = Logger(subsystem: AppConstants.bundleID, category: "MarkdownMirror")
 
+    /// What the mirror is doing, for the toolbar indicator.
+    enum SyncState: Equatable, Sendable {
+        case off
+        case idle
+        case syncing(completed: Int, total: Int)
+
+        var isSyncing: Bool {
+            if case .syncing = self {
+                return true
+            }
+            return false
+        }
+    }
+
+    private(set) var state: SyncState = .off
+
+    /// When the last full pass finished, for the indicator's tooltip.
+    private(set) var lastSyncedAt: Date?
+
     /// Unresolved conflicts, keyed by document.
     private(set) var conflicts: [UUID: MirrorConflict] = [:]
 
@@ -60,6 +79,7 @@ final class MarkdownMirror {
     func enable(folder: URL) {
         folderURL = folder
         unmappableDirectories.removeAll()
+        state = .idle
         loadSyncState()
         startWatching()
         syncAll()
@@ -71,6 +91,8 @@ final class MarkdownMirror {
         folderURL = nil
         conflicts.removeAll()
         unmappableDirectories.removeAll()
+        state = .off
+        lastSyncedAt = nil
     }
 
     // MARK: - Syncing
@@ -80,13 +102,44 @@ final class MarkdownMirror {
     /// Directories are imported as spaces first, so a document found inside a
     /// hand-made folder can be filed into the space that folder now represents.
     func syncAll() {
-        guard isEnabled else { return }
-        importDirectoriesAsSpaces()
-        adoptExternalFileMoves()
+        guard isEnabled, !state.isSyncing else { return }
 
-        for document in DocumentStore.shared.documents where !document.isTrashed {
-            sync(document)
+        // One index of identifier → file per pass. Matching per document used to
+        // enumerate and read every file, which is quadratic in the number of
+        // documents; on a real library that is thousands of redundant reads.
+        let index = buildFileIndex()
+
+        importDirectoriesAsSpaces()
+        adoptExternalFileMoves(using: index)
+
+        let documents = DocumentStore.shared.documents.filter { !$0.isTrashed }
+        state = .syncing(completed: 0, total: documents.count)
+
+        for (offset, document) in documents.enumerated() {
+            sync(document, index: index)
+            state = .syncing(completed: offset + 1, total: documents.count)
         }
+
+        lastSyncedAt = Date()
+        state = .idle
+    }
+
+    /// Identifier → file location for every mirror file, built in one walk.
+    private func buildFileIndex() -> [UUID: URL] {
+        guard let folder = folderURL else { return [:] }
+
+        var index: [UUID: URL] = [:]
+        for url in markdownFiles(in: folder) {
+            guard let contents = readFile(at: url),
+                  let id = MirrorFile.identifier(in: contents)
+            else { continue }
+            // First file wins on a duplicated identifier — copying a mirror file
+            // duplicates its id, and adopting both would ping-pong the document.
+            if index[id] == nil {
+                index[id] = url
+            }
+        }
+        return index
     }
 
     // MARK: - Importing structure from disk
@@ -136,14 +189,15 @@ final class MarkdownMirror {
     ///
     /// The file's location is authoritative here: moving a file between folders is an
     /// unambiguous instruction, unlike an edit to its contents.
-    private func adoptExternalFileMoves() {
+    private func adoptExternalFileMoves(using index: [UUID: URL]) {
         guard let folder = folderURL else { return }
 
-        for url in markdownFiles(in: folder) {
-            guard let contents = readFile(at: url),
-                  let id = MirrorFile.identifier(in: contents),
-                  let document = DocumentStore.shared.documents.first(where: { $0.id == id })
-            else { continue }
+        let byID = Dictionary(
+            DocumentStore.shared.documents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+        )
+
+        for (id, url) in index {
+            guard let document = byID[id] else { continue }
 
             let components = directoryComponents(of: url, under: folder)
             let spaceID = MirrorLayout.spaceID(
@@ -191,11 +245,13 @@ final class MarkdownMirror {
     }
 
     /// Syncs one document, recording a conflict rather than choosing a side.
-    func sync(_ document: WritingDocument) {
+    ///
+    /// `index` avoids re-walking the folder for every document during a full pass.
+    func sync(_ document: WritingDocument, index: [UUID: URL]? = nil) {
         guard let folder = folderURL else { return }
 
         let render = MirrorFile.render(document)
-        let url = fileURL(for: document, in: folder)
+        let url = fileURL(for: document, in: folder, index: index)
         let contents = readFile(at: url)
 
         switch MirrorSyncDecision.decide(
@@ -273,14 +329,19 @@ final class MarkdownMirror {
     ///
     /// A document already on disk keeps its filename but is **moved** when its space
     /// changes, so the folder tree tracks the sidebar instead of accumulating copies.
-    private func fileURL(for document: WritingDocument, in folder: URL) -> URL {
+    private func fileURL(
+        for document: WritingDocument,
+        in folder: URL,
+        index: [UUID: URL]? = nil
+    ) -> URL {
         let directory = folder.appendingPathComponent(
             MirrorLayout.directoryComponents(
                 forSpace: document.spaceID, in: SpaceStore.shared.spaces
             ).joined(separator: "/")
         )
 
-        if let existing = existingFile(for: document.id, in: folder) {
+        let existing = index?[document.id] ?? existingFile(for: document.id, in: folder)
+        if let existing {
             let wanted = directory.appendingPathComponent(existing.lastPathComponent)
             if existing.standardizedFileURL != wanted.standardizedFileURL {
                 move(existing, to: wanted)

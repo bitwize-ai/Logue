@@ -349,6 +349,7 @@
 		AE7BCB76D77404A8B71D119E /* PIIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9978579DD7A8D5743C9DB6 /* PIIModels.swift */; };
 		AF35E4BCA1244DFE4B983329 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFBC89D908FFD586D1C38ABF /* UndoToastView.swift */; };
 		AFCA039A58319E9F99A6A763 /* VerifyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F31BC63173139D2C8BB0D1D /* VerifyModels.swift */; };
+		B01D65558579958F5C19ED8A /* MirrorSyncButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D215D799EB03439B04C2A473 /* MirrorSyncButton.swift */; };
 		B0F47B3C9577CF2041C3C5C7 /* WritingStatsBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83704AFDBD5FA20519C4067 /* WritingStatsBarView.swift */; };
 		B0F79BB2896CD38F5076C649 /* BlockSerializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE45DD206DEC983F8781BB2 /* BlockSerializer.swift */; };
 		B17505DC8364AC00D95F535E /* AgentChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03398707EAC7A65A3C41D13 /* AgentChatView.swift */; };
@@ -893,6 +894,7 @@
 		D109C6B8E49B6D4DEC709DB5 /* WorkspaceTransferable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceTransferable.swift; sourceTree = "<group>"; };
 		D13D5598C230DA3644325779 /* FolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderStore.swift; sourceTree = "<group>"; };
 		D1A491C56C1501F3D06F7734 /* PulsingDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PulsingDot.swift; sourceTree = "<group>"; };
+		D215D799EB03439B04C2A473 /* MirrorSyncButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorSyncButton.swift; sourceTree = "<group>"; };
 		D228A8EDB45295F064F77732 /* PromptRegistry+Agent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PromptRegistry+Agent.swift"; sourceTree = "<group>"; };
 		D238B8169934A609E62E8D9E /* SavedViewFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedViewFilterTests.swift; sourceTree = "<group>"; };
 		D245AD8F8FF9957DC52A4ADC /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
@@ -1870,6 +1872,7 @@
 				97AEDA55455BF89C587E41B5 /* InlineProgressLabel.swift */,
 				A0F94FBB07034AA79CECEDED /* InsightCardShell.swift */,
 				CF540C94525BF2C21BA389BF /* LogoBrandView.swift */,
+				D215D799EB03439B04C2A473 /* MirrorSyncButton.swift */,
 				9C91F95BC414F31D9357EB2D /* ModelDownloadRow.swift */,
 				0F15F64648E6C197AB133FD2 /* PrivacyBadge.swift */,
 				AFC4D0D0481D8CD554E5892C /* SearchBarField.swift */,
@@ -2317,6 +2320,7 @@
 				08976D9130DB18670920C3A1 /* MirrorFile.swift in Sources */,
 				4A72EC807E5CC9DE0111DDD4 /* MirrorFilename.swift in Sources */,
 				26F9F34FBFDD7F77F1973443 /* MirrorLayout.swift in Sources */,
+				B01D65558579958F5C19ED8A /* MirrorSyncButton.swift in Sources */,
 				21450F9A4257F01D9CF340C4 /* MirrorSyncDecision.swift in Sources */,
 				C5DD444112B8F0EBD6B1089D /* ModelAction.swift in Sources */,
 				E20DD767DAF8932B1D24E243 /* ModelChip.swift in Sources */,

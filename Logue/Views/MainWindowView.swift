@@ -77,6 +77,13 @@ struct MainWindowView: View {
         }
         .navigationSplitViewStyle(.prominentDetail)
         .toolbar(removing: .sidebarToggle)
+        .toolbar {
+            // App-level, so mirror status is visible from any screen rather than only
+            // while a document is open. Renders nothing when mirroring is off.
+            ToolbarItem(placement: .primaryAction) {
+                MirrorSyncButton()
+            }
+        }
         .environment(store)
         .environment(meetingStore)
         .environment(spaceStore)
