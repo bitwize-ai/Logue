@@ -37,6 +37,19 @@ struct LinksPanelView: View {
                         emptyMessage: "Nothing links here yet."
                     )
 
+                    ForEach(RelationshipKind.allCases, id: \.self) { kind in
+                        let related = index.related(from: documentID, kind: kind)
+                        if !related.isEmpty {
+                            linkSection(
+                                title: kind.label,
+                                systemImage: kind.symbolName,
+                                ids: related,
+                                index: index,
+                                emptyMessage: ""
+                            )
+                        }
+                    }
+
                     brokenSection(targets: index.brokenTargets(from: documentID))
                 } else {
                     ProgressView()

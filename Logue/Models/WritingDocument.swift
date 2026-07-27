@@ -26,12 +26,54 @@ struct WritingDocument: Identifiable, Codable, Sendable {
         case reviewGrade, reviewReactions, factChecks, piiFindings
         case vocabSuggestions, aiDetectionResult, plagiarismResult, rewriteResult
         case storedWidthMode = "widthMode"
-        case icon
+        case icon, relationships
     }
 
     /// Optional single-grapheme icon shown in lists and titles.
     /// Validate user input through `DocumentIcon.sanitised` before assigning.
     var icon: String?
+
+    /// Declared relationships, keyed by frontmatter name (`belongs_to`, `has`,
+    /// `related_to`). Optional so documents saved before this field existed still
+    /// decode — Swift's synthesized `Codable` throws `keyNotFound` for a missing
+    /// non-optional key even when it has a default.
+    ///
+    /// Stored as raw strings rather than `[RelationshipKind: [String]]` so the JSON
+    /// uses readable frontmatter keys and survives an unknown key from a newer build.
+    var relationships: [String: [String]]?
+
+    /// Declared relationships with unknown keys discarded.
+    var typedRelationships: [RelationshipKind: [String]] {
+        var result: [RelationshipKind: [String]] = [:]
+        for (key, targets) in relationships ?? [:] {
+            guard let kind = RelationshipKind(key: key), !targets.isEmpty else { continue }
+            result[kind] = targets
+        }
+        return result
+    }
+
+    /// Replaces the targets for one relationship kind.
+    ///
+    /// Blank targets are discarded and duplicates collapsed case-insensitively, so
+    /// the stored list matches what the graph can actually resolve. An empty result
+    /// removes the key rather than persisting an empty array.
+    mutating func setRelationship(_ kind: RelationshipKind, targets: [String]) {
+        var seen = Set<String>()
+        var cleaned: [String] = []
+        for target in targets {
+            let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { continue }
+            cleaned.append(trimmed)
+        }
+
+        var store = relationships ?? [:]
+        if cleaned.isEmpty {
+            store.removeValue(forKey: kind.key)
+        } else {
+            store[kind.key] = cleaned
+        }
+        relationships = store.isEmpty ? nil : store
+    }
 
     /// Backing storage for `widthMode`. Optional so documents persisted before this
     /// property existed still decode — the synthesised decoder uses

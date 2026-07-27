@@ -22,6 +22,23 @@ struct LinkIndex: Sendable {
         let title: String
         let body: String
         let kind: Kind
+        /// Declared relationships, keyed by kind. Targets are titles, optionally
+        /// written in `[[wikilink]]` form. Inverses are computed, not stored.
+        let relationships: [RelationshipKind: [String]]
+
+        init(
+            id: UUID,
+            title: String,
+            body: String,
+            kind: Kind,
+            relationships: [RelationshipKind: [String]] = [:]
+        ) {
+            self.id = id
+            self.title = title
+            self.body = body
+            self.kind = kind
+            self.relationships = relationships
+        }
     }
 
     // MARK: - Storage
@@ -34,6 +51,8 @@ struct LinkIndex: Sendable {
     private let outgoingByID: [UUID: [UUID]]
     private let backlinksByID: [UUID: [UUID]]
     private let brokenByID: [UUID: [String]]
+    /// Declared relationships plus computed inverses, keyed by item then kind.
+    private let relationshipsByID: [UUID: [RelationshipKind: [UUID]]]
 
     // MARK: - Build
 
@@ -79,12 +98,57 @@ struct LinkIndex: Sendable {
             }
         }
 
+        // Declared relationships, plus the inverse each target sees back.
+        var relationships: [UUID: [RelationshipKind: [UUID]]] = [:]
+
+        for entry in entries {
+            for (kind, targets) in entry.relationships {
+                for rawTarget in targets {
+                    let target = Self.relationshipTarget(rawTarget)
+                    guard let targetID = idsByTitle[Self.normalise(target)] else {
+                        broken[entry.id, default: []].append(target)
+                        continue
+                    }
+                    // A self-relationship is not an edge.
+                    guard targetID != entry.id else { continue }
+
+                    Self.append(targetID, to: &relationships, for: entry.id, kind: kind)
+                    Self.append(entry.id, to: &relationships, for: targetID, kind: kind.inverse)
+                }
+            }
+        }
+
         self.titles = titles
         self.kinds = kinds
         idsByNormalisedTitle = idsByTitle
         outgoingByID = outgoing
         backlinksByID = backlinks
         brokenByID = broken
+        relationshipsByID = relationships
+    }
+
+    /// Appends without duplicating, so an explicitly declared relationship and its
+    /// computed inverse do not both add the same edge.
+    private static func append(
+        _ id: UUID,
+        to store: inout [UUID: [RelationshipKind: [UUID]]],
+        for owner: UUID,
+        kind: RelationshipKind
+    ) {
+        var byKind = store[owner] ?? [:]
+        var ids = byKind[kind] ?? []
+        guard !ids.contains(id) else { return }
+        ids.append(id)
+        byKind[kind] = ids
+        store[owner] = byKind
+    }
+
+    /// Accepts a bare title or a `[[wikilink]]`, returning the bare title.
+    private static func relationshipTarget(_ raw: String) -> String {
+        if let link = WikiLinkParser.links(in: raw).first {
+            return link.target
+        }
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Queries
@@ -97,6 +161,12 @@ struct LinkIndex: Sendable {
     /// Items that link to `id`.
     func backlinks(to id: UUID) -> [UUID] {
         backlinksByID[id] ?? []
+    }
+
+    /// Items related to `id` by `kind`, including relationships only the other side
+    /// declared.
+    func related(from id: UUID, kind: RelationshipKind) -> [UUID] {
+        relationshipsByID[id]?[kind] ?? []
     }
 
     /// Link targets in `id`'s body that match no known title — the broken links.
@@ -147,7 +217,8 @@ extension LinkIndex {
                 id: document.id,
                 title: document.title,
                 body: document.body,
-                kind: .document
+                kind: .document,
+                relationships: document.typedRelationships
             ))
         }
 
