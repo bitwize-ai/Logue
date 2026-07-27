@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 
 // MARK: - WikiLink Completion Menu
 
@@ -25,6 +26,35 @@ final class WikiLinkMenuTarget: NSObject {
 }
 
 extension BlockNSTextView {
+    /// Follows a `[[wikilink]]` under the pointer when Command is held.
+    ///
+    /// Command-click rather than plain click: this is an editable body, so a plain
+    /// click must keep placing the caret. Returns whether a link was followed, so
+    /// the caller can fall back to normal click handling.
+    func followWikiLinkIfCommandClicked(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+        else { return false }
+
+        let point = convert(event.locationInWindow, from: nil)
+        guard let index = characterIndexForInsertion(at: point) as Int?,
+              index >= 0, index < (string as NSString).length
+        else { return false }
+
+        guard let target = textStorage?.attribute(
+            MarkdownStyler.wikiLinkTargetAttribute, at: index, effectiveRange: nil
+        ) as? String
+        else { return false }
+
+        if !ContentNavigator.openWikiLink(target: target) {
+            Self.wikiLinkLogger.info("Command-clicked an unresolved wikilink target")
+        }
+        return true
+    }
+
+    private static let wikiLinkLogger = Logger(
+        subsystem: AppConstants.bundleID, category: "WikiLinkClick"
+    )
+
     /// Offers link completions when the caret sits inside an unclosed `[[`.
     ///
     /// Called after text changes. Does nothing when there is no in-progress link, so

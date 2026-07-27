@@ -203,6 +203,11 @@ final class MarkdownStyler {
         delimiterRanges = visitor.collectedDelimiterRanges
         markerRanges = []
 
+        // `[[wikilinks]]` are not CommonMark, so the visitor never sees them. Style
+        // them here: the target reads as a link and the brackets join the delimiter
+        // set, so they hide like any other markup and reveal on the caret line.
+        delimiterRanges += Self.styleWikiLinks(in: textStorage, config: config)
+
         for range in delimiterRanges where NSMaxRange(range) <= textStorage.length {
             textStorage.addAttributes([
                 .foregroundColor: NSColor.clear,
@@ -214,6 +219,55 @@ final class MarkdownStyler {
     }
 
     /// Force a re-restyle on next call (used when block text is updated externally).
+    /// Attribute carrying a wikilink's target, so a click can resolve it without
+    /// re-parsing the text.
+    static let wikiLinkTargetAttribute = NSAttributedString.Key("logueWikiLinkTarget")
+
+    /// Styles every wikilink and returns the bracket ranges to hide.
+    static func styleWikiLinks(
+        in textStorage: NSTextStorage,
+        config: StyleConfig
+    ) -> [NSRange] {
+        let links = WikiLinkParser.links(in: textStorage.string)
+        guard !links.isEmpty else { return [] }
+
+        var bracketRanges: [NSRange] = []
+        let delimiterLength = 2
+
+        for link in links where NSMaxRange(link.range) <= textStorage.length {
+            // Inner span is the whole reference minus the two bracket pairs.
+            let innerLocation = link.range.location + delimiterLength
+            let innerLength = link.range.length - (delimiterLength * 2)
+            guard innerLength > 0 else { continue }
+            let innerRange = NSRange(location: innerLocation, length: innerLength)
+
+            textStorage.addAttributes([
+                .foregroundColor: config.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                wikiLinkTargetAttribute: link.target,
+            ], range: innerRange)
+
+            bracketRanges.append(NSRange(location: link.range.location, length: delimiterLength))
+            bracketRanges.append(
+                NSRange(location: NSMaxRange(link.range) - delimiterLength, length: delimiterLength)
+            )
+
+            // Hide the `|alias` separator and target when an alias is present, so the
+            // display text is what reads.
+            if link.displayText != nil {
+                let inner = (textStorage.string as NSString).substring(with: innerRange)
+                if let pipe = inner.range(of: "|") {
+                    let pipeOffset = inner.distance(from: inner.startIndex, to: pipe.lowerBound)
+                    bracketRanges.append(
+                        NSRange(location: innerRange.location, length: pipeOffset + 1)
+                    )
+                }
+            }
+        }
+
+        return bracketRanges
+    }
+
     func invalidate() {
         lastHash = 0
     }

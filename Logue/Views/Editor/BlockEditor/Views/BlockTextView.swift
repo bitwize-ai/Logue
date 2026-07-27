@@ -1349,6 +1349,11 @@ final class BlockNSTextView: MarkdownNSTextView {
     // MARK: - Suggestion Click
 
     override func mouseDown(with event: NSEvent) {
+        // Command-click follows a wikilink instead of moving the caret.
+        if followWikiLinkIfCommandClicked(event) {
+            return
+        }
+
         goalColumnX = nil
         let point = convert(event.locationInWindow, from: nil)
         if let suggestion = suggestionAtPoint(point) {

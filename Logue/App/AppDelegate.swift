@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var resourceUsageObserver: NSObjectProtocol?
     private weak var resourceUsageWindow: NSWindow?
     private var bugReportObserver: NSObjectProtocol?
+    private var deepLinkObservers: [NSObjectProtocol] = []
     private weak var bugReportWindow: NSWindow?
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -141,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) { [weak self] _ in
             Task { @MainActor in self?.showResourceUsageWindow() }
         }
+
+        registerDeepLinkObservers()
 
         bugReportObserver = NotificationCenter.default.addObserver(
             forName: .openReportBugWindow,
@@ -233,6 +236,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Observes the notifications `DeepLinkRouter` posts and performs the selection.
+    ///
+    /// Without these, a valid deep link parsed, raised the window, and then did
+    /// nothing — the notification had no listener.
+    private func registerDeepLinkObservers() {
+        let pairs: [(Notification.Name, (UUID) -> NavigationTarget)] = [
+            (.deepLinkOpenDocument, { .document(id: $0) }),
+            (.deepLinkOpenMeeting, { .meeting(id: $0) }),
+            (.deepLinkOpenSpace, { .space(id: $0) }),
+        ]
+
+        for (name, makeTarget) in pairs {
+            let token = NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { notification in
+                guard let identifier =
+                    notification.userInfo?[DeepLink.UserInfoKey.identifier] as? UUID
+                else { return }
+                MainActor.assumeIsolated {
+                    ContentNavigator.open(makeTarget(identifier))
+                }
+            }
+            deepLinkObservers.append(token)
+        }
+    }
+
     /// Handles incoming `logue://` deep links.
     ///
     /// URLs arrive from outside the app, so `DeepLinkRouter` validates each one before
@@ -257,6 +286,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_: Notification) {
+        for observer in deepLinkObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        deepLinkObservers.removeAll()
+
         if let observer = shortcutsObserver {
             NotificationCenter.default.removeObserver(observer)
             shortcutsObserver = nil
