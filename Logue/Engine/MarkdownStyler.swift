@@ -241,11 +241,19 @@ final class MarkdownStyler {
             guard innerLength > 0 else { continue }
             let innerRange = NSRange(location: innerLocation, length: innerLength)
 
-            textStorage.addAttributes([
+            var attributes: [NSAttributedString.Key: Any] = [
                 .foregroundColor: config.linkColor,
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
                 wikiLinkTargetAttribute: link.target,
-            ], range: innerRange)
+            ]
+            // A `.link` attribute makes AppKit own the interaction: hand cursor on
+            // hover, plain click when the view is not editable, Command-click when it
+            // is, and delivery through `clickedOnLink(_:at:)`. Hand-rolling this in
+            // `mouseDown` did not receive the click at all.
+            if let url = WikiLinkURL.url(for: link.target) {
+                attributes[.link] = url
+            }
+            textStorage.addAttributes(attributes, range: innerRange)
 
             bracketRanges.append(NSRange(location: link.range.location, length: delimiterLength))
             bracketRanges.append(

@@ -26,6 +26,24 @@ final class WikiLinkMenuTarget: NSObject {
 }
 
 extension BlockNSTextView {
+    /// AppKit's link-click entry point.
+    ///
+    /// Reached for a plain click when the view is not editable and for Command-click
+    /// when it is — exactly the behaviour we want, and all of it handled by AppKit
+    /// rather than by intercepting `mouseDown`.
+    override func clicked(onLink link: Any, at charIndex: Int) {
+        let url: URL? = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
+
+        if let url, let target = WikiLinkURL.target(from: url) {
+            if !ContentNavigator.openWikiLink(target: target) {
+                Self.wikiLinkLogger.info("Clicked an unresolved wikilink target")
+            }
+            return
+        }
+
+        super.clicked(onLink: link, at: charIndex)
+    }
+
     /// Follows a `[[wikilink]]` under the pointer when Command is held.
     ///
     /// Command-click rather than plain click: this is an editable body, so a plain
@@ -36,19 +54,40 @@ extension BlockNSTextView {
         else { return false }
 
         let point = convert(event.locationInWindow, from: nil)
-        guard let index = characterIndexForInsertion(at: point) as Int?,
-              index >= 0, index < (string as NSString).length
-        else { return false }
-
-        guard let target = textStorage?.attribute(
-            MarkdownStyler.wikiLinkTargetAttribute, at: index, effectiveRange: nil
-        ) as? String
-        else { return false }
+        guard let target = wikiLinkTarget(at: point) else { return false }
 
         if !ContentNavigator.openWikiLink(target: target) {
             Self.wikiLinkLogger.info("Command-clicked an unresolved wikilink target")
         }
         return true
+    }
+
+    /// The wikilink target under `point`, in this view's coordinates.
+    ///
+    /// Uses the glyph actually hit rather than the nearest insertion point:
+    /// `characterIndexForInsertion` rounds to the closest boundary, so clicking the
+    /// right-hand half of a link's last character resolves to the following
+    /// character — the hidden `]]` — and finds no target.
+    func wikiLinkTarget(at point: NSPoint) -> String? {
+        guard let layoutManager, let textContainer, let textStorage else { return nil }
+
+        let length = (string as NSString).length
+        guard length > 0 else { return nil }
+
+        let containerPoint = NSPoint(
+            x: point.x - textContainerOrigin.x,
+            y: point.y - textContainerOrigin.y
+        )
+        var fraction: CGFloat = 0
+        let glyphIndex = layoutManager.glyphIndex(
+            for: containerPoint, in: textContainer, fractionOfDistanceThroughGlyph: &fraction
+        )
+        let index = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard index >= 0, index < length else { return nil }
+
+        return textStorage.attribute(
+            MarkdownStyler.wikiLinkTargetAttribute, at: index, effectiveRange: nil
+        ) as? String
     }
 
     private static let wikiLinkLogger = Logger(
