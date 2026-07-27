@@ -54,6 +54,7 @@
 		127BFC4FD2D2CA4E68169EC5 /* BackupSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431C845CF5A3DC729ED17CC0 /* BackupSettingsTab.swift */; };
 		12AD1B6E3CB248360845B684 /* WritingGoalsPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21ED60A38CACB407A6BEDD62 /* WritingGoalsPanelView.swift */; };
 		13373229911D8C07B23E3591 /* GrammarClarityLLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20D8AB097118E507520863A /* GrammarClarityLLMTests.swift */; };
+		13638EF1933D92B1BA12E411 /* DocumentStore+Organisation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 075684E5761CFA87A4763ED8 /* DocumentStore+Organisation.swift */; };
 		136DA7C6E8212377AEF7906B /* BlockEditorView+Reorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30E821E71C80A341EEC3F68 /* BlockEditorView+Reorder.swift */; };
 		1379C780AB4DAD0DCCF512B6 /* DeepResearchProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA066DE093D5AFBD76D6F0D /* DeepResearchProgressView.swift */; };
 		13AFBE3135D8E53D1DA140B1 /* DeepResearchCoordinator+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7250A0C394AFABC041C58D68 /* DeepResearchCoordinator+Helpers.swift */; };
@@ -489,6 +490,7 @@
 		01DF49AA771F4050417643F2 /* DocumentType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentType.swift; sourceTree = "<group>"; };
 		05509BDEDCFFC620AB9B8777 /* TranscriptTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptTimelineView.swift; sourceTree = "<group>"; };
 		058B2966E8BD330957460206 /* TranscriptTimelineView+Bookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TranscriptTimelineView+Bookmarks.swift"; sourceTree = "<group>"; };
+		075684E5761CFA87A4763ED8 /* DocumentStore+Organisation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DocumentStore+Organisation.swift"; sourceTree = "<group>"; };
 		079936683006158188BD417B /* MeetingSummaryPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingSummaryPanelView.swift; sourceTree = "<group>"; };
 		07B3C67536F667861CA0CBED /* CalendarTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarTools.swift; sourceTree = "<group>"; };
 		088E6D7B300F24ADC23373E8 /* RightIconToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightIconToolbar.swift; sourceTree = "<group>"; };
@@ -1410,6 +1412,7 @@
 				E91B8420A88FFD5D29FE6638 /* DeepLink.swift */,
 				DBB768463E40E11BC5922145 /* DocumentIcon.swift */,
 				3C70C5136BF964DD9AC4887F /* DocumentStore.swift */,
+				075684E5761CFA87A4763ED8 /* DocumentStore+Organisation.swift */,
 				B7E20C976C8094E3E4DCB896 /* DocumentStore+SeedData.swift */,
 				FE07F5F09706EA33B61BEF24 /* DocumentTemplate.swift */,
 				01DF49AA771F4050417643F2 /* DocumentType.swift */,
@@ -2104,6 +2107,7 @@
 				75E00B6D645BDF14E88D8DDB /* DocumentSearchState.swift in Sources */,
 				70F7CF53A7FC5D1C23992FD4 /* DocumentSidebarView.swift in Sources */,
 				C72501FD49A7E09EF473CB0F /* DocumentStatsCard.swift in Sources */,
+				13638EF1933D92B1BA12E411 /* DocumentStore+Organisation.swift in Sources */,
 				DD9EF8E1A2506A01E2AE6823 /* DocumentStore+SeedData.swift in Sources */,
 				EECF7BA703C69F033F229B25 /* DocumentStore.swift in Sources */,
 				2097A69FB625B8274E022216 /* DocumentTemplate.swift in Sources */,

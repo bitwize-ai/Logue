@@ -37,12 +37,14 @@ enum DocSortOrder: String, CaseIterable {
 
 enum DocFilterMode: String, CaseIterable {
     case all = "All Documents"
+    case inbox = "Inbox"
     case pinned = "Pinned"
     case recent = "Recent"
 
     var icon: String {
         switch self {
         case .all: "doc.text"
+        case .inbox: "tray"
         case .pinned: "pin"
         case .recent: "clock"
         }
@@ -64,12 +66,27 @@ struct DocumentListPane: View {
     @State private var renameText = ""
     @FocusState private var isRenameFieldFocused: Bool
     @State private var hasAutoSelected = false
+    /// Active saved view, when one is chosen instead of a built-in filter.
+    @State private var activeSavedViewID: UUID?
+    /// Active type filter, when one is chosen.
+    @State private var activeTypeName: String?
+    /// Documents ticked for a bulk action. Non-empty shows the bulk bar.
+    @State private var bulkSelection: Set<UUID> = []
+    @State private var bulkTagText = ""
+    @State private var showingBulkTagField = false
 
     private var filteredDocs: [WritingDocument] {
-        let base: [WritingDocument] = switch filterMode {
-        case .all: store.activeDocuments
-        case .recent: store.recentDocuments
-        case .pinned: store.pinnedDocuments
+        let base: [WritingDocument] = if let activeSavedViewID {
+            store.documents(matching: activeSavedViewID)
+        } else if let activeTypeName {
+            store.activeDocuments.filter { $0.typeName == activeTypeName }
+        } else {
+            switch filterMode {
+            case .all: store.activeDocuments
+            case .inbox: store.inboxDocuments
+            case .recent: store.recentDocuments
+            case .pinned: store.pinnedDocuments
+            }
         }
         let searched: [WritingDocument] = if searchText.isEmpty {
             base
@@ -105,12 +122,52 @@ struct DocumentListPane: View {
                             ForEach(DocFilterMode.allCases, id: \.rawValue) { mode in
                                 Button {
                                     filterMode = mode
+                                    activeSavedViewID = nil
+                                    activeTypeName = nil
                                 } label: {
                                     HStack {
                                         Label(mode.rawValue, systemImage: mode.icon)
                                         if filterMode == mode {
                                             Spacer()
                                             Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !store.savedViews.isEmpty {
+                            Section("Views") {
+                                ForEach(store.savedViews) { view in
+                                    Button {
+                                        activeSavedViewID = view.id
+                                        activeTypeName = nil
+                                    } label: {
+                                        HStack {
+                                            Label(view.name, systemImage: view.symbolName)
+                                            if activeSavedViewID == view.id {
+                                                Spacer()
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !store.documentTypes.isEmpty {
+                            Section("Types") {
+                                ForEach(DocumentType.ordered(store.documentTypes)) { type in
+                                    Button {
+                                        activeTypeName = type.name
+                                        activeSavedViewID = nil
+                                    } label: {
+                                        HStack {
+                                            Label(type.name, systemImage: type.symbolName)
+                                            if activeTypeName == type.name {
+                                                Spacer()
+                                                Image(systemName: "checkmark")
+                                            }
                                         }
                                     }
                                 }
@@ -183,6 +240,91 @@ struct DocumentListPane: View {
     // MARK: - List View
 
     private var listView: some View {
+        VStack(spacing: 0) {
+            if filterMode == .inbox, activeSavedViewID == nil, activeTypeName == nil {
+                inboxHeader
+            }
+            if !bulkSelection.isEmpty {
+                bulkActionBar
+            }
+            documentList
+        }
+    }
+
+    /// Explains the inbox rather than showing an unexplained subset of documents.
+    private var inboxHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "tray")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("\(store.inboxCount) to organise")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.quaternary.opacity(0.4))
+    }
+
+    /// Shown while documents are ticked. Every action here is reversible except
+    /// Trash, which moves to Trash rather than deleting outright.
+    private var bulkActionBar: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Text("\(bulkSelection.count) selected")
+                    .font(.caption.weight(.medium))
+
+                Spacer()
+
+                Button("Tag") { showingBulkTagField.toggle() }
+                    .font(.caption)
+
+                if filterMode == .inbox {
+                    Button("Organise") {
+                        store.applyBulk(to: bulkSelection) { BulkAction.markingOrganised($0) }
+                        bulkSelection.removeAll()
+                    }
+                    .font(.caption)
+                }
+
+                Button("Trash", role: .destructive) {
+                    store.applyBulk(to: bulkSelection) { BulkAction.trashing($0) }
+                    bulkSelection.removeAll()
+                }
+                .font(.caption)
+
+                Button("Clear") { bulkSelection.removeAll() }
+                    .font(.caption)
+            }
+
+            if showingBulkTagField {
+                HStack(spacing: 6) {
+                    TextField("Tag name", text: $bulkTagText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                        .onSubmit(applyBulkTag)
+                    Button("Add", action: applyBulkTag)
+                        .font(.caption)
+                        .disabled(bulkTagText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(AppThemeConstants.accent.opacity(0.10))
+    }
+
+    private func applyBulkTag() {
+        let tag = bulkTagText
+        guard !tag.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        store.applyBulk(to: bulkSelection) { BulkAction.addingTag(tag, to: $0) }
+        bulkTagText = ""
+        showingBulkTagField = false
+        bulkSelection.removeAll()
+    }
+
+    private var documentList: some View {
         List(selection: $selectedItem) {
             ForEach(filteredDocs) { doc in
                 if renamingDocID == doc.id {
@@ -234,6 +376,34 @@ struct DocumentListPane: View {
 
     @ViewBuilder
     private func docContextMenu(for doc: WritingDocument) -> some View {
+        Button(bulkSelection.contains(doc.id) ? "Deselect" : "Select for bulk action") {
+            if bulkSelection.contains(doc.id) {
+                bulkSelection.remove(doc.id)
+            } else {
+                bulkSelection.insert(doc.id)
+            }
+        }
+
+        if !store.documentTypes.isEmpty {
+            Menu("Set Type") {
+                ForEach(DocumentType.ordered(store.documentTypes)) { type in
+                    Button(type.name) { store.applyType(type, to: doc.id) }
+                }
+            }
+        }
+
+        Button(doc.isOrganised ? "Move to Inbox" : "Mark Organised") {
+            if doc.isOrganised {
+                var updated = doc
+                updated.isOrganised = false
+                store.updateDocument(updated)
+            } else {
+                store.markOrganised(id: doc.id)
+            }
+        }
+
+        Divider()
+
         Button {
             store.togglePin(id: doc.id)
         } label: {

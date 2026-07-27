@@ -18,6 +18,7 @@ final class DocumentStore {
     static let shared = DocumentStore()
     private init() {
         Task { await loadFromDiskAsync() }
+        loadOrganisation()
     }
 
     private let logger = Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
@@ -26,6 +27,12 @@ final class DocumentStore {
 
     // B7: Removed didSet index rebuild — call rebuildIndexMap() explicitly after bulk operations
     var documents: [WritingDocument] = []
+    // Extension-visible: +Organisation
+    /// Saved filters shown in the sidebar.
+    var savedViews: [SavedView] = []
+    // Extension-visible: +Organisation
+    /// Type definitions available to documents.
+    var documentTypes: [DocumentType] = []
 
     var selectedDocumentID: UUID?
 
@@ -48,8 +55,9 @@ final class DocumentStore {
         _documentIndexMap = map
     }
 
+    // Extension-visible: +Organisation
     /// Returns the array index for a document by UUID in O(1).
-    private func documentIndex(for id: UUID) -> Int? {
+    func documentIndex(for id: UUID) -> Int? {
         if let idx = _documentIndexMap[id], idx < documents.count, documents[idx].id == id {
             return idx
         }
