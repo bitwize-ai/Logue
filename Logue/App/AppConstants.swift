@@ -29,6 +29,8 @@ enum AppConstants {
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
+        /// Security-scoped bookmark for the plain-markdown mirror folder.
+        static let mirrorFolderBookmark = "mirrorFolderBookmark"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"
@@ -149,6 +151,10 @@ enum AppConstants {
     // MARK: - Centralized Delays
 
     enum Delays {
+        /// Coalesces a burst of filesystem events from another editor saving, so one
+        /// external save triggers one mirror scan rather than several.
+        static let mirrorScanDebounce: Duration = .milliseconds(400)
+
         /// -- UI Debounce --
         /// Search field input debounce (document list, meeting list, overview, sidebar)
         static let searchDebounce: Duration = .milliseconds(300)

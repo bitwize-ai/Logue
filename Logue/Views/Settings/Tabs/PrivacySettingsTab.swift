@@ -5,6 +5,7 @@ import SwiftUI
 /// location with "Reveal in Finder", and the plain-English permission summary
 /// (with a hand-off to System Settings when the user wants to revoke).
 struct PrivacySettingsTab: View {
+    @State private var mirror = MarkdownMirror.shared
     @State private var dataDirectory: URL = Self.dataDirectory()
     @State private var showEraseConfirm = false
 
@@ -15,12 +16,85 @@ struct PrivacySettingsTab: View {
                 Divider()
                 dataLocationSection
                 Divider()
+                mirrorSection
+                Divider()
                 permissionsSection
                 Divider()
                 eraseSection
             }
             .padding(20)
         }
+    }
+
+    // MARK: - Markdown Mirror
+
+    /// Opt-in plain-markdown mirror.
+    ///
+    /// Presented under Privacy on purpose: it writes document text **unencrypted** to
+    /// a folder the user picks, which is exactly the trade-off they need to understand
+    /// before enabling it.
+    private var mirrorSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Markdown Mirror")
+                .font(.headline)
+
+            Text("Keep a plain .md copy of every document in a folder you choose, so you can "
+                + "track them in git or edit them in another app. Logue's own copy stays "
+                + "encrypted — the mirror is an additional, unencrypted copy.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let folder = mirror.folderURL {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                    Text(folder.lastPathComponent)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button("Reveal") {
+                        NSWorkspace.shared.activateFileViewerSelecting([folder])
+                    }
+                    .controlSize(.small)
+                    Button("Turn Off") { mirror.disable() }
+                        .controlSize(.small)
+                }
+
+                if !mirror.conflicts.isEmpty {
+                    Label(
+                        "\(mirror.conflicts.count) document(s) have conflicting edits. "
+                            + "Open them to resolve.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+            } else {
+                Button("Choose Folder…", action: chooseMirrorFolder)
+                    .controlSize(.small)
+
+                Text("Files written here are not encrypted. Pick a location you are "
+                    + "comfortable leaving readable — and note that syncing it to a cloud "
+                    + "folder puts unencrypted document text on that service.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func chooseMirrorFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose where Logue should write plain markdown copies."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        mirror.enable(folder: url)
     }
 
     // MARK: - Encryption

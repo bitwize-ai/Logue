@@ -466,6 +466,9 @@ final class DocumentStore {
                     .error("Failed to save document \(id): \(error.localizedDescription, privacy: .public)")
             }
         }
+        // Keep the plain-markdown mirror in step. No-ops when mirroring is off.
+        MarkdownMirror.shared.sync(doc)
+
         // Best-effort semantic re-index — hash-checked, so unchanged bodies are skipped.
         Task.detached(priority: .utility) {
             await SemanticIndex.shared.indexDocument(doc)
