@@ -84,10 +84,11 @@ targets:
         SUPublicEDKey: "ZjxgaWvBg01MnO4Nsjb/19mzMPmTR4H5Bp3LMV8CJRs="
         SUEnableAutomaticChecks: true
         SUAutomaticallyUpdate: false
-        SUEnableInstallerLauncherService: true
     # Entitlements are static files (not generated here) so each build config can
-    # sign with its own: Debug → Logue.entitlements (sandbox off, dev convenience),
-    # Release → Logue.release.entitlements (sandboxed). Wired in settings.configs below.
+    # sign with its own: Debug → Logue.entitlements, Release → Logue.release.entitlements.
+    # Neither is sandboxed — Logue needs to be an Accessibility API client for its
+    # cross-app features, which the sandbox forbids (see the comment at the top of
+    # Logue.release.entitlements). Wired in settings.configs below.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.bitwize.logue
@@ -100,9 +101,9 @@ targets:
         # Debug uses the non-sandboxed dev entitlements for development convenience.
         Debug:
           CODE_SIGN_ENTITLEMENTS: Logue/Resources/Logue.entitlements
-        # Release builds are sandboxed, so a local `xcodebuild archive -configuration
-        # Release` matches what the CI release workflow ships instead of silently
-        # producing an unsandboxed app.
+        # Release keeps its own entitlements file so a local `xcodebuild archive
+        # -configuration Release` signs with exactly what the CI release workflow
+        # ships (Release omits the iCloud entitlements Debug carries).
         Release:
           CODE_SIGN_ENTITLEMENTS: Logue/Resources/Logue.release.entitlements
     dependencies:

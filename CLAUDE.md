@@ -75,8 +75,10 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 - **Sparkle EdDSA private key** lives only in the GitHub Actions secret `SPARKLE_PRIVATE_KEY` — never store it in the repo. The public key (`SUPublicEDKey`) is embedded in `Info.plist` via `project.yml`. Updates are served entirely from GitHub (appcast in-repo, assets on GitHub Releases) — there is no backend.
 - **Use typed constants for notification userInfo keys** — never string literals like `"success"` in `userInfo` dictionaries.
 - **Entitlements:**
-  - Dev builds: sandbox OFF for development convenience (documented in comments)
-  - Release builds: sandbox ON via `Logue.release.entitlements`
+  - **App Sandbox is OFF in both Debug and Release — do not re-enable it.** A sandboxed process cannot be an Accessibility API client, so macOS never lists the app under Privacy & Security → Accessibility and the user cannot add it manually. That silently kills every `Logue/CrossApp` feature (⌘⌃I inline assistant, global hotkeys, Command Center, text replacement). This shipped in 1.0.0 as issue #22. Guarded by `LogueTests/ReleaseEntitlementsTests.swift` and a CI step.
+  - Distribution is Developer ID + notarization via GitHub Releases and Sparkle — not the Mac App Store — so the sandbox is not required. **Hardened Runtime stays ON.**
+  - Sparkle needs no XPC services or `SUEnableInstallerLauncherService` when unsandboxed; those exist solely to work around the sandbox.
+  - Debug (`Logue.entitlements`) and Release (`Logue.release.entitlements`) still differ: Debug carries the iCloud entitlements, Release does not.
   - Every security exception (`allow-jit`, `disable-library-validation`, etc.) must have a comment explaining why it's needed
 
 ### Concurrency and Thread Safety
@@ -165,4 +167,5 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 | `Engine/LLMClient.swift` | External LLM provider clients (OpenAI/Anthropic-compatible) — optional, user-configured |
 | `Services/RecordingSessionManager.swift` | Recording lifecycle (`RecordingState` enum) |
 | `Services/EncryptionManager.swift` | AES-256-GCM encryption at rest (7-day migration window) |
+| `Services/SandboxContainerMigrator.swift` | One-time move of user data out of the pre-1.0.1 sandbox container (runs in `LogueApp.init()`) |
 | `App/AppConstants.swift` | All constants: `LLMDefaults`, `Audio`, `Diarization`, `Delays` |

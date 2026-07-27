@@ -2,10 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- App Sandbox is intentionally OFF.
+
+	     Logue is a cross-app writing assistant: ⌘⌃I reads the selected text out of
+	     whatever app is frontmost, inserts/replaces text at the cursor, and listens
+	     for a global hotkey. All of that requires being an Accessibility API *client*
+	     (AXUIElementCopyAttributeValue against another process, synthetic CGEvents,
+	     NSEvent global monitors).
+
+	     macOS does not allow a sandboxed process to be an Accessibility client. There
+	     is no entitlement that grants it. A sandboxed app calling
+	     AXIsProcessTrustedWithOptions(prompt: true) gets `false` back, no prompt is
+	     shown, and — critically — TCC never creates an entry, so the app never appears
+	     in System Settings → Privacy & Security → Accessibility and the user cannot
+	     even add it manually. That was https://github.com/bitwize-ai/Logue/issues/22.
+
+	     Logue is distributed with Developer ID + notarization via GitHub Releases and
+	     Sparkle, not the Mac App Store, so the sandbox is not required. Hardened
+	     Runtime stays ON (ENABLE_HARDENED_RUNTIME in project.yml) and every hardened
+	     runtime exception below is justified individually.
+
+	     If the sandbox is ever re-enabled, the entire Logue/CrossApp feature set stops
+	     working, and nothing fails at build time to tell you. Two guards catch it: the
+	     "Verify app sandbox stays disabled" step in .github/workflows/ci.yml, which is
+	     what actually gates a PR because CI does not run tests, and
+	     LogueTests/ReleaseEntitlementsTests.swift for local test runs. -->
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.files.user-selected.read-write</key>
-	<true/>
+	<false/>
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
 	<!-- Required by MLX framework for Metal compute shader JIT compilation -->
@@ -17,6 +40,10 @@
 	<!-- Required to load MLX and FluidAudio dynamic frameworks -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
+	<!-- The entitlements below are sandbox-only and inert while the sandbox is off.
+	     They are kept so the declared capability set stays a truthful description of
+	     what the app touches, and so re-enabling the sandbox does not silently drop
+	     microphone / calendar / contacts / network access. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
 	<key>com.apple.security.personal-information.calendars</key>
@@ -26,13 +53,5 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- Required for Sparkle auto-update in sandboxed app: allows Mach IPC with the
-	     out-of-sandbox Installer and StatusInfo helpers launched by Sparkle's XPC services.
-	     See: https://sparkle-project.org/documentation/sandboxing/ -->
-	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
-	<array>
-		<string>com.bitwize.logue-spki</string>
-		<string>com.bitwize.logue-spks</string>
-	</array>
 </dict>
 </plist>

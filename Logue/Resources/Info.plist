@@ -63,8 +63,6 @@
 	<false/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/bitwize-ai/Logue/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>

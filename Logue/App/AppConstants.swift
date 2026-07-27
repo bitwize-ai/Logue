@@ -8,6 +8,10 @@ enum AppConstants {
         static let activeModelID = "activeModelID"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
 
+        /// Set once `SandboxContainerMigrator` has moved data out of the legacy
+        /// (pre-1.0.1, sandboxed) container. See that type for why the sandbox went away.
+        static let sandboxContainerMigrationCompleted = "sandboxContainerMigrationCompleted"
+
         static let writingGoalMode = "writingGoalMode"
         static let actionModelMap = "ActionModelMap"
         static let documentViewMode = "documentViewMode"

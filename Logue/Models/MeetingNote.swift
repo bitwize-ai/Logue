@@ -141,7 +141,13 @@ struct MeetingNote: Identifiable, Codable {
         chatMessages = try container.decodeIfPresent([MeetingChatMessage].self, forKey: .chatMessages) ?? []
         isTrashed = try container.decodeIfPresent(Bool.self, forKey: .isTrashed) ?? false
         trashedAt = try container.decodeIfPresent(Date.self, forKey: .trashedAt)
-        audioFileURL = try container.decodeIfPresent(URL.self, forKey: .audioFileURL)
+        // Recordings made by a sandboxed build (≤ 1.0.0) persisted an absolute path
+        // inside the app container. SandboxContainerMigrator moves the file out to the
+        // real home directory but cannot rewrite paths already baked into stored JSON,
+        // so re-point it here — otherwise the player renders and plays nothing.
+        audioFileURL = try SandboxContainerMigrator.resolvingLegacyContainerPath(
+            container.decodeIfPresent(URL.self, forKey: .audioFileURL)
+        )
     }
 
     // MARK: - Computed

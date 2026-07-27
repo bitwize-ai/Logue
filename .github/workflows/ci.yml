@@ -52,6 +52,25 @@ jobs:
       - name: Run SwiftLint
         run: swiftlint lint --strict Logue/
 
+      # Logue must not be sandboxed: a sandboxed process cannot be an Accessibility
+      # API client, so macOS never lists it under Privacy & Security → Accessibility
+      # and every Logue/CrossApp feature (⌘⌃I, global hotkeys, Command Center, text
+      # replacement) silently stops working. That shipped in 1.0.0 as issue #22.
+      # Nothing fails at build time if this regresses, so it is checked explicitly.
+      - name: Verify app sandbox stays disabled
+        run: |
+          rc=0
+          for plist in Logue/Resources/Logue.entitlements Logue/Resources/Logue.release.entitlements; do
+            value=$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.app-sandbox" "$plist" 2>/dev/null || echo "missing")
+            if [ "$value" != "false" ]; then
+              echo "::error file=$plist::app-sandbox is '$value', expected 'false' (see issue #22)"
+              rc=1
+            else
+              echo "OK: $plist has app-sandbox = false"
+            fi
+          done
+          exit $rc
+
   build:
     name: Build
     runs-on: macos-15
