@@ -29,8 +29,6 @@ enum AppConstants {
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
-        /// Security-scoped bookmark for the plain-markdown mirror folder.
-        static let mirrorFolderBookmark = "mirrorFolderBookmark"
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
         static let groupByDate = "groupByDate"
@@ -155,13 +153,10 @@ enum AppConstants {
     enum Delays {
         /// Coalesces a burst of filesystem events from another editor saving, so one
         /// external save triggers one folder scan rather than several.
-        static let mirrorScanDebounce: Duration = .milliseconds(400)
-
-        /// The same window, for the GCD-based folder watcher.
         ///
-        /// A separate constant because `DispatchQueue.asyncAfter` takes seconds and
-        /// `FSEventStream` is a C API — neither speaks `Duration`. Kept beside its twin so
-        /// the two cannot drift apart unnoticed.
+        /// A `TimeInterval` rather than a `Duration` because its only caller is
+        /// `DispatchQueue.asyncAfter`, sitting between two C APIs — `FSEventStream` and GCD —
+        /// and neither speaks `Duration`.
         static let folderScanDebounceSeconds: TimeInterval = 0.4
 
         /// -- UI Debounce --

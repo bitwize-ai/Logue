@@ -60,8 +60,6 @@ struct DocumentWorkspaceView: View {
     @FocusState private var isTagFieldFocused: Bool
     // Extension-visible: +Toolbar
     @State var showSaveAsTemplate = false
-    @State private var mirror = MarkdownMirror.shared
-    @State private var showConflictSheet = false
 
     // Extension-visible: +Toolbar
     @State var focusState = FocusModeState.shared
@@ -78,10 +76,6 @@ struct DocumentWorkspaceView: View {
                         SourceMeetingChip(meeting: sourceMeeting) {
                             meetingStore.selectedMeetingID = sourceMeeting.id
                         }
-                    }
-
-                    if !focusState.isActive, let conflict = mirror.conflict(for: doc.id) {
-                        MirrorConflictBanner(conflict: conflict) { showConflictSheet = true }
                     }
 
                     BlockEditorView(
@@ -159,13 +153,6 @@ struct DocumentWorkspaceView: View {
                 spellDebounceTask?.cancel()
                 titleGenerationTask?.cancel()
                 store.setChatMessages(chatMessages, for: doc.id)
-            }
-            .sheet(isPresented: $showConflictSheet) {
-                if let conflict = mirror.conflict(for: doc.id) {
-                    MirrorConflictResolutionSheet(conflict: conflict) { resolution in
-                        mirror.resolve(conflict, using: resolution)
-                    }
-                }
             }
             .sheet(isPresented: $showSaveAsTemplate) {
                 SaveAsTemplateSheet(document: doc)
