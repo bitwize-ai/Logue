@@ -40,6 +40,15 @@ final class MarkdownMirror {
     private var watchedDescriptor: CInt = -1
     private var pendingScan: Task<Void, Never>?
 
+    /// Directory paths that could not be mapped to a space, remembered for this
+    /// session.
+    ///
+    /// `SpaceStore.createSpace` de-duplicates sibling names, so a folder whose name
+    /// clashes yields a space with a different name — which then will not match the
+    /// folder. Without this guard the next scan would treat it as missing again and
+    /// create another space, and so on indefinitely.
+    private var unmappableDirectories: Set<String> = []
+
     private init() {
         restoreFolderBookmark()
         loadSyncState()
@@ -50,6 +59,7 @@ final class MarkdownMirror {
     /// Points the mirror at a folder and performs an initial sync.
     func enable(folder: URL) {
         folderURL = folder
+        unmappableDirectories.removeAll()
         loadSyncState()
         startWatching()
         syncAll()
@@ -60,16 +70,124 @@ final class MarkdownMirror {
         stopWatching()
         folderURL = nil
         conflicts.removeAll()
+        unmappableDirectories.removeAll()
     }
 
     // MARK: - Syncing
 
-    /// Syncs every document. Used on enable and after external changes.
+    /// Syncs every document, after taking in any structure created on disk.
+    ///
+    /// Directories are imported as spaces first, so a document found inside a
+    /// hand-made folder can be filed into the space that folder now represents.
     func syncAll() {
         guard isEnabled else { return }
+        importDirectoriesAsSpaces()
+        adoptExternalFileMoves()
+
         for document in DocumentStore.shared.documents where !document.isTrashed {
             sync(document)
         }
+    }
+
+    // MARK: - Importing structure from disk
+
+    /// Creates a space for every directory that does not have one yet.
+    ///
+    /// Shallowest first, so a parent exists before its children are considered.
+    private func importDirectoriesAsSpaces() {
+        guard let folder = folderURL else { return }
+
+        for components in directoryPaths(in: folder).sorted(by: { $0.count < $1.count }) {
+            let key = components.joined(separator: "/")
+            guard !unmappableDirectories.contains(key) else { continue }
+
+            let missing = MirrorLayout.missingComponents(
+                forDirectoryComponents: components, in: SpaceStore.shared.spaces
+            )
+            guard !missing.isEmpty else { continue }
+
+            // Everything above the missing tail already resolves.
+            let existingDepth = components.count - missing.count
+            var parentID = MirrorLayout.spaceID(
+                forDirectoryComponents: Array(components.prefix(existingDepth)),
+                in: SpaceStore.shared.spaces
+            )
+
+            for name in missing {
+                guard let created = SpaceStore.shared.createSpace(name: name, parentID: parentID)
+                else { break }
+                parentID = created.id
+                logger.info("Created a space for a folder found on disk")
+            }
+
+            // If the folder still does not resolve, the created space was renamed to
+            // avoid a sibling clash. Stop trying rather than creating another space on
+            // every scan.
+            if MirrorLayout.spaceID(
+                forDirectoryComponents: components, in: SpaceStore.shared.spaces
+            ) == nil {
+                unmappableDirectories.insert(key)
+                logger.warning("A folder could not be mapped to a space; it will be ignored")
+            }
+        }
+    }
+
+    /// Refiles a document whose mirror file was moved into a different folder.
+    ///
+    /// The file's location is authoritative here: moving a file between folders is an
+    /// unambiguous instruction, unlike an edit to its contents.
+    private func adoptExternalFileMoves() {
+        guard let folder = folderURL else { return }
+
+        for url in markdownFiles(in: folder) {
+            guard let contents = readFile(at: url),
+                  let id = MirrorFile.identifier(in: contents),
+                  let document = DocumentStore.shared.documents.first(where: { $0.id == id })
+            else { continue }
+
+            let components = directoryComponents(of: url, under: folder)
+            let spaceID = MirrorLayout.spaceID(
+                forDirectoryComponents: components, in: SpaceStore.shared.spaces
+            )
+            guard spaceID != document.spaceID else { continue }
+
+            var updated = document
+            updated.spaceID = spaceID
+            DocumentStore.shared.updateDocument(updated)
+            logger.info("Refiled a document after its mirror file moved")
+        }
+    }
+
+    /// Relative directory components of a file under the mirror root.
+    private func directoryComponents(of file: URL, under folder: URL) -> [String] {
+        let rootParts = folder.standardizedFileURL.pathComponents
+        let fileParts = file.standardizedFileURL.deletingLastPathComponent().pathComponents
+        guard fileParts.count > rootParts.count else { return [] }
+        return Array(fileParts.dropFirst(rootParts.count))
+    }
+
+    /// Every directory under the mirror root, as relative component lists.
+    private func directoryPaths(in folder: URL) -> [[String]] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        )
+        else { return [] }
+
+        var paths: [[String]] = []
+        for case let url as URL in enumerator {
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory
+            guard isDirectory == true else { continue }
+
+            let rootParts = folder.standardizedFileURL.pathComponents
+            let parts = url.standardizedFileURL.pathComponents
+            guard parts.count > rootParts.count else { continue }
+            let components = Array(parts.dropFirst(rootParts.count))
+            guard components.count <= MirrorLayout.maxDepth else { continue }
+            paths.append(components)
+        }
+        return paths
     }
 
     /// Syncs one document, recording a conflict rather than choosing a side.
@@ -151,33 +269,70 @@ final class MarkdownMirror {
 
     // MARK: - File I/O
 
+    /// Where a document's mirror file belongs, following its space hierarchy.
+    ///
+    /// A document already on disk keeps its filename but is **moved** when its space
+    /// changes, so the folder tree tracks the sidebar instead of accumulating copies.
     private func fileURL(for document: WritingDocument, in folder: URL) -> URL {
-        let taken = Set(
-            (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        let directory = folder.appendingPathComponent(
+            MirrorLayout.directoryComponents(
+                forSpace: document.spaceID, in: SpaceStore.shared.spaces
+            ).joined(separator: "/")
         )
-        // A file already written for this document keeps its name, so renaming a
-        // document does not orphan its mirror.
-        if let existing = existingFileName(for: document.id, in: folder) {
-            return folder.appendingPathComponent(existing)
+
+        if let existing = existingFile(for: document.id, in: folder) {
+            let wanted = directory.appendingPathComponent(existing.lastPathComponent)
+            if existing.standardizedFileURL != wanted.standardizedFileURL {
+                move(existing, to: wanted)
+            }
+            return wanted
         }
-        return folder.appendingPathComponent(
+
+        let taken = Set(
+            (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        )
+        return directory.appendingPathComponent(
             MirrorFilename.filename(for: document, avoiding: taken)
         )
     }
 
-    /// Finds the file already claiming this document, by reading identifiers.
-    private func existingFileName(for id: UUID, in folder: URL) -> String? {
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path)
-        else { return nil }
+    /// Moves a mirror file when its document changes space, creating the destination
+    /// directory. A failure leaves the original in place rather than losing it.
+    private func move(_ source: URL, to destination: URL) {
+        do {
+            try FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try FileManager.default.moveItem(at: source, to: destination)
+        } catch {
+            logger.error("Could not move a mirror file: \(error.localizedDescription, privacy: .public)")
+        }
+    }
 
-        for name in names where name.hasSuffix(".\(MirrorFilename.fileExtension)") {
-            let url = folder.appendingPathComponent(name)
+    /// Finds the file already claiming this document anywhere under the mirror root,
+    /// by reading identifiers — so a file moved by hand is still recognised.
+    private func existingFile(for id: UUID, in folder: URL) -> URL? {
+        for url in markdownFiles(in: folder) {
             guard let contents = readFile(at: url) else { continue }
             if MirrorFile.identifier(in: contents) == id {
-                return name
+                return url
             }
         }
         return nil
+    }
+
+    /// Every `.md` file under the mirror root, skipping hidden directories so a `.git`
+    /// folder is never walked.
+    private func markdownFiles(in folder: URL) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        )
+        else { return [] }
+
+        return enumerator.compactMap { $0 as? URL }
+            .filter { $0.pathExtension == MirrorFilename.fileExtension }
     }
 
     private func readFile(at url: URL) -> String? {

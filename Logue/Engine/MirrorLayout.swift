@@ -1,0 +1,158 @@
+import Foundation
+
+/// Maps the space hierarchy onto directories, in both directions.
+///
+/// A space becomes a directory and a sub-space a sub-directory, so the folder on disk
+/// reads the way the sidebar does. Space names are user-controlled and become real
+/// directory names, so every component is sanitised — the same path-safety boundary
+/// `MirrorFilename` guards for files.
+enum MirrorLayout {
+    /// Maximum nesting mirrored.
+    ///
+    /// Bounds both a pathological hierarchy and a corrupted parent chain, and keeps
+    /// the resulting path well inside filesystem length limits.
+    static let maxDepth = 12
+
+    private static let fallbackComponent = "Untitled Space"
+
+    // MARK: - Space → directories
+
+    /// Directory names for a space, outermost first.
+    ///
+    /// Returns empty for `nil` or an unknown space, which places the document at the
+    /// mirror root rather than inventing a directory.
+    static func directoryComponents(forSpace spaceID: UUID?, in spaces: [Space]) -> [String] {
+        guard let spaceID else { return [] }
+
+        let byID = Dictionary(spaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        guard byID[spaceID] != nil else { return [] }
+
+        // Walk up to the root, guarding against a cycle in the parent chain: a
+        // corrupted hierarchy must not hang the app.
+        var chain: [Space] = []
+        var visited: Set<UUID> = []
+        var current: UUID? = spaceID
+
+        while let id = current, chain.count < maxDepth, visited.insert(id).inserted {
+            guard let space = byID[id] else { break }
+            chain.append(space)
+            current = space.parentID
+        }
+
+        return chain.reversed().map { component(for: $0, in: spaces) }
+    }
+
+    /// A document's path relative to the mirror root.
+    static func relativePath(
+        for document: WritingDocument,
+        in spaces: [Space],
+        avoiding taken: Set<String>
+    ) -> String {
+        let directories = directoryComponents(forSpace: document.spaceID, in: spaces)
+        let filename = MirrorFilename.filename(for: document, avoiding: taken)
+        return (directories + [filename]).joined(separator: "/")
+    }
+
+    // MARK: - Directories → space
+
+    /// The space a directory path refers to, or `nil` when it does not fully resolve.
+    ///
+    /// Resolves strictly: a path whose last component is unknown yields `nil` rather
+    /// than the nearest ancestor, so a caller never files a document into the wrong
+    /// parent.
+    static func spaceID(forDirectoryComponents components: [String], in spaces: [Space]) -> UUID? {
+        guard !components.isEmpty else { return nil }
+
+        var parentID: UUID?
+        for component in components {
+            guard let match = child(named: component, of: parentID, in: spaces) else { return nil }
+            parentID = match.id
+        }
+        return parentID
+    }
+
+    /// The trailing components that do not exist yet, in creation order.
+    ///
+    /// Lets a caller create only what is missing, in the right order, when importing a
+    /// directory tree someone made by hand.
+    static func missingComponents(
+        forDirectoryComponents components: [String],
+        in spaces: [Space]
+    ) -> [String] {
+        var parentID: UUID?
+        var missing: [String] = []
+
+        for component in components {
+            if missing.isEmpty, let match = child(named: component, of: parentID, in: spaces) {
+                parentID = match.id
+            } else {
+                // Once one component is missing, everything below it is too.
+                missing.append(component)
+            }
+        }
+        return missing
+    }
+
+    // MARK: - Private
+
+    /// A sanitised, sibling-unique directory name for a space.
+    ///
+    /// Two siblings sharing a name would otherwise map to one directory and silently
+    /// merge, so the later one is disambiguated by a stable prefix of its identifier.
+    private static func component(for space: Space, in spaces: [Space]) -> String {
+        let base = sanitised(space.name)
+
+        // Ordered by creation, then identifier: two spaces created in the same instant
+        // still order deterministically, so the disambiguated name is stable.
+        let clashesEarlier = spaces.contains { other in
+            other.id != space.id
+                && other.parentID == space.parentID
+                && sanitised(other.name).caseInsensitiveCompare(base) == .orderedSame
+                && sortsBefore(other, space)
+        }
+
+        guard clashesEarlier else { return base }
+        return "\(base) (\(space.id.uuidString.prefix(8)))"
+    }
+
+    /// Deterministic ordering for two spaces, independent of timestamp resolution.
+    private static func sortsBefore(_ lhs: Space, _ rhs: Space) -> Bool {
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt < rhs.createdAt
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    private static func child(named name: String, of parentID: UUID?, in spaces: [Space]) -> Space? {
+        spaces.first {
+            $0.parentID == parentID
+                && component(for: $0, in: spaces).caseInsensitiveCompare(name) == .orderedSame
+        }
+    }
+
+    /// Strips anything unsafe or confusing from a directory name.
+    private static func sanitised(_ name: String) -> String {
+        var cleaned = ""
+        for character in name {
+            if character.isNewline {
+                continue
+            }
+            if character.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) {
+                continue
+            }
+            if "/:\\?%*|\"<>".contains(character) {
+                continue
+            }
+            cleaned.append(character)
+        }
+
+        cleaned = cleaned.trimmingCharacters(in: .whitespaces)
+        while cleaned.hasPrefix(".") || cleaned.hasPrefix("-") {
+            cleaned.removeFirst()
+        }
+        cleaned = cleaned.trimmingCharacters(in: .whitespaces)
+
+        guard !cleaned.isEmpty else { return fallbackComponent }
+        return String(cleaned.prefix(60))
+    }
+}
