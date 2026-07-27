@@ -90,6 +90,7 @@
 		2588490FBA16F79B755839A9 /* SuggestionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCEBD05BEF5831C92DDDE40E /* SuggestionParser.swift */; };
 		2748731D0D5427C49E8BDC34 /* FocusModeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BA5DBEE6DA4F70ABEEE59D /* FocusModeState.swift */; };
 		276FE55FD853C4367F2AE751 /* HorizontalInspectorTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCFF721CED209FFEDE4798 /* HorizontalInspectorTabBar.swift */; };
+		27F097B829A01B3B49CDA042 /* LinkRenamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347E49226D27CD7AF6B329EE /* LinkRenamer.swift */; };
 		281A36053B04F234CDD04422 /* ScheduledTaskManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B951849FD3761363C96A27 /* ScheduledTaskManager.swift */; };
 		2864F151E0AC25AAE963659E /* HelpMenuActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387F757ED0841F2E4042DF7A /* HelpMenuActions.swift */; };
 		289CC815E02A03243FA7696B /* PromptRegistry+InlineRewrite.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BBB9D94724076C53D2F8EC /* PromptRegistry+InlineRewrite.swift */; };
@@ -228,6 +229,7 @@
 		70E9CE40EE4415B64DB71300 /* EncryptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D382DBF4C28CE786D415CDD1 /* EncryptionManager.swift */; };
 		70F7CF53A7FC5D1C23992FD4 /* DocumentSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6512B1A6D14BADBBF6AE6678 /* DocumentSidebarView.swift */; };
 		715CB60F9A14CAE9040AF1D0 /* LLMResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F78B9E200B32B9974F32CF7D /* LLMResponseParser.swift */; };
+		7163D13B1807C8308D68A0E9 /* LinkRenameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BABAA98AD686B90D04DEA359 /* LinkRenameTests.swift */; };
 		71C8344B4B6B480607EB46A4 /* InlineTitleField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C5AD07946A49E9608D5CED3 /* InlineTitleField.swift */; };
 		72B8500BC056566157817309 /* WikiLinkParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBB4EB8CCDEA196AA17D1FA /* WikiLinkParser.swift */; };
 		741C509F3A43CBF008D9C4BC /* ModelManager+Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9230215EEC7592F9378CA66C /* ModelManager+Discovery.swift */; };
@@ -550,6 +552,7 @@
 		3224E9FBD3E9D86A60DAA79C /* LLMEngineStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMEngineStatus.swift; sourceTree = "<group>"; };
 		344DDE65E3765B845016619D /* ExternalModelsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalModelsSection.swift; sourceTree = "<group>"; };
 		3474D653C2A7624A299D8F8F /* MeetingMemoryIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingMemoryIndex.swift; sourceTree = "<group>"; };
+		347E49226D27CD7AF6B329EE /* LinkRenamer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkRenamer.swift; sourceTree = "<group>"; };
 		34E69663E0AE733F0F38C648 /* MeetingStore+AI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetingStore+AI.swift"; sourceTree = "<group>"; };
 		3505A705EE4C5C9F81001E29 /* WritingScore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WritingScore.swift; sourceTree = "<group>"; };
 		352FD902910D2932D068F644 /* DocumentStatsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentStatsCard.swift; sourceTree = "<group>"; };
@@ -786,6 +789,7 @@
 		B80061FBEC30F04EF2176F88 /* ChatInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatInputField.swift; sourceTree = "<group>"; };
 		B8D03A33B16F78827FBD8EDC /* ModelsSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsSettingsTab.swift; sourceTree = "<group>"; };
 		B99AAE92FD9632DD102E52ED /* DocumentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTools.swift; sourceTree = "<group>"; };
+		BABAA98AD686B90D04DEA359 /* LinkRenameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkRenameTests.swift; sourceTree = "<group>"; };
 		BB2FD3E810A44000DB53711D /* ModelConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelConfiguration.swift; sourceTree = "<group>"; };
 		BB78AC5932FC825A08DD0EBB /* PromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptBuilder.swift; sourceTree = "<group>"; };
 		BBB25376AFA88E0F16400AA7 /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
@@ -987,6 +991,7 @@
 				9226B7B10683E42ABEB71810 /* HighlightMarkTests.swift */,
 				7F48D46D3D40534008356F5D /* LinkIndexBuildTests.swift */,
 				F3BC206B7D135B2017B99C1D /* LinkIndexTests.swift */,
+				BABAA98AD686B90D04DEA359 /* LinkRenameTests.swift */,
 				EAAA4BF89D7A99D017BB1C8E /* PromptBuilderTests.swift */,
 				B37427E70D5B05A2E6C5B253 /* QuickOpenTests.swift */,
 				556A511293280EF4427934FA /* RelationshipFieldTests.swift */,
@@ -1272,6 +1277,7 @@
 				39AC4C78B6DA5F62A04B49C3 /* InlineAttributeVisitor.swift */,
 				358D99D88D3FB7C39EE0C7E7 /* InlineRewriteEngine.swift */,
 				D6829731778689289CE48545 /* InlineSpellEngine.swift */,
+				347E49226D27CD7AF6B329EE /* LinkRenamer.swift */,
 				EA90D7698CBC2EB6CBF52AFB /* LLMClient.swift */,
 				5DB8083A539C38A17D6FF132 /* LLMEngine.swift */,
 				ADFE072C32F14B59D0406571 /* LLMEngine+Convenience.swift */,
@@ -1922,6 +1928,7 @@
 				D480184376B6F26A9755133A /* LLMTestHarness.swift in Sources */,
 				BDA8BA0D74D9DDA236A9B348 /* LinkIndexBuildTests.swift in Sources */,
 				5772E1F94B165EA280902E96 /* LinkIndexTests.swift in Sources */,
+				7163D13B1807C8308D68A0E9 /* LinkRenameTests.swift in Sources */,
 				7685B4E18D7F1A25AE0F6738 /* MeetingLLMTests.swift in Sources */,
 				957DBF3D45C9A998D610B8B2 /* PromptBuilderTests.swift in Sources */,
 				4371B1C1354F8BF50EFECCBB /* QuickOpenTests.swift in Sources */,
@@ -2125,6 +2132,7 @@
 				E607ACE5890354F65F74C864 /* LLMEngineStatus.swift in Sources */,
 				715CB60F9A14CAE9040AF1D0 /* LLMResponseParser.swift in Sources */,
 				D64E8AD8A0E3FFCFD9083041 /* LinkIndex.swift in Sources */,
+				27F097B829A01B3B49CDA042 /* LinkRenamer.swift in Sources */,
 				87709D216B8F45FB46E04BF6 /* LinksPanelView.swift in Sources */,
 				70A6886DC7BEF1D8F93BCC40 /* LocationTool.swift in Sources */,
 				F16FF72771443A303172EF56 /* LogoBrandView.swift in Sources */,

@@ -228,9 +228,41 @@ final class DocumentStore {
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let otherTitles = activeDocuments.filter { $0.id != id }.map(\.title)
-        documents[index].title = uniqueTitle(trimmed, among: otherTitles)
+        let oldTitle = documents[index].title
+        let resolved = uniqueTitle(trimmed, among: otherTitles)
+        documents[index].title = resolved
         documents[index].modifiedAt = Date()
         saveDocument(id: id)
+
+        repairInboundLinks(from: oldTitle, to: resolved, renamedID: id)
+    }
+
+    /// Retargets `[[wikilinks]]` and relationship fields that pointed at the old
+    /// title, so a rename does not silently break every inbound reference.
+    ///
+    /// Each affected document is saved individually. A failure part-way through
+    /// therefore leaves earlier documents repaired and later ones stale rather than
+    /// rolling back — the encrypted store has no cross-document transaction. Stale
+    /// links show up as "Unresolved" in the Links panel rather than being lost, so
+    /// partial repair degrades visibly instead of silently.
+    private func repairInboundLinks(from oldTitle: String, to newTitle: String, renamedID: UUID) {
+        guard oldTitle.caseInsensitiveCompare(newTitle) != .orderedSame else { return }
+
+        for document in documents where document.id != renamedID {
+            guard !document.isTrashed,
+                  LinkRenamer.needsRewrite(document: document, from: oldTitle),
+                  let index = documentIndex(for: document.id)
+            else { continue }
+
+            let updated = LinkRenamer.rewriting(document: document, from: oldTitle, to: newTitle)
+            guard updated.body != document.body
+                || updated.relationships != document.relationships
+            else { continue }
+
+            documents[index] = updated
+            documents[index].modifiedAt = Date()
+            saveDocument(id: document.id)
+        }
     }
 
     func togglePin(id: UUID) {
