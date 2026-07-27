@@ -225,6 +225,8 @@ struct DocumentWorkspaceView: View {
             )
         case .links:
             LinksPanelView(documentID: doc.id, documentBody: doc.body)
+        case .properties:
+            PropertiesPanelView(document: doc) { store.updateDocument($0) }
         }
     }
 

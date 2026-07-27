@@ -26,12 +26,45 @@ struct WritingDocument: Identifiable, Codable, Sendable {
         case reviewGrade, reviewReactions, factChecks, piiFindings
         case vocabSuggestions, aiDetectionResult, plagiarismResult, rewriteResult
         case storedWidthMode = "widthMode"
-        case icon, relationships
+        case icon, relationships, properties
     }
 
     /// Optional single-grapheme icon shown in lists and titles.
     /// Validate user input through `DocumentIcon.sanitised` before assigning.
     var icon: String?
+
+    /// Typed metadata keyed by frontmatter name. Optional so documents saved before
+    /// this field existed still decode — Swift's synthesized `Codable` throws
+    /// `keyNotFound` for a missing non-optional key even when it has a default.
+    var properties: [String: PropertyValue]?
+
+    /// Non-nil properties, for reading.
+    var propertyValues: [String: PropertyValue] {
+        properties ?? [:]
+    }
+
+    /// Property keys in a stable sorted order, so the inspector does not reshuffle.
+    var propertyKeys: [String] {
+        propertyValues.keys.sorted()
+    }
+
+    func property(_ key: String) -> PropertyValue? {
+        propertyValues[key]
+    }
+
+    /// Sets or removes a property. The key is sanitised, and a system-reserved or
+    /// unusable key is ignored rather than stored.
+    mutating func setProperty(_ key: String, value: PropertyValue?) {
+        guard let sanitised = PropertyKey.sanitisedKey(key) else { return }
+
+        var store = propertyValues
+        if let value {
+            store[sanitised] = value
+        } else {
+            store.removeValue(forKey: sanitised)
+        }
+        properties = store.isEmpty ? nil : store
+    }
 
     /// Declared relationships, keyed by frontmatter name (`belongs_to`, `has`,
     /// `related_to`). Optional so documents saved before this field existed still
