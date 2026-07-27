@@ -27,11 +27,29 @@ struct WritingDocument: Identifiable, Codable, Sendable {
         case vocabSuggestions, aiDetectionResult, plagiarismResult, rewriteResult
         case storedWidthMode = "widthMode"
         case icon, relationships, properties
+        case storedIsOrganised = "isOrganised"
     }
 
     /// Optional single-grapheme icon shown in lists and titles.
     /// Validate user input through `DocumentIcon.sanitised` before assigning.
     var icon: String?
+
+    /// Backing storage for `isOrganised`.
+    ///
+    /// Optional for two reasons: the usual Codable back-compat, and so documents
+    /// saved before the inbox existed read as **organised**. Defaulting them to
+    /// unorganised would dump an entire existing library into the inbox on update.
+    /// Defaults to `false` so a freshly constructed document is unorganised and
+    /// lands in the inbox, while a *decoded* document missing the key stays `nil`
+    /// and reads as organised.
+    var storedIsOrganised: Bool? = false
+
+    /// Whether this document has been filed. New documents start unorganised and
+    /// appear in the inbox; documents predating the inbox are treated as organised.
+    var isOrganised: Bool {
+        get { storedIsOrganised ?? true }
+        set { storedIsOrganised = newValue }
+    }
 
     /// Typed metadata keyed by frontmatter name. Optional so documents saved before
     /// this field existed still decode — Swift's synthesized `Codable` throws
