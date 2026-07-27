@@ -130,3 +130,38 @@ struct LinkIndex: Sendable {
         title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
+
+// MARK: - Building From Stores
+
+extension LinkIndex {
+    /// Builds the graph from store models.
+    ///
+    /// Trashed documents are excluded entirely — they are neither indexed items nor
+    /// resolvable targets, so a link to one is reported as broken rather than
+    /// silently resolving to something the user believes they deleted.
+    static func build(documents: [WritingDocument], meetings: [MeetingNote]) -> LinkIndex {
+        var entries: [Entry] = []
+
+        for document in documents where !document.isTrashed {
+            entries.append(Entry(
+                id: document.id,
+                title: document.title,
+                body: document.body,
+                kind: .document
+            ))
+        }
+
+        for meeting in meetings {
+            // The AI summary is the meeting's prose surface; raw transcript segments
+            // are speech and would not contain hand-written wikilinks.
+            entries.append(Entry(
+                id: meeting.id,
+                title: meeting.title,
+                body: meeting.summary ?? "",
+                kind: .meeting
+            ))
+        }
+
+        return LinkIndex(entries: entries)
+    }
+}
