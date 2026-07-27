@@ -534,7 +534,7 @@ final class DocumentStore {
             // Anything that changed while the app was not running is picked up here, before
             // the watcher takes over.
             DocumentStorage.shared.startWatchingIfNeeded()
-            DocumentStorage.shared.rescan()
+            await DocumentStorage.shared.rescan()
             return
         }
 

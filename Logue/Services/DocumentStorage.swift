@@ -53,8 +53,13 @@ final class DocumentStorage {
     private(set) var isScanning = false
 
     /// Extension-visible: +Rescan
-    func setScanState(_ scanning: Bool, summary: String? = nil) {
-        isScanning = scanning
+    func beginScan() {
+        isScanning = true
+    }
+
+    /// Extension-visible: +Rescan
+    func endScan(summary: String?) {
+        isScanning = false
         if let summary {
             lastScanSummary = summary
         }

@@ -6,7 +6,7 @@ import Foundation
 /// folders to spaces, files to documents, documents to a plan — can be run against a
 /// temporary directory. Testing the links individually is not enough here: three features in
 /// this codebase have shipped with every unit passing and the chain between them broken.
-struct MarkdownFolderScan {
+struct MarkdownFolderScan: Sendable {
     let rootURL: URL
     let echoFilter: WriteEchoFilter?
 

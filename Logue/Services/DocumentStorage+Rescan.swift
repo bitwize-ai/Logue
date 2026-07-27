@@ -22,7 +22,7 @@ extension DocumentStorage {
             // The watcher fires on its own queue; everything a scan touches is main-actor
             // state.
             Task { @MainActor in
-                DocumentStorage.shared.rescan()
+                await DocumentStorage.shared.rescan()
             }
         }
         watcher = created
@@ -42,22 +42,38 @@ extension DocumentStorage {
     /// Safe to call at any time — from the watcher, from the rescan button, or on launch. A
     /// scan that finds nothing does nothing at all, which is what keeps the watcher from
     /// turning our own saves into work.
+    ///
+    /// Reading is done off the main actor. That is not only about a folder large enough to
+    /// stall a keystroke: it is also what makes `isScanning` observable at all. A synchronous
+    /// scan sets the flag and clears it within one main-actor call, so SwiftUI never draws a
+    /// frame in between and no progress indicator could ever appear.
+    ///
+    /// `minimumVisibleDuration` holds the indicator on screen when the scan is faster than
+    /// the eye — which it usually is. It applies to background scans too, and costs them
+    /// nothing: the wait happens after the changes have already been applied, and without it
+    /// a watcher-driven scan would make the button flicker for a frame or two.
     @discardableResult
-    func rescan() -> ExternalChangePlan? {
+    func rescan(
+        minimumVisibleDuration: Duration? = AppConstants.Delays.rescanMinimumVisible
+    ) async -> ExternalChangePlan? {
         guard mode.isMarkdown else { return nil }
+        // A second press while one is running would fight the first over the same files.
+        guard !isScanning else { return nil }
 
-        setScanState(true)
-        defer { setScanState(false) }
+        beginScan()
+        let started = ContinuousClock.now
 
         let spaceStore = SpaceStore.shared
         let documentStore = DocumentStore.shared
         let scan = MarkdownFolderScan(rootURL: Self.markdownRootURL, echoFilter: echoFilter)
 
+        // Folders first, and on the main actor because it mutates the space store: the
+        // spaces have to exist before a document can be filed into one.
         adoptNewFolders(using: scan, spaceStore: spaceStore)
 
-        let plan = scan.plan(
-            spaces: spaceStore.spaces, known: documentStore.documents.map(\.content)
-        )
+        let spaces = spaceStore.spaces
+        let known = documentStore.documents.map(\.content)
+        let plan = await Task.detached { scan.plan(spaces: spaces, known: known) }.value
 
         if !plan.ignoredIdentifiers.isEmpty {
             Self.scanLogger.info(
@@ -66,7 +82,15 @@ extension DocumentStorage {
         }
 
         documentStore.applyExternalChanges(plan)
-        setScanState(true, summary: plan.summary)
+
+        if let minimumVisibleDuration {
+            let remaining = minimumVisibleDuration - started.duration(to: .now)
+            if remaining > .zero {
+                try? await Task.sleep(for: remaining)
+            }
+        }
+
+        endScan(summary: plan.summary)
         return plan
     }
 

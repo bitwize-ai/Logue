@@ -159,6 +159,12 @@ enum AppConstants {
         /// and neither speaks `Duration`.
         static let folderScanDebounceSeconds: TimeInterval = 0.4
 
+        /// How long the rescan button keeps spinning at minimum.
+        ///
+        /// A scan of a normal folder finishes in milliseconds — faster than the eye, so
+        /// without a floor the press would look like it did nothing at all.
+        static let rescanMinimumVisible: Duration = .milliseconds(700)
+
         /// -- UI Debounce --
         /// Search field input debounce (document list, meeting list, overview, sidebar)
         static let searchDebounce: Duration = .milliseconds(300)

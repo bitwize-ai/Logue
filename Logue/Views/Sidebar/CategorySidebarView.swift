@@ -234,14 +234,28 @@ struct CategorySidebarView: View {
     private var rescanButton: some View {
         if documentStorage.mode.isMarkdown {
             Button {
-                documentStorage.rescan()
+                Task { await documentStorage.rescan() }
             } label: {
                 Image(systemName: "arrow.triangle.2.circlepath")
+                    // A full turn per repeat, so the arrows land where they started and the
+                    // spin reads as continuous rather than as a rock back and forth.
+                    .rotationEffect(.degrees(documentStorage.isScanning ? 360 : 0))
+                    .animation(rescanSpin, value: documentStorage.isScanning)
             }
             .disabled(documentStorage.isScanning)
             .help(rescanTooltip)
             .accessibilityLabel("Rescan Documents Folder")
         }
+    }
+
+    /// Spins while scanning; eases back to rest when it stops.
+    ///
+    /// The animation is chosen by the same flag that drives the angle, so stopping does not
+    /// inherit `repeatForever` and leave the icon turning after the scan is over.
+    private var rescanSpin: Animation {
+        documentStorage.isScanning
+            ? .linear(duration: 0.9).repeatForever(autoreverses: false)
+            : .easeOut(duration: 0.2)
     }
 
     private var rescanTooltip: String {
