@@ -52,9 +52,38 @@ enum ContentNavigator {
 
     // MARK: - Navigation
 
-    /// Selects the target. Unknown identifiers are logged and ignored rather than
+    /// The item currently open, if any — the place Back should return to.
+    static var currentTarget: NavigationTarget? {
+        if let id = DocumentStore.shared.selectedDocumentID {
+            return .document(id: id)
+        }
+        if let id = MeetingStore.shared.selectedMeetingID {
+            return .meeting(id: id)
+        }
+        return nil
+    }
+
+    /// Selects the target, recording where we came from so Back can return there.
+    static func open(_ target: NavigationTarget, recordHistory: Bool = true) {
+        if recordHistory, let origin = currentTarget, origin != target {
+            NavigationHistory.shared.push(origin)
+        }
+        select(target)
+    }
+
+    /// Returns to the previous link-navigation target. Returns whether it moved, so
+    /// the caller can fall back to its own back behaviour.
+    @discardableResult
+    static func goBack() -> Bool {
+        guard let previous = NavigationHistory.shared.popPrevious() else { return false }
+        // Do not re-record: going back is not a new destination.
+        select(previous)
+        return true
+    }
+
+    /// Performs the selection. Unknown identifiers are logged and ignored rather than
     /// clearing the current selection.
-    static func open(_ target: NavigationTarget) {
+    private static func select(_ target: NavigationTarget) {
         switch target {
         case let .document(id):
             guard DocumentStore.shared.documents.contains(where: { $0.id == id }) else {

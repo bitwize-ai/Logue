@@ -413,7 +413,17 @@ struct MainWindowView: View {
     // MARK: - Navigation
 
     private func goBack() {
-        let destination = editingSourceSelection ?? .overview
+        // A link trail takes priority: after following a link, Back should return to
+        // the document you clicked from, not to a list.
+        if ContentNavigator.goBack() {
+            return
+        }
+
+        // `editingSourceSelection` can itself be a document or meeting — when a link
+        // changed the selection while already editing. Falling back to it here would
+        // set the sidebar to an item while clearing the editing state, leaving an
+        // empty pane, so resolve those to their list instead.
+        let destination = listDestination(for: editingSourceSelection)
         // Mark as store-driven so sidebar onChange doesn't re-process
         storeChangeVersion += 1
         withAnimation(.easeOut(duration: 0.08)) {
@@ -422,6 +432,17 @@ struct MainWindowView: View {
             meetingStore.selectedMeetingID = nil
         }
         sidebarSelection = destination
+    }
+
+    /// A destination that renders something on its own. Document and meeting items
+    /// only render while editing, so they are not valid Back targets.
+    private func listDestination(for item: SidebarItem?) -> SidebarItem {
+        switch item {
+        case .document: .allDocuments
+        case .meeting: .allMeetings
+        case let .some(other): other
+        case nil: .overview
+        }
     }
 
     // MARK: - Command Palette Commands

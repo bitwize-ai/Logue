@@ -117,12 +117,14 @@ struct LinksPanelView: View {
 
     // MARK: - Navigation
 
+    /// Goes through `ContentNavigator` rather than setting selection directly, so a
+    /// jump from this panel records back history like a link click does.
     private func open(id: UUID, kind: LinkIndex.Kind?) {
         switch kind {
         case .document:
-            documentStore.selectedDocumentID = id
+            ContentNavigator.open(.document(id: id))
         case .meeting:
-            meetingStore.selectedMeetingID = id
+            ContentNavigator.open(.meeting(id: id))
         case nil:
             break
         }
