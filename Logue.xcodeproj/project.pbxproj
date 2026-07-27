@@ -15,6 +15,7 @@
 		01680AFDAC410104F7DEDD44 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 5D5B6A3E0F9D0DE04C3DD2C8 /* FluidAudio */; };
 		01E3484C686F805348FC1842 /* VocabularyEnhancementPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3FB4C4D5FE2C19460E3DFED /* VocabularyEnhancementPanelView.swift */; };
 		02437AA08BF113B6E0957131 /* PulsingDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A491C56C1501F3D06F7734 /* PulsingDot.swift */; };
+		0252F36658727AF28041B0E5 /* BlockTextView+WikiLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A6129C7861CC0ACE7F78CA9 /* BlockTextView+WikiLink.swift */; };
 		03C16AA3E0D4260F0D389809 /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3089A12B33B90CC09610C11 /* CommandPaletteView.swift */; };
 		0449935D6F3DDF8994CDB6AE /* DailyDigestCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABDDA0045C55C8B7299F678E /* DailyDigestCard.swift */; };
 		04582C96B6B8D35D02D71C39 /* MultiBlockKeyHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 133717C9C61937FC843612D1 /* MultiBlockKeyHandler.swift */; };
@@ -269,6 +270,7 @@
 		8D14A25D43498810F22E7C05 /* DocumentWorkspaceView+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB1EE6AF1D9283E7F15E6C3 /* DocumentWorkspaceView+Toolbar.swift */; };
 		8D189EF6BCF4EBB2D9001347 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FFE2911439121367D6DBBEB /* AppConstants.swift */; };
 		8D39875E0F596BE7D759D65E /* TableBlockEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7EFCB53320B6385931BBD8 /* TableBlockEditView.swift */; };
+		8E2A310067C068A86411694F /* WikiLinkCandidateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF05733C63217FB320DD8E1 /* WikiLinkCandidateTests.swift */; };
 		90CE4DBE3D79C429616DB00A /* AgentConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 160A71994367176C72C11277 /* AgentConversation.swift */; };
 		92251AAC9FFBCEA92E722619 /* AboutSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C618174E127839238F1ABD6 /* AboutSettingsTab.swift */; };
 		92B35DA71181DA35404DA59D /* ChatBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB95EB1E8811078D07C7524 /* ChatBubble.swift */; };
@@ -323,6 +325,7 @@
 		B62AF07AD0FDB3E3E4B31D77 /* AssistantActionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1073F096F16AFC2BD1908BE7 /* AssistantActionRow.swift */; };
 		B6A64497C43FDBD3F7769855 /* InlineRewriteEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 358D99D88D3FB7C39EE0C7E7 /* InlineRewriteEngine.swift */; };
 		B7B53337BC65FF52350811CA /* SaveSummaryToDocumentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EBF5DF74CDD38CF0672831 /* SaveSummaryToDocumentSheet.swift */; };
+		B7D01F57BC78338825E2F9E1 /* WikiLinkCandidates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AAC8C464AD83B42DE49792C /* WikiLinkCandidates.swift */; };
 		B824D9860D0A36CC7346F386 /* MeetingMemoryIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3474D653C2A7624A299D8F8F /* MeetingMemoryIndex.swift */; };
 		BC3C23065AB5DCE2AD46926E /* EditorLayoutMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C262104A21E62547CE677D5B /* EditorLayoutMode.swift */; };
 		BCE7CC5D10CC3B52CDF54B6E /* BlockEditorDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 493337C75A0D4F073E22C76F /* BlockEditorDocument.swift */; };
@@ -603,6 +606,7 @@
 		5C5E791C0A171DE84D54A93E /* PromptRegistry+DeepResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PromptRegistry+DeepResearch.swift"; sourceTree = "<group>"; };
 		5C9C2F4FFD45E6CE518D8C39 /* MeetingStore+WelcomeMeeting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetingStore+WelcomeMeeting.swift"; sourceTree = "<group>"; };
 		5CB6607FD58EE7074846C4DC /* MarkdownTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextView.swift; sourceTree = "<group>"; };
+		5CF05733C63217FB320DD8E1 /* WikiLinkCandidateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkCandidateTests.swift; sourceTree = "<group>"; };
 		5DB8083A539C38A17D6FF132 /* LLMEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMEngine.swift; sourceTree = "<group>"; };
 		5E6CEBB82218835592057440 /* SpeakerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerModels.swift; sourceTree = "<group>"; };
 		5E9170536ADC0631BED34CB3 /* MeetingRecordingBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingRecordingBar.swift; sourceTree = "<group>"; };
@@ -622,6 +626,7 @@
 		68D54A7FA1A1D4039E6E3B90 /* MeetingStore+Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetingStore+Persistence.swift"; sourceTree = "<group>"; };
 		692EB4CB521F9273D28426F5 /* CodeSyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeSyntaxHighlighter.swift; sourceTree = "<group>"; };
 		6996E2866993FA6C4FB4C7AF /* SemanticSearchTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearchTools.swift; sourceTree = "<group>"; };
+		6A6129C7861CC0ACE7F78CA9 /* BlockTextView+WikiLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlockTextView+WikiLink.swift"; sourceTree = "<group>"; };
 		6AD3B3CBFE4ACCFF98237A81 /* TempAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempAttachment.swift; sourceTree = "<group>"; };
 		6B0077309A4C4D4A70140E5A /* InlineRewriteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineRewriteState.swift; sourceTree = "<group>"; };
 		6C03B333D9E45F6759753B32 /* LogueTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LogueTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -715,6 +720,7 @@
 		97AEDA55455BF89C587E41B5 /* InlineProgressLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineProgressLabel.swift; sourceTree = "<group>"; };
 		998619AE2882C267AC86850D /* swift-markdown */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "swift-markdown"; path = "Vendor/swift-markdown"; sourceTree = SOURCE_ROOT; };
 		99E36F742DA233D8616E8CC1 /* CardSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardSectionHeader.swift; sourceTree = "<group>"; };
+		9AAC8C464AD83B42DE49792C /* WikiLinkCandidates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkCandidates.swift; sourceTree = "<group>"; };
 		9B611C161962C154FC8DA451 /* FolderIconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderIconPicker.swift; sourceTree = "<group>"; };
 		9BFF6DFB33FFDD664F05A4E6 /* AccessibilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityService.swift; sourceTree = "<group>"; };
 		9C91F95BC414F31D9357EB2D /* ModelDownloadRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDownloadRow.swift; sourceTree = "<group>"; };
@@ -980,6 +986,7 @@
 				87A5F89112EFC50A714AFD79 /* SandboxContainerMigratorTests.swift */,
 				5C461874879489EBFF0BE683 /* SuggestionParserTests.swift */,
 				8D2D61B85F962E88AA1E5062 /* TextAnalysisRequestTests.swift */,
+				5CF05733C63217FB320DD8E1 /* WikiLinkCandidateTests.swift */,
 				2463FF4541A0C2197CBD646C /* WikiLinkCompletionTests.swift */,
 				019756686F6D3BBAAE229D8F /* WikiLinkParserTests.swift */,
 				818DBC353FE8A22EC01DCB37 /* WritingDocumentTests.swift */,
@@ -1210,6 +1217,7 @@
 				61150569A2C3758E03DC0666 /* BlockRowView.swift */,
 				1FB93A6E198E565413AD03FC /* BlockRowView+Actions.swift */,
 				381AAF180053F03E9FBAC2A3 /* BlockTextView.swift */,
+				6A6129C7861CC0ACE7F78CA9 /* BlockTextView+WikiLink.swift */,
 				E1C8C014AA23FE44D9ED97AE /* DiagramMathBlockView.swift */,
 				71CCC37048141456C9BA5AA3 /* DocumentSearchBar.swift */,
 				133717C9C61937FC843612D1 /* MultiBlockKeyHandler.swift */,
@@ -1284,6 +1292,7 @@
 				838825BB306355DA859DFF91 /* VectorStore.swift */,
 				219E60DBB1D51BA1337B291F /* VectorStore+Graph.swift */,
 				AFF7CBEF44EB6A1CC81A020D /* WebSearchService.swift */,
+				9AAC8C464AD83B42DE49792C /* WikiLinkCandidates.swift */,
 				24994CE786E8D4635390440F /* WikiLinkCompletion.swift */,
 				8FBB4EB8CCDEA196AA17D1FA /* WikiLinkParser.swift */,
 				9791CDD317958805125F6D78 /* ZIPArchiveReader.swift */,
@@ -1914,6 +1923,7 @@
 				A30AAC62CDAE227B36E45511 /* TextAnalysisRequestTests.swift in Sources */,
 				073F4389E29E0F214606228C /* VerifyPanelLLMTests.swift in Sources */,
 				4299928CFC0AA95BC40766E3 /* VocabularyLLMTests.swift in Sources */,
+				8E2A310067C068A86411694F /* WikiLinkCandidateTests.swift in Sources */,
 				5823F6C9E41B7DC8DBB86CF7 /* WikiLinkCompletionTests.swift in Sources */,
 				4CBDF92105360575ED4D7688 /* WikiLinkParserTests.swift in Sources */,
 				E8033FF27C67CCB95321C549 /* WritingDocumentTests.swift in Sources */,
@@ -1972,6 +1982,7 @@
 				A9B34E653A84128492DE6474 /* BlockRowView+Actions.swift in Sources */,
 				372D7C7E58F4EF0B8305E096 /* BlockRowView.swift in Sources */,
 				B0F79BB2896CD38F5076C649 /* BlockSerializer.swift in Sources */,
+				0252F36658727AF28041B0E5 /* BlockTextView+WikiLink.swift in Sources */,
 				EE067F20A9652C38BFC02800 /* BlockTextView.swift in Sources */,
 				85C9F35793B4ACD6B226E085 /* BookmarkColorHelper.swift in Sources */,
 				F709E83F5F91C7B68712F42D /* BufferConverter.swift in Sources */,
@@ -2290,6 +2301,7 @@
 				003A099186C996F0FF5F6035 /* WebSearchService.swift in Sources */,
 				CA56A6CBBDDCD1F751696437 /* WebSearchTools.swift in Sources */,
 				772606DB94721219B135F7FA /* WeeklyActivityChart.swift in Sources */,
+				B7D01F57BC78338825E2F9E1 /* WikiLinkCandidates.swift in Sources */,
 				24C5EF79903E1BC7FC98A62E /* WikiLinkCompletion.swift in Sources */,
 				72B8500BC056566157817309 /* WikiLinkParser.swift in Sources */,
 				6C6B7B92DB59E399FE8D6CDD /* WorkspaceTransferable.swift in Sources */,

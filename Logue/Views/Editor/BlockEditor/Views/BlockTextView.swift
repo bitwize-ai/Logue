@@ -927,6 +927,9 @@ final class BlockNSTextView: MarkdownNSTextView {
     var onShiftArrowDownAtBottom: (() -> Void)?
     /// Auto-capitalize the first letter when the user starts typing in an empty block.
     var autoCapitalize: Bool = true
+    /// Retains the `[[` completion menu's ObjC target while the menu is open.
+    /// Extension-visible: +WikiLink
+    var wikiLinkMenuTarget: WikiLinkMenuTarget?
     /// When set, this NSTextView exposes itself as `AXHeading` with the given level (1-6)
     /// so VoiceOver rotor-by-heading navigation finds it. Paragraph / list blocks leave this nil.
     var headingLevel: Int? {
@@ -1287,6 +1290,22 @@ final class BlockNSTextView: MarkdownNSTextView {
             return
         }
         super.insertText(string, replacementRange: replacementRange)
+
+        // Typing the second `[` completes a `[[` trigger — offer link targets.
+        // Fired once here rather than on every keystroke because NSMenu is modal
+        // and would otherwise block typing; the menu's own type-select narrows it.
+        if let str = string as? String, str == "[", justTypedSecondOpeningBracket() {
+            presentWikiLinkCompletionIfNeeded()
+        }
+    }
+
+    /// Whether the two characters ending at the caret are `[[`.
+    private func justTypedSecondOpeningBracket() -> Bool {
+        let caret = selectedRange().location
+        guard caret >= 2 else { return false }
+        let nsString = string as NSString
+        guard caret <= nsString.length else { return false }
+        return nsString.substring(with: NSRange(location: caret - 2, length: 2)) == "[["
     }
 
     // MARK: - Cmd+A → Select All Blocks
