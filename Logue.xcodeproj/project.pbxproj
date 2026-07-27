@@ -203,6 +203,7 @@
 		5B838E634D133947012FF4CA /* WritingDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A204E44FBCA2412FF88EFA /* WritingDiffView.swift */; };
 		5B9F58AF85E70CDD57E0AC7F /* RelationshipKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D26B3916DE234119AE866F /* RelationshipKind.swift */; };
 		5C00C6C19A74B209DBA92190 /* TranscriptSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1BA8536C1D15EB0A32717E /* TranscriptSegment.swift */; };
+		5C16F0DE07D74D09ACAFF67A /* MirrorImportPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32AC068C3B876512AF23CFB /* MirrorImportPlan.swift */; };
 		5CA3F8E612944FDC80FE2A00 /* OverviewRecentActivityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9DB88569857E33E72CCFAE /* OverviewRecentActivityCard.swift */; };
 		5CBFF3B40F91960EC8178989 /* CommandCenterComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ABC89CED798F0088E00B682 /* CommandCenterComposeView.swift */; };
 		5FCA28149B189B61283A387C /* DocumentIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB768463E40E11BC5922145 /* DocumentIcon.swift */; };
@@ -255,6 +256,7 @@
 		71C8344B4B6B480607EB46A4 /* InlineTitleField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C5AD07946A49E9608D5CED3 /* InlineTitleField.swift */; };
 		72B8500BC056566157817309 /* WikiLinkParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBB4EB8CCDEA196AA17D1FA /* WikiLinkParser.swift */; };
 		741C509F3A43CBF008D9C4BC /* ModelManager+Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9230215EEC7592F9378CA66C /* ModelManager+Discovery.swift */; };
+		75140B48B949ADF838A88237 /* MirrorImportPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B8E2253542C3D43609AD9C5 /* MirrorImportPlanTests.swift */; };
 		7574BF423E60FC56B9897A92 /* DeepResearchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293A43BD40C7FE1683585702 /* DeepResearchModels.swift */; };
 		75E00B6D645BDF14E88D8DDB /* DocumentSearchState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D771D4ECF4472264165F1C /* DocumentSearchState.swift */; };
 		760A4F0409E4004EFA20E182 /* VerifyPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8756576B17C7D359AC9FC6A0 /* VerifyPanelView.swift */; };
@@ -722,6 +724,7 @@
 		7A450984B8338837BFDFF868 /* BlockTypeSlashMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockTypeSlashMenuTests.swift; sourceTree = "<group>"; };
 		7AB95EB1E8811078D07C7524 /* ChatBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatBubble.swift; sourceTree = "<group>"; };
 		7ABC89CED798F0088E00B682 /* CommandCenterComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandCenterComposeView.swift; sourceTree = "<group>"; };
+		7B8E2253542C3D43609AD9C5 /* MirrorImportPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorImportPlanTests.swift; sourceTree = "<group>"; };
 		7BE9BA34E8404D7F7AB815F1 /* WikiLinkClickTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkClickTests.swift; sourceTree = "<group>"; };
 		7CB8F29FAA5817D348722762 /* MultiBlockSelectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiBlockSelectionState.swift; sourceTree = "<group>"; };
 		7CD8FDAFABDFD03AEBAB2750 /* InsightsSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsSectionView.swift; sourceTree = "<group>"; };
@@ -964,6 +967,7 @@
 		F06E61F5499F68059FF8775B /* TableCellTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableCellTextView.swift; sourceTree = "<group>"; };
 		F10E543543CA7F6EEF91B538 /* MirrorConflictTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorConflictTests.swift; sourceTree = "<group>"; };
 		F30E821E71C80A341EEC3F68 /* BlockEditorView+Reorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlockEditorView+Reorder.swift"; sourceTree = "<group>"; };
+		F32AC068C3B876512AF23CFB /* MirrorImportPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorImportPlan.swift; sourceTree = "<group>"; };
 		F3BC206B7D135B2017B99C1D /* LinkIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkIndexTests.swift; sourceTree = "<group>"; };
 		F4837D7E60145F15B37A2310 /* GraphRetriever.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRetriever.swift; sourceTree = "<group>"; };
 		F4D0B06CDDC1184FD7958F9A /* SuggestionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionCardView.swift; sourceTree = "<group>"; };
@@ -1076,6 +1080,7 @@
 				F10E543543CA7F6EEF91B538 /* MirrorConflictTests.swift */,
 				2E81E4E325407436A5B79A78 /* MirrorFilenameTests.swift */,
 				821DC80BFD08BE98469634B0 /* MirrorFileTests.swift */,
+				7B8E2253542C3D43609AD9C5 /* MirrorImportPlanTests.swift */,
 				87D4E69A776C02C77F836529 /* MirrorLayoutTests.swift */,
 				3D7DBA3EA8D1F2D61E1AC659 /* MirrorSyncDecisionTests.swift */,
 				46D5AD1551B13733D986BC37 /* NavigationHistoryTests.swift */,
@@ -1388,6 +1393,7 @@
 				CCEE1CC67630CF84E03498D5 /* MermaidRenderer.swift */,
 				5E55D52B07E9980D0292A111 /* MirrorFile.swift */,
 				E03B3E49B43C8EE5F0DD98FD /* MirrorFilename.swift */,
+				F32AC068C3B876512AF23CFB /* MirrorImportPlan.swift */,
 				2B554BF939AEE24D66EA9E0A /* MirrorLayout.swift */,
 				2027BC1063E2939C9AC0E7B2 /* MirrorSyncDecision.swift */,
 				F686C58A65228625D6D45D32 /* OfficeExtractor.swift */,
@@ -2052,6 +2058,7 @@
 				58563C59446C49CE110E2031 /* MirrorConflictTests.swift in Sources */,
 				60D3A68E5C06CE64B83876D9 /* MirrorFileTests.swift in Sources */,
 				8EFE91476213B78E7720866F /* MirrorFilenameTests.swift in Sources */,
+				75140B48B949ADF838A88237 /* MirrorImportPlanTests.swift in Sources */,
 				387FDE5FC5510B0422E42F08 /* MirrorLayoutTests.swift in Sources */,
 				3E3568A8A7D043E8BD5ECF69 /* MirrorSyncDecisionTests.swift in Sources */,
 				A73935430EF00561EE6074E9 /* NavigationHistoryTests.swift in Sources */,
@@ -2319,6 +2326,7 @@
 				69BA145B3172658E3371DDCF /* MirrorConflictViews.swift in Sources */,
 				08976D9130DB18670920C3A1 /* MirrorFile.swift in Sources */,
 				4A72EC807E5CC9DE0111DDD4 /* MirrorFilename.swift in Sources */,
+				5C16F0DE07D74D09ACAFF67A /* MirrorImportPlan.swift in Sources */,
 				26F9F34FBFDD7F77F1973443 /* MirrorLayout.swift in Sources */,
 				B01D65558579958F5C19ED8A /* MirrorSyncButton.swift in Sources */,
 				21450F9A4257F01D9CF340C4 /* MirrorSyncDecision.swift in Sources */,
