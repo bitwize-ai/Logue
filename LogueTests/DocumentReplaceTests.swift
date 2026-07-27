@@ -141,8 +141,8 @@ struct DocumentReplaceTests {
         #expect(doc.blocks[0].textContent == "nothing here")
     }
 
-    // A multi-UTF-16 character (emoji) before the match makes the UTF-16 offset
-    // exceed the grapheme count; indexing the String with that offset used to trap.
+    /// A multi-UTF-16 character (emoji) before the match makes the UTF-16 offset
+    /// exceed the grapheme count; indexing the String with that offset used to trap.
     @Test("Whole-word search is safe and correct with an emoji before the match")
     func wholeWordSearchWithLeadingEmoji() throws {
         let doc = document([.paragraph(id: UUID(), text: "👩‍💻 word and words")])
@@ -155,7 +155,7 @@ struct DocumentReplaceTests {
         // Only the standalone "word" matches; the emoji is a boundary and "words" is excluded.
         #expect(state.matches.count == 1)
         let match = try #require(state.matches.first)
-        let text = doc.blocks[0].textContent as NSString
+        let text = try #require(doc.blocks[0].textContent) as NSString
         #expect(text.substring(with: match.range) == "word")
     }
 }

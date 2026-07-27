@@ -25,6 +25,12 @@ struct LogueApp: App {
     @AppStorage(AppConstants.UserDefaultsKeys.editorZoomScale) private var zoomScale: Double =
         AppConstants.Editor.defaultZoom
 
+    init() {
+        // Must run before any store singleton resolves its Application Support
+        // directory or reads UserDefaults — see SandboxContainerMigrator.
+        SandboxContainerMigrator.migrateIfNeeded()
+    }
+
     var body: some Scene {
         // ── Main document window ──────────────────────────────────────────────
         WindowGroup("Logue") {
