@@ -93,11 +93,17 @@ struct PrivacySettingsTab: View {
             isPresented: $showingDisableConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Turn Off and Re-encrypt") { disableMarkdownStorage() }
+            // Moving the folder to the Trash is the first and default choice deliberately. A
+            // folder left in Documents looks like the library but is not one: nothing writes to
+            // it and nothing reads it, so an edit made there silently does nothing. Keeping it
+            // is still offered for anyone who tracks it in git or wants to move it themselves.
+            Button("Turn Off and Move Folder to Trash") { disableMarkdownStorage(retiringFolder: true) }
+            Button("Turn Off and Keep Folder") { disableMarkdownStorage(retiringFolder: false) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your documents move back into Logue's encrypted storage. The folder is left "
-                + "in place — nothing in it is deleted.")
+            Text("Your documents move back into Logue's encrypted storage. The folder in "
+                + "Documents is no longer read or written after this, so leaving it behind means "
+                + "edits made there do nothing. Moving it to the Trash keeps it recoverable.")
         }
     }
 
@@ -113,10 +119,19 @@ struct PrivacySettingsTab: View {
         }
     }
 
-    private func disableMarkdownStorage() {
+    private func disableMarkdownStorage(retiringFolder: Bool) {
         storageError = nil
-        let restored = storage.switchToEncrypted(knownSpaces: spaceStore.spaces)
+        storage.folderRetirementFailed = false
+
+        let restored = storage.switchToEncrypted(
+            knownSpaces: spaceStore.spaces, retiringFolder: retiringFolder
+        )
         Task { await documentStore.adoptAfterStorageSwitch(restored) }
+
+        if storage.folderRetirementFailed {
+            storageError = "Your documents were re-encrypted, but the folder could not be moved "
+                + "to the Trash. It is still in your Documents folder and can be moved by hand."
+        }
     }
 
     // MARK: - Encryption

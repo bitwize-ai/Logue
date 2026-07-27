@@ -49,6 +49,10 @@ final class DocumentStorage {
     /// What the last scan of the folder found, for the rescan button's tooltip.
     private(set) var lastScanSummary: String?
 
+    /// Set when turning the setting off could not move the folder to the Trash, so Settings can
+    /// say so rather than leaving the user to notice a folder they were told would go.
+    var folderRetirementFailed = false
+
     /// True while a scan is running, so the button can show it is doing something.
     private(set) var isScanning = false
 
@@ -113,11 +117,20 @@ final class DocumentStorage {
         let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
         try migrator.prepareRoot()
 
-        let result = migrator.export(documents: documents.map(\.content), spaces: spaces)
-        guard result.isSuccess else {
+        // `reconcile` rather than a plain export, because the folder may already be there from
+        // a previous session. See its documentation for what goes wrong otherwise — briefly:
+        // every document ends up with two files claiming the same identifier.
+        let reconciled = migrator.reconcile(documents: documents.map(\.content), spaces: spaces)
+        guard reconciled.isSuccess else {
             throw SwitchError.exportFailed(
-                count: result.failures.count,
-                firstReason: result.failures.values.first ?? "unknown"
+                count: reconciled.export.failures.count,
+                firstReason: reconciled.export.failures.values.first ?? "unknown"
+            )
+        }
+
+        if !reconciled.retiredFiles.isEmpty {
+            logger.info(
+                "Moved \(reconciled.retiredFiles.count, privacy: .public) leftover file(s) to the Trash"
             )
         }
 
@@ -133,9 +146,15 @@ final class DocumentStorage {
 
     /// Switches back to encrypted storage, reading the folder first.
     ///
-    /// The folder is **left in place** rather than deleted: those files are the user's,
-    /// and deleting a folder in `~/Documents` on their behalf is not ours to do.
-    func switchToEncrypted(knownSpaces: [Space]) -> [WritingDocument] {
+    /// `retiringFolder` moves `~/Documents/Logue` to the Trash once its documents are safely
+    /// read back, and is the default the UI offers. A folder left behind is a second thing that
+    /// looks like the library but is not: nothing writes to it, nothing reads from it, and edits
+    /// made there quietly do nothing. The Trash, not deletion — those files are the user's, and
+    /// "Put Back" has to remain possible.
+    ///
+    /// Keeping it is still offered, for someone who has the folder in git or is about to move it
+    /// somewhere themselves.
+    func switchToEncrypted(knownSpaces: [Space], retiringFolder: Bool) -> [WritingDocument] {
         // Stopped first: a scan arriving mid-switch would plan against a library that is
         // about to be replaced.
         stopWatching()
@@ -154,6 +173,21 @@ final class DocumentStorage {
         }
 
         mode = .encrypted
+
+        // Last, and only once the documents are in hand: if reading the folder went wrong, the
+        // folder is the only place that text exists.
+        if retiringFolder {
+            do {
+                try migrator.retireRoot()
+                logger.info("Moved the documents folder to the Trash")
+            } catch {
+                // The switch itself worked, so this does not fail it — the user is told, and can
+                // move the folder themselves.
+                logger.error("Could not move the documents folder to the Trash: \(error.localizedDescription, privacy: .public)")
+                folderRetirementFailed = true
+            }
+        }
+
         logger.info("Switched document storage back to encrypted")
         return documents
     }

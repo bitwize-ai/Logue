@@ -70,8 +70,9 @@ struct MarkdownStorageWarningSheet: View {
             point(
                 "arrow.uturn.backward",
                 "You can turn this off later",
-                "Turning it off moves documents back into encrypted storage and leaves the "
-                    + "folder in place."
+                "Turning it off moves documents back into encrypted storage, then moves the "
+                    + "folder to the Trash so there is only ever one place your documents live. "
+                    + "You can choose to keep it instead."
             )
         }
     }

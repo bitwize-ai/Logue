@@ -18,9 +18,22 @@ struct MarkdownStorageMigrator {
     /// nothing is watching yet.
     let echoFilter: WriteEchoFilter?
 
-    init(rootURL: URL, echoFilter: WriteEchoFilter? = nil) {
+    /// How a file that no longer belongs is disposed of.
+    ///
+    /// The Trash rather than deletion, so anything retired on the user's behalf is one
+    /// "Put Back" away. Injectable only so a test run does not fill the real Trash.
+    let retireFile: @Sendable (URL) throws -> Void
+
+    init(
+        rootURL: URL,
+        echoFilter: WriteEchoFilter? = nil,
+        retireFile: @escaping @Sendable (URL) throws -> Void = {
+            try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+        }
+    ) {
         self.rootURL = rootURL
         self.echoFilter = echoFilter
+        self.retireFile = retireFile
     }
 
     private var logger: Logger {
@@ -153,6 +166,92 @@ struct MarkdownStorageMigrator {
         }
 
         return result
+    }
+
+    // MARK: - Re-enabling into a folder that is already there
+
+    struct ReconcileResult {
+        var export = ExportResult()
+        /// Files moved to the Trash because no live document claims them, or because their text
+        /// had drifted from the document and was about to be overwritten.
+        var retiredFiles: [URL] = []
+
+        var isSuccess: Bool {
+            export.isSuccess
+        }
+    }
+
+    /// Brings a folder left over from a previous session into line with the library.
+    ///
+    /// Turning the setting on when a folder is already there is not the same as a first export,
+    /// and treating it as one goes wrong in three ways — each of which silently undoes work:
+    ///
+    /// - A leftover file for a document that changed in the app makes the export pick a
+    ///   *different* filename to avoid the collision, so the document ends up with two files
+    ///   carrying the same identifier. The next scan picks one of them arbitrarily, and half the
+    ///   time that is the stale one replacing the user's current text.
+    /// - A leftover file for a document deleted or trashed while the setting was off still names
+    ///   that document, so the first scan reads it as an edit and brings the document back.
+    /// - A file edited in the folder while nothing was watching would be overwritten without a
+    ///   word. It still loses to the app — there is no way to know which the user meant — but it
+    ///   goes to the Trash first, so it is recoverable rather than gone.
+    ///
+    /// Files with no identifier are never touched: those are the user's own notes, and the first
+    /// scan adopts them as documents.
+    func reconcile(documents: [DocumentContent], spaces: [Space]) -> ReconcileResult {
+        var result = ReconcileResult()
+        let existing = fileIndex()
+        let live = Dictionary(
+            documents.filter { !$0.isTrashed }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        for (id, url) in existing {
+            guard let document = live[id] else {
+                // Claimed by nothing: deleted or trashed while the setting was off.
+                retire(url, into: &result)
+                continue
+            }
+            if divergesFromDisk(document, at: url) {
+                retire(url, into: &result)
+            }
+        }
+
+        // `existing` is still used for placement: a retired file leaves its path free, and
+        // writing the document back to that same path is what keeps a name the user chose.
+        result.export = export(documents: documents, spaces: spaces, reusing: existing)
+        return result
+    }
+
+    /// Whether the file says something different from the document.
+    ///
+    /// A file that cannot be parsed counts as divergent: it is not what we would write, and
+    /// preserving it costs one item in the Trash.
+    private func divergesFromDisk(_ document: DocumentContent, at url: URL) -> Bool {
+        guard let onDisk = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        guard let parsed = MarkdownDocumentFile.content(from: onDisk) else { return true }
+        return ExternalChangePlanner.differs(parsed, from: document)
+    }
+
+    private func retire(_ url: URL, into result: inout ReconcileResult) {
+        do {
+            echoFilter?.forget(url)
+            try retireFile(url)
+            result.retiredFiles.append(url)
+        } catch {
+            // Failing to retire is not failing to migrate: the export still runs, and the worst
+            // case is a leftover file the next scan reports as naming no document.
+            logger.error("Could not retire a leftover file: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Moves the whole folder to the Trash, for turning the setting off.
+    ///
+    /// The Trash rather than deletion: these are files in the user's Documents folder, and the
+    /// one thing worse than leaving them behind is destroying them.
+    func retireRoot() throws {
+        guard FileManager.default.fileExists(atPath: rootURL.path) else { return }
+        try retireFile(rootURL)
     }
 
     /// Where a document's file belongs, preferring the file it already occupies.
