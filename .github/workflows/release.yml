@@ -210,9 +210,15 @@ jobs:
             codesign --force --options runtime --sign "$SIGNING_IDENTITY" --timestamp "$item"
           done
 
-          # 3. Sign XPC services with proper entitlements for sandboxed Sparkle updates.
-          #    - Downloader.xpc: MUST be sandboxed with network access (downloads update ZIP)
-          #    - Installer.xpc: MUST NOT be sandboxed (needs to write to /Applications)
+          # 3. Sign Sparkle's XPC services.
+          #    Logue is no longer sandboxed, so Sparkle does not use these at all — it
+          #    installs directly via Autoupdate/Updater.app. They still ship inside
+          #    Sparkle.framework, so they must carry a valid signature or the outer
+          #    bundle fails verification. The sandboxed/non-sandboxed split below is
+          #    kept as Sparkle documents it, so re-enabling the sandbox does not
+          #    silently produce a broken updater.
+          #    - Downloader.xpc: sandboxed with network access (downloads update ZIP)
+          #    - Installer.xpc: NOT sandboxed (needs to write to /Applications)
           DOWNLOADER_ENT=$(mktemp)
           cat > "$DOWNLOADER_ENT" << 'ENTEOF'
           <?xml version="1.0" encoding="UTF-8"?>

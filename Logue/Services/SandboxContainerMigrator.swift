@@ -92,32 +92,105 @@ enum SandboxContainerMigrator {
     // MARK: - Files
 
     private static func migrateItem(_ relativePath: String, from container: URL) {
-        let fileManager = FileManager.default
         let source = url(container, relativePath)
-        guard fileManager.fileExists(atPath: source.path) else { return }
+        guard FileManager.default.fileExists(atPath: source.path) else { return }
+        move(source, to: url(realHomeDirectory, relativePath), label: relativePath)
+    }
 
-        let destination = url(realHomeDirectory, relativePath)
-        guard !fileManager.fileExists(atPath: destination.path) else {
-            // Never clobber data an unsandboxed build already wrote. This happens on
-            // machines that ran both a sandboxed release and a local Debug build.
-            logger.notice("Skipping \(relativePath, privacy: .public) — destination already exists")
+    /// Moves `source` onto `destination`, merging directories that already exist.
+    ///
+    /// Never overwrites: anything already present at the destination wins and the
+    /// container copy is left in place and logged, so a machine that ran both a
+    /// sandboxed release and a local Debug build cannot lose either side.
+    ///
+    /// Merging rather than skipping the whole tree matters for shared locations like
+    /// `~/.cache/huggingface`, which already exists on any machine that has touched
+    /// Hugging Face tooling — skipping it wholesale would strand gigabytes of models
+    /// in the container and force a re-download.
+    /// Internal rather than private so `SandboxContainerMigratorTests` can exercise the
+    /// merge and non-clobber rules against a scratch directory. Call only from
+    /// `migrateItem` and its own recursion.
+    static func move(_ source: URL, to destination: URL, label: String) {
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: destination.path) else {
+            do {
+                try fileManager.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                // Container and home are on the same volume, so this is a rename:
+                // instant, and it needs no extra free space — which matters for the
+                // multi-GB model directories.
+                try fileManager.moveItem(at: source, to: destination)
+                logger.info("Migrated \(label, privacy: .public) out of the sandbox container")
+            } catch {
+                logger.error(
+                    "Failed to migrate \(label, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
             return
         }
 
+        guard isDirectory(source), isDirectory(destination) else {
+            logger.notice("Left \(label, privacy: .public) in the container — destination already exists")
+            return
+        }
+
+        // Both sides are directories: recurse so non-colliding children still migrate.
+        let children: [String]
         do {
-            try fileManager.createDirectory(
-                at: destination.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            // Container and home are on the same volume, so this is a rename: instant,
-            // and it needs no extra free space — which matters for the multi-GB models.
-            try fileManager.moveItem(at: source, to: destination)
-            logger.info("Migrated \(relativePath, privacy: .public) out of the sandbox container")
+            children = try fileManager.contentsOfDirectory(atPath: source.path)
         } catch {
             logger.error(
-                "Failed to migrate \(relativePath, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Failed to enumerate \(label, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+        for child in children {
+            move(
+                source.appendingPathComponent(child),
+                to: destination.appendingPathComponent(child),
+                label: "\(label)/\(child)"
             )
         }
+    }
+
+    private static func isDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        return exists && isDirectory.boolValue
+    }
+
+    // MARK: - Stale Absolute Paths
+
+    /// The path segment the sandbox inserted in front of every absolute path.
+    static var containerPathSegment: String {
+        "/Library/Containers/\(AppConstants.bundleID)/Data"
+    }
+
+    /// Rewrites an absolute file URL captured while sandboxed so it points at the
+    /// migrated location.
+    ///
+    /// `MeetingNote.audioFileURL` is the only absolute path Logue persists. It is
+    /// recorded when a recording finishes and stored verbatim, so meetings captured by
+    /// a sandboxed build (≤ 1.0.0) still reference
+    /// `…/Library/Containers/com.bitwize.logue/Data/Library/Application Support/…`
+    /// after `migrateIfNeeded()` has moved the file out to the real home directory.
+    /// Without this rewrite `AudioPlaybackView` renders a player for a file that is no
+    /// longer at that path and playback silently does nothing.
+    ///
+    /// Returns the original URL when nothing exists at the rewritten path — the file is
+    /// still in the container whenever a migration step was skipped as a non-clobber.
+    static func resolvingLegacyContainerPath(_ url: URL?) -> URL? {
+        guard let url, url.isFileURL else { return url }
+
+        let path = url.path(percentEncoded: false)
+        guard let segment = path.range(of: containerPathSegment) else { return url }
+
+        let rewritten = path.replacingCharacters(in: segment, with: "")
+        guard FileManager.default.fileExists(atPath: rewritten) else { return url }
+        return URL(fileURLWithPath: rewritten)
     }
 
     // MARK: - Preferences

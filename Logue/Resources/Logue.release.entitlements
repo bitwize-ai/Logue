@@ -23,8 +23,10 @@
 	     runtime exception below is justified individually.
 
 	     If the sandbox is ever re-enabled, the entire Logue/CrossApp feature set stops
-	     working — see LogueTests/ReleaseEntitlementsTests.swift, which fails the build
-	     if this flips back to true. -->
+	     working, and nothing fails at build time to tell you. Two guards catch it: the
+	     "Verify app sandbox stays disabled" step in .github/workflows/ci.yml, which is
+	     what actually gates a PR because CI does not run tests, and
+	     LogueTests/ReleaseEntitlementsTests.swift for local test runs. -->
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
 	<key>com.apple.security.automation.apple-events</key>
