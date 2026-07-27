@@ -343,7 +343,9 @@ struct DocumentListPane: View {
         .scrollContentBackground(.hidden)
         .background(AppThemeConstants.surfaceBackground)
         .overlay {
-            if filteredDocs.isEmpty {
+            if !store.isLoaded {
+                ContentLoadingView()
+            } else if filteredDocs.isEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? "No Documents" : "No Results",
                     systemImage: searchText.isEmpty ? "doc.text" : "magnifyingglass"

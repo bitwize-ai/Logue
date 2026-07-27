@@ -159,6 +159,12 @@ enum AppConstants {
         /// and neither speaks `Duration`.
         static let folderScanDebounceSeconds: TimeInterval = 0.4
 
+        /// How long a pane waits before admitting it is still loading.
+        ///
+        /// Long enough that a fast load looks instant rather than showing a spinner that
+        /// flashes, short enough that a slow one does not look broken.
+        static let loadingIndicatorAppearance: Duration = .milliseconds(250)
+
         /// How long the rescan button keeps spinning at minimum.
         ///
         /// A scan of a normal folder finishes in milliseconds — faster than the eye, so

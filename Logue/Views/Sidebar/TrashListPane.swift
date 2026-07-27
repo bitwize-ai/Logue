@@ -96,7 +96,9 @@ struct TrashListPane: View {
 
     var body: some View {
         Group {
-            if allTrashItems.isEmpty {
+            if !documentStore.isLoaded || !meetingStore.isLoaded {
+                ContentLoadingView()
+            } else if allTrashItems.isEmpty {
                 emptyState
             } else if trashItems.isEmpty {
                 searchEmptyState
