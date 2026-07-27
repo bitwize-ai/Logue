@@ -214,6 +214,7 @@
 		6D86DD0D26811B19EEE00299 /* AIContentScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCC95C3045D2301DCC960849 /* AIContentScorer.swift */; };
 		6E33CC2D3A37790D824199A3 /* MeetingStore+Diarization.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7FD01A02C6FB9C64A0238CF /* MeetingStore+Diarization.swift */; };
 		6E577F8B48F4A11B36E16B66 /* SelectableOptionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54288BA1E89F95FD74442B71 /* SelectableOptionCard.swift */; };
+		6E66E9B993B63623F605E552 /* BlockPasteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C42C0A1E60F8FC22AC2EF3 /* BlockPasteTests.swift */; };
 		6EE6B461C7E6CA280E8C8661 /* HierarchicalSpaceMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4714BA50A68B3093B932CB4 /* HierarchicalSpaceMenu.swift */; };
 		6EF0995F3E06CB5ED24FD625 /* DocumentListContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A864D7C5937FF77CB9835242 /* DocumentListContentView.swift */; };
 		70A6886DC7BEF1D8F93BCC40 /* LocationTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DFCD2049B54A1F08F0C8E89 /* LocationTool.swift */; };
@@ -666,6 +667,7 @@
 		87A5F89112EFC50A714AFD79 /* SandboxContainerMigratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxContainerMigratorTests.swift; sourceTree = "<group>"; };
 		88018F4CBB121A88EF363BBE /* MeetingListContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingListContentView.swift; sourceTree = "<group>"; };
 		8876D7837082707205CBFC6D /* LogueApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogueApp.swift; sourceTree = "<group>"; };
+		88C42C0A1E60F8FC22AC2EF3 /* BlockPasteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockPasteTests.swift; sourceTree = "<group>"; };
 		89916892E9BF400CDC89E1FF /* WebSearchTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSearchTools.swift; sourceTree = "<group>"; };
 		89D2D180775E0F9C8735345F /* ShortcutsSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsTab.swift; sourceTree = "<group>"; };
 		8A5EAC4820F6E13CFDE208D0 /* MeetingAIChatPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingAIChatPanelView.swift; sourceTree = "<group>"; };
@@ -943,6 +945,7 @@
 			children = (
 				79C6BA7C0C06C035AC3BFBD1 /* LLMIntegration */,
 				8D204801C0C2BADD68D406D7 /* BlockMoveTests.swift */,
+				88C42C0A1E60F8FC22AC2EF3 /* BlockPasteTests.swift */,
 				7A450984B8338837BFDFF868 /* BlockTypeSlashMenuTests.swift */,
 				263E3C59B8D03346E04E7C92 /* DeepLinkRoutingTests.swift */,
 				EB27F11A2333C941E28C916E /* DeepLinkTests.swift */,
@@ -1859,6 +1862,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				362E757F0940BDB7CB5E560A /* BlockMoveTests.swift in Sources */,
+				6E66E9B993B63623F605E552 /* BlockPasteTests.swift in Sources */,
 				F990F4EC5E8A9FEBA4C9FD3F /* BlockTypeSlashMenuTests.swift in Sources */,
 				8837715694AEB1053618212A /* DeepLinkRoutingTests.swift in Sources */,
 				52B089BBC06F1A4DC8CFA5CE /* DeepLinkTests.swift in Sources */,

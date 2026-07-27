@@ -12,6 +12,8 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
     var onEscape: () -> Void
     /// Called when user types a character — clears selection and starts typing.
     var onTyping: ((_ character: String) -> Void)?
+    /// Cmd+V — replace the selected blocks with the clipboard contents.
+    var onPaste: (() -> Void)?
     /// Cmd+Shift+Up — move the selected blocks up one position.
     var onMoveUp: (() -> Void)?
     /// Cmd+Shift+Down — move the selected blocks down one position.
@@ -36,7 +38,8 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
             onEscape: onEscape,
             onTyping: onTyping,
             onMoveUp: onMoveUp,
-            onMoveDown: onMoveDown
+            onMoveDown: onMoveDown,
+            onPaste: onPaste
         )
     }
 
@@ -49,6 +52,7 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
         var onTyping: ((_ character: String) -> Void)?
         var onMoveUp: (() -> Void)?
         var onMoveDown: (() -> Void)?
+        var onPaste: (() -> Void)?
 
         init(
             onCopy: @escaping () -> Void,
@@ -58,7 +62,8 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
             onEscape: @escaping () -> Void,
             onTyping: ((_ character: String) -> Void)?,
             onMoveUp: (() -> Void)?,
-            onMoveDown: (() -> Void)?
+            onMoveDown: (() -> Void)?,
+            onPaste: (() -> Void)?
         ) {
             self.onCopy = onCopy
             self.onCut = onCut
@@ -68,6 +73,7 @@ struct MultiBlockKeyHandler: NSViewRepresentable {
             self.onTyping = onTyping
             self.onMoveUp = onMoveUp
             self.onMoveDown = onMoveDown
+            self.onPaste = onPaste
         }
     }
 }
@@ -97,6 +103,9 @@ final class KeyHandlerNSView: NSView {
             return true
         case "a":
             coordinator?.onSelectAll()
+            return true
+        case "v":
+            coordinator?.onPaste?()
             return true
         default:
             return super.performKeyEquivalent(with: event)
