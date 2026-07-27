@@ -148,6 +148,56 @@ extension DocumentStore {
         saveDocument(id: document.id)
     }
 
+    /// Replaces the whole document set, used after a storage-mode switch.
+    ///
+    /// Writes each document so the new backing store holds them all, rather than
+    /// assuming the previous mode's files are still authoritative.
+    func replaceAll(with documents: [WritingDocument]) {
+        self.documents = documents
+        rebuildIndexMap()
+        for document in documents {
+            saveDocument(id: document.id)
+        }
+        pruneStoredDocuments(keeping: Set(documents.map(\.id)))
+    }
+
+    /// Takes on the documents read back from the markdown folder when markdown storage is
+    /// turned off.
+    ///
+    /// Trash lives in the app rather than in the folder — a deleted document should not sit
+    /// in `~/Documents` waiting to be noticed — so trashed documents have no file to import.
+    /// They are carried over from the encrypted copies that were never deleted, which is
+    /// also why `replaceAll` can prune safely afterwards: by then they are in `documents`.
+    func adoptAfterStorageSwitch(_ imported: [WritingDocument]) async {
+        var restored = imported
+
+        do {
+            let stored = try await Self.readEncryptedDocuments(in: encryptedDocumentsDirectory)
+            restored = Self.merging(imported: imported, carryingTrashFrom: stored)
+        } catch {
+            // The folder's documents are the ones that matter; losing the trash view is a
+            // degraded result, not a failed switch.
+            Self.logger.error(
+                "Could not read trashed documents during storage switch: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+
+        replaceAll(with: restored)
+    }
+
+    /// The rule for combining folder documents with the encrypted trash.
+    ///
+    /// Pure and separate from the I/O so it can be tested: getting it wrong either loses
+    /// the trash or resurrects a document the folder no longer has. Imported documents win
+    /// on collision — the folder is the truth for anything that has a file.
+    nonisolated static func merging(
+        imported: [WritingDocument],
+        carryingTrashFrom stored: [WritingDocument]
+    ) -> [WritingDocument] {
+        let importedIDs = Set(imported.map(\.id))
+        return imported + stored.filter { $0.isTrashed && !importedIDs.contains($0.id) }
+    }
+
     // MARK: - Bulk actions
 
     /// Applies a bulk transform to the selected documents and saves each changed one.

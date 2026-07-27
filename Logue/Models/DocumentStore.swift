@@ -21,7 +21,8 @@ final class DocumentStore {
         loadOrganisation()
     }
 
-    private let logger = Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
+    // Extension-visible: +AITitle
+    let logger = Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
 
     // MARK: - State
 
@@ -315,98 +316,6 @@ final class DocumentStore {
         return result
     }
 
-    // MARK: - AI Title Generation (Local LLM)
-
-    func generateAITitle(for documentID: UUID) async {
-        guard await LLMEngine.shared.isModelLoaded else {
-            logger.warning("generateAITitle: no model loaded")
-            return
-        }
-        guard let doc = documents.first(where: { $0.id == documentID }) else { return }
-
-        let text = doc.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count > 50 else { return }
-
-        let prompt = """
-        Generate a short title (3-7 words, title case) for this document. \
-        Rules: Do NOT include author names or words like "Meeting", "Email", "Document". \
-        The title should describe the topic as a noun phrase, not a sentence. \
-        Output ONLY the title, nothing else.
-
-        Document:
-        \(String(text.prefix(2000)))
-
-        Title:
-        """
-
-        if let cleanTitle = await generateTitle(prompt: prompt) {
-            if let index = documentIndex(for: documentID),
-               isDefaultDocumentTitle(documents[index].title)
-            {
-                documents[index].title = uniqueTitle(cleanTitle, among: activeDocuments.map(\.title))
-                documents[index].modifiedAt = Date()
-                saveDocument(id: documentID)
-            }
-        }
-    }
-
-    /// Re-generate a title, considering the current title and content changes.
-    func regenerateAITitle(for documentID: UUID) async {
-        guard await LLMEngine.shared.isModelLoaded else {
-            logger.warning("regenerateAITitle: no model loaded")
-            return
-        }
-        guard let doc = documents.first(where: { $0.id == documentID }) else { return }
-
-        let text = doc.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count > 20 else { return }
-
-        let currentTitle = doc.title
-
-        let prompt = if isDefaultDocumentTitle(currentTitle) {
-            """
-            Generate a short title (3-7 words, title case) for this document. \
-            Rules: Do NOT include author names or words like "Meeting", "Email", "Document". \
-            The title should describe the topic as a noun phrase, not a sentence. \
-            Output ONLY the title, nothing else.
-
-            Document:
-            \(String(text.prefix(2000)))
-
-            Title:
-            """
-        } else {
-            """
-            The current title is: "\(currentTitle)"
-            Below is the document content. If the topic still matches the current title, return the same title. \
-            Only generate a new title (3-7 words, title case) if the topic has significantly changed. \
-            Do NOT include author names or words like "Meeting", "Email", "Document". \
-            Output ONLY the title, nothing else.
-
-            Document:
-            \(String(text.prefix(2000)))
-
-            Title:
-            """
-        }
-
-        if let cleanTitle = await generateTitle(prompt: prompt) {
-            if let index = documentIndex(for: documentID) {
-                documents[index].title = cleanTitle
-                documents[index].modifiedAt = Date()
-                saveDocument(id: documentID)
-            }
-        }
-    }
-
-    private func generateTitle(prompt: String) async -> String? {
-        await AITitleGenerator.generate(prompt: prompt)
-    }
-
-    private func isDefaultDocumentTitle(_ title: String) -> Bool {
-        title == "Untitled Document"
-    }
-
     // MARK: - Space Operations
 
     func documents(inSpace spaceID: UUID) -> [WritingDocument] {
@@ -451,6 +360,15 @@ final class DocumentStore {
     func saveDocument(id: UUID) {
         guard let index = documentIndex(for: id) else { return }
         let doc = documents[index]
+
+        // Checked before the encrypted write, not after: in markdown mode the file *is*
+        // the document, and writing both would recreate the two-copies problem this
+        // storage design exists to avoid.
+        if DocumentStorage.shared.save(doc, spaces: SpaceStore.shared.spaces) {
+            Task.detached(priority: .utility) { await SemanticIndex.shared.indexDocument(doc) }
+            return
+        }
+
         let url = fileURL(for: id)
         let dir = documentsDirectory
         _documentSaveTasks[id]?.cancel()
@@ -466,8 +384,6 @@ final class DocumentStore {
                     .error("Failed to save document \(id): \(error.localizedDescription, privacy: .public)")
             }
         }
-        // Keep the plain-markdown mirror in step. No-ops when mirroring is off.
-        MarkdownMirror.shared.sync(doc)
 
         // Best-effort semantic re-index — hash-checked, so unchanged bodies are skipped.
         Task.detached(priority: .utility) {
@@ -497,6 +413,55 @@ final class DocumentStore {
         }
     }
 
+    /// Removes encrypted files for documents that no longer exist.
+    ///
+    /// Switching to plain markdown deliberately leaves the encrypted originals alone, so
+    /// a bad export is never destructive. The cost is that a document deleted while
+    /// markdown storage was on still has its old encrypted file — and encrypted loading
+    /// reads the whole directory, so it would come back on the next launch. Pruning on
+    /// the way back closes that without ever deleting at the risky moment.
+    ///
+    /// Extension-visible: +Organisation
+    func pruneStoredDocuments(keeping ids: Set<UUID>) {
+        // While markdown storage is on, the encrypted files are the untouched pre-switch
+        // copies, not a stale view of the truth. Pruning them then would throw away the
+        // very fallback that makes enabling markdown storage safe.
+        guard !DocumentStorage.shared.mode.isMarkdown else { return }
+
+        let dir = documentsDirectory
+        Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            guard fm.fileExists(atPath: dir.path) else { return }
+            do {
+                let files = try fm.contentsOfDirectory(
+                    at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+                )
+                for file in Self.staleDocumentFiles(among: files, keeping: ids) {
+                    try fm.removeItem(at: file)
+                }
+            } catch {
+                Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
+                    .error("Could not prune stored documents: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Which files in the encrypted directory belong to no live document.
+    ///
+    /// Pure and separate from the deletion so it can be tested — this decides what gets
+    /// removed, so anything it wrongly includes is lost data. Only `.json` files whose name
+    /// is a UUID qualify: an unrecognised file is left alone rather than assumed to be ours.
+    ///
+    /// Extension-visible: +Organisation
+    nonisolated static func staleDocumentFiles(among files: [URL], keeping ids: Set<UUID>) -> [URL] {
+        files.filter { file in
+            guard file.pathExtension == "json",
+                  let id = UUID(uuidString: file.deletingPathExtension().lastPathComponent)
+            else { return false }
+            return !ids.contains(id)
+        }
+    }
+
     /// Deletes the individual file for a permanently-deleted document.
     private func deleteDocumentFile(id: UUID) {
         let url = fileURL(for: id)
@@ -519,7 +484,51 @@ final class DocumentStore {
         }
     }
 
+    /// Reads every encrypted document file in a directory, off the main thread.
+    ///
+    /// A file that cannot be decrypted or decoded is skipped and logged rather than
+    /// failing the whole read — one corrupt document should not hide the rest.
+    ///
+    /// Extension-visible: +Organisation
+    nonisolated static func readEncryptedDocuments(in directory: URL) async throws -> [WritingDocument] {
+        try await Task.detached {
+            let fm = FileManager.default
+            let files = try fm.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+            )
+            var docs: [WritingDocument] = []
+            for file in files where file.pathExtension == "json" {
+                do {
+                    let data = try Data(contentsOf: file)
+                    try docs.append(
+                        EncryptionManager.decryptCodableWithFallback(WritingDocument.self, from: data)
+                    )
+                } catch {
+                    Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
+                        .error("Skipping corrupt document file \(file.lastPathComponent): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            return docs
+        }.value
+    }
+
+    /// The encrypted document directory, so a storage switch can read what is still there.
+    ///
+    /// Extension-visible: +Organisation
+    var encryptedDocumentsDirectory: URL {
+        documentsDirectory
+    }
+
     private func loadFromDiskAsync() async {
+        // Markdown mode reads the folder instead; the encrypted files are not the truth
+        // while it is on.
+        if let fromMarkdown = DocumentStorage.shared.loadDocuments(knownSpaces: SpaceStore.shared.spaces) {
+            documents = fromMarkdown
+            rebuildIndexMap()
+            isLoaded = true
+            return
+        }
+
         let dir = documentsDirectory
         let hasClearedSeed = UserDefaults.standard.bool(forKey: AppConstants.UserDefaultsKeys.hasClearedSeedData)
 
@@ -536,23 +545,7 @@ final class DocumentStore {
         }
 
         do {
-            // Heavy I/O + decrypt + decode off main thread
-            let loaded: [WritingDocument] = try await Task.detached {
-                let fm = FileManager.default
-                let files = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
-                var docs: [WritingDocument] = []
-                for file in files where file.pathExtension == "json" {
-                    do {
-                        let data = try Data(contentsOf: file)
-                        let doc = try EncryptionManager.decryptCodableWithFallback(WritingDocument.self, from: data)
-                        docs.append(doc)
-                    } catch {
-                        Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
-                            .error("Skipping corrupt document file \(file.lastPathComponent): \(error.localizedDescription, privacy: .public)")
-                    }
-                }
-                return docs
-            }.value
+            let loaded = try await Self.readEncryptedDocuments(in: dir)
 
             guard !loaded.isEmpty else {
                 documents = []

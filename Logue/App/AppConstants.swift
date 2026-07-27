@@ -31,6 +31,8 @@ enum AppConstants {
         static let editorZoomScale = "editorZoomScale"
         /// Security-scoped bookmark for the plain-markdown mirror folder.
         static let mirrorFolderBookmark = "mirrorFolderBookmark"
+        /// How documents are stored: `encrypted` (default) or `markdown`.
+        static let documentStorageMode = "documentStorageMode"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"

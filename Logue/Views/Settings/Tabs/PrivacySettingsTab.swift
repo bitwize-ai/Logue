@@ -5,7 +5,12 @@ import SwiftUI
 /// location with "Reveal in Finder", and the plain-English permission summary
 /// (with a hand-off to System Settings when the user wants to revoke).
 struct PrivacySettingsTab: View {
-    @State private var mirror = MarkdownMirror.shared
+    @State private var storage = DocumentStorage.shared
+    @Environment(DocumentStore.self) private var documentStore
+    @Environment(SpaceStore.self) private var spaceStore
+    @State private var showingEnableWarning = false
+    @State private var showingDisableConfirmation = false
+    @State private var storageError: String?
     @State private var dataDirectory: URL = Self.dataDirectory()
     @State private var showEraseConfirm = false
 
@@ -16,7 +21,7 @@ struct PrivacySettingsTab: View {
                 Divider()
                 dataLocationSection
                 Divider()
-                mirrorSection
+                markdownStorageSection
                 Divider()
                 permissionsSection
                 Divider()
@@ -26,76 +31,95 @@ struct PrivacySettingsTab: View {
         }
     }
 
-    // MARK: - Markdown Mirror
+    // MARK: - Plain Markdown Storage
 
-    /// Opt-in plain-markdown mirror.
+    /// Opt-in plain-markdown storage.
     ///
-    /// Presented under Privacy on purpose: it writes document text **unencrypted** to
-    /// a folder the user picks, which is exactly the trade-off they need to understand
-    /// before enabling it.
-    private var mirrorSection: some View {
+    /// Under Privacy because that is the real trade: documents stop being encrypted and
+    /// become readable by anything on the Mac. Presenting it as a convenience feature
+    /// would bury the part the user needs to weigh.
+    private var markdownStorageSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Markdown Mirror")
+            Text("Plain Markdown Storage")
                 .font(.headline)
 
-            Text("Keep a plain .md copy of every document in a folder you choose, so you can "
-                + "track them in git or edit them in another app. Logue's own copy stays "
-                + "encrypted — the mirror is an additional, unencrypted copy.")
+            Text("Store documents as ordinary .md files in your Documents folder, so you can "
+                + "edit them in another app, track them in git, or let AI agents read them. "
+                + "Meetings, transcripts and audio always stay encrypted.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let folder = mirror.folderURL {
+            if storage.mode.isMarkdown {
                 HStack(spacing: 8) {
                     Image(systemName: "folder")
                         .foregroundStyle(.secondary)
-                    Text(folder.lastPathComponent)
+                    Text(DocumentStorage.markdownRootURL.path
+                        .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                         .font(.callout)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
                     Button("Reveal") {
-                        NSWorkspace.shared.activateFileViewerSelecting([folder])
+                        NSWorkspace.shared.activateFileViewerSelecting(
+                            [DocumentStorage.markdownRootURL]
+                        )
                     }
                     .controlSize(.small)
-                    Button("Turn Off") { mirror.disable() }
+                    Button("Turn Off") { showingDisableConfirmation = true }
                         .controlSize(.small)
                 }
 
-                if !mirror.conflicts.isEmpty {
-                    Label(
-                        "\(mirror.conflicts.count) document(s) have conflicting edits. "
-                            + "Open them to resolve.",
-                        systemImage: "exclamationmark.triangle"
-                    )
+                Label("Documents in this folder are not encrypted.", systemImage: "lock.open")
                     .font(.caption)
                     .foregroundStyle(.orange)
-                }
             } else {
-                Button("Choose Folder…", action: chooseMirrorFolder)
+                Button("Turn On…") { showingEnableWarning = true }
                     .controlSize(.small)
+            }
 
-                Text("Files written here are not encrypted. Pick a location you are "
-                    + "comfortable leaving readable — and note that syncing it to a cloud "
-                    + "folder puts unencrypted document text on that service.")
+            if let error = storageError {
+                Text(error)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .sheet(isPresented: $showingEnableWarning) {
+            MarkdownStorageWarningSheet { enableMarkdownStorage() }
+        }
+        .confirmationDialog(
+            "Turn off plain markdown storage?",
+            isPresented: $showingDisableConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Turn Off and Re-encrypt") { disableMarkdownStorage() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your documents move back into Logue's encrypted storage. The folder is left "
+                + "in place — nothing in it is deleted.")
+        }
     }
 
-    private func chooseMirrorFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Use Folder"
-        panel.message = "Choose where Logue should write plain markdown copies."
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        mirror.enable(folder: url)
+    private func enableMarkdownStorage() {
+        storageError = nil
+        do {
+            try storage.switchToMarkdown(
+                documents: documentStore.documents, spaces: spaceStore.spaces
+            )
+        } catch {
+            // Nothing was changed: the switch verifies every file before flipping.
+            storageError = error.localizedDescription
+        }
     }
+
+    private func disableMarkdownStorage() {
+        storageError = nil
+        let restored = storage.switchToEncrypted(knownSpaces: spaceStore.spaces)
+        Task { await documentStore.adoptAfterStorageSwitch(restored) }
+    }
+
+    // MARK: - Encryption
 
     // MARK: - Encryption
 
