@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - RewriteResult
 
-struct RewriteResult: Codable, Sendable {
+struct RewriteResult: Codable, Equatable, Sendable {
     let style: String
     let originalText: String
     let rewrittenText: String

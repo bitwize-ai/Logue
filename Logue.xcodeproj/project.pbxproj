@@ -99,6 +99,7 @@
 		281A36053B04F234CDD04422 /* ScheduledTaskManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B951849FD3761363C96A27 /* ScheduledTaskManager.swift */; };
 		2864F151E0AC25AAE963659E /* HelpMenuActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387F757ED0841F2E4042DF7A /* HelpMenuActions.swift */; };
 		289CC815E02A03243FA7696B /* PromptRegistry+InlineRewrite.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BBB9D94724076C53D2F8EC /* PromptRegistry+InlineRewrite.swift */; };
+		2912A07E0CA39107DCE54499 /* DocumentPersistenceSplitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1246768E9657B7146D7062 /* DocumentPersistenceSplitTests.swift */; };
 		2AADC5238C76ED6A02544A34 /* AgentConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB0F899AF6F08FEAF8AA46 /* AgentConversationListView.swift */; };
 		2AFCB1DEDD52C307A5201BC7 /* UpcomingEventCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 510929670B711C38C5D0F08F /* UpcomingEventCard.swift */; };
 		2BAA8102CA7FD65AD66600B5 /* DocumentSearchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CCC37048141456C9BA5AA3 /* DocumentSearchBar.swift */; };
@@ -248,6 +249,7 @@
 		6E66E9B993B63623F605E552 /* BlockPasteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C42C0A1E60F8FC22AC2EF3 /* BlockPasteTests.swift */; };
 		6EE6B461C7E6CA280E8C8661 /* HierarchicalSpaceMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4714BA50A68B3093B932CB4 /* HierarchicalSpaceMenu.swift */; };
 		6EF0995F3E06CB5ED24FD625 /* DocumentListContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A864D7C5937FF77CB9835242 /* DocumentListContentView.swift */; };
+		6FCA4A002F8D774A1B61FC52 /* DocumentPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83EAB06801839EF01B7C4AEF /* DocumentPersistence.swift */; };
 		70A6886DC7BEF1D8F93BCC40 /* LocationTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DFCD2049B54A1F08F0C8E89 /* LocationTool.swift */; };
 		70E9CE40EE4415B64DB71300 /* EncryptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D382DBF4C28CE786D415CDD1 /* EncryptionManager.swift */; };
 		70F7CF53A7FC5D1C23992FD4 /* DocumentSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6512B1A6D14BADBBF6AE6678 /* DocumentSidebarView.swift */; };
@@ -527,6 +529,7 @@
 		0AF5EF3690289F45983AC0AB /* TableBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableBlockView.swift; sourceTree = "<group>"; };
 		0B7EFCB53320B6385931BBD8 /* TableBlockEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableBlockEditView.swift; sourceTree = "<group>"; };
 		0D270AE60AD2503E159E4A50 /* SpeechTranscriberEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTranscriberEngine.swift; sourceTree = "<group>"; };
+		0E1246768E9657B7146D7062 /* DocumentPersistenceSplitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPersistenceSplitTests.swift; sourceTree = "<group>"; };
 		0E2201F239D5E1F87D9AA99B /* ScheduledTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTask.swift; sourceTree = "<group>"; };
 		0E301D10E019C7E392F848A0 /* PinnedContentPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedContentPane.swift; sourceTree = "<group>"; };
 		0E78077A2EACC3DD4364C4CC /* Toast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Toast.swift; sourceTree = "<group>"; };
@@ -748,6 +751,7 @@
 		837F62D2494263F949FBA619 /* Logue.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Logue.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		838825BB306355DA859DFF91 /* VectorStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VectorStore.swift; sourceTree = "<group>"; };
 		83C272112D79CC98FD132288 /* ContentNavigatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentNavigatorTests.swift; sourceTree = "<group>"; };
+		83EAB06801839EF01B7C4AEF /* DocumentPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPersistence.swift; sourceTree = "<group>"; };
 		840A12365F18257475A34827 /* QuickPromptChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickPromptChip.swift; sourceTree = "<group>"; };
 		84D22CFDEB9D3FC3A4805089 /* UICopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UICopy.swift; sourceTree = "<group>"; };
 		851703C5995A9B2FA0C07975 /* TemplateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateStore.swift; sourceTree = "<group>"; };
@@ -1066,6 +1070,7 @@
 				860DFF869B9C6C39BE468431 /* DiagnosticsReportTests.swift */,
 				B7D76EDEE9C20C5C390BAF10 /* DiagramMathBlockTests.swift */,
 				9130B8EDD12207674F5B4323 /* DocumentIconTests.swift */,
+				0E1246768E9657B7146D7062 /* DocumentPersistenceSplitTests.swift */,
 				FB0075D6BBFD557576AAF966 /* DocumentPropertyTests.swift */,
 				4B27EF7809E2AAC8C8F7E6DC /* DocumentRelationshipTests.swift */,
 				F95595374A2F4D02321B7CA2 /* DocumentReplaceTests.swift */,
@@ -1486,6 +1491,7 @@
 				31784F4F4DF98021B23FFFA9 /* CanvasSnapshot.swift */,
 				E91B8420A88FFD5D29FE6638 /* DeepLink.swift */,
 				DBB768463E40E11BC5922145 /* DocumentIcon.swift */,
+				83EAB06801839EF01B7C4AEF /* DocumentPersistence.swift */,
 				3C70C5136BF964DD9AC4887F /* DocumentStore.swift */,
 				075684E5761CFA87A4763ED8 /* DocumentStore+Organisation.swift */,
 				B7E20C976C8094E3E4DCB896 /* DocumentStore+SeedData.swift */,
@@ -2040,6 +2046,7 @@
 				861F5D959175FAC61CA02A55 /* DiagramMathBlockTests.swift in Sources */,
 				1AC0C886212A4F3ADC9A48D1 /* DocumentIconTests.swift in Sources */,
 				53C6F90254BA856A74CD343A /* DocumentLLMTests.swift in Sources */,
+				2912A07E0CA39107DCE54499 /* DocumentPersistenceSplitTests.swift in Sources */,
 				68A60F0021C2B996783F3F41 /* DocumentPropertyTests.swift in Sources */,
 				CDA217D545BB79B7978CFCF1 /* DocumentRelationshipTests.swift in Sources */,
 				D36DA27367323F11D5671F9C /* DocumentReplaceTests.swift in Sources */,
@@ -2193,6 +2200,7 @@
 				5FCA28149B189B61283A387C /* DocumentIcon.swift in Sources */,
 				6EF0995F3E06CB5ED24FD625 /* DocumentListContentView.swift in Sources */,
 				A4AEBA0FBDA0E9CE695009FD /* DocumentListPane.swift in Sources */,
+				6FCA4A002F8D774A1B61FC52 /* DocumentPersistence.swift in Sources */,
 				83D4B061F474B55E93422576 /* DocumentRowCompact.swift in Sources */,
 				2BAA8102CA7FD65AD66600B5 /* DocumentSearchBar.swift in Sources */,
 				75E00B6D645BDF14E88D8DDB /* DocumentSearchState.swift in Sources */,
