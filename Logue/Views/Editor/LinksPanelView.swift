@@ -21,33 +21,22 @@ struct LinksPanelView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if let index {
-                    linkSection(
-                        title: "Links to",
-                        systemImage: "arrow.up.right",
-                        ids: index.outgoing(from: documentID),
-                        index: index,
-                        emptyMessage: "No links out. Type [[ in the document to link to another document or meeting."
-                    )
+                    let neighborhood = Neighborhood(index: index, sourceID: documentID)
 
-                    linkSection(
-                        title: "Linked from",
-                        systemImage: "arrow.down.left",
-                        ids: index.backlinks(to: documentID),
-                        index: index,
-                        emptyMessage: "Nothing links here yet."
-                    )
+                    if neighborhood.isEmpty, index.brokenTargets(from: documentID).isEmpty {
+                        Text("No links yet. Type [[ in the document to link to another document or meeting.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                    ForEach(RelationshipKind.allCases, id: \.self) { kind in
-                        let related = index.related(from: documentID, kind: kind)
-                        if !related.isEmpty {
-                            linkSection(
-                                title: kind.label,
-                                systemImage: kind.symbolName,
-                                ids: related,
-                                index: index,
-                                emptyMessage: ""
-                            )
-                        }
+                    ForEach(neighborhood.groups) { group in
+                        linkSection(
+                            title: group.title,
+                            systemImage: group.symbolName,
+                            ids: group.itemIDs,
+                            index: index
+                        )
                     }
 
                     brokenSection(targets: index.brokenTargets(from: documentID))
@@ -81,25 +70,17 @@ struct LinksPanelView: View {
         title: String,
         systemImage: String,
         ids: [UUID],
-        index: LinkIndex,
-        emptyMessage: String
+        index: LinkIndex
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             LinksSectionHeader(title: title, systemImage: systemImage, itemCount: ids.count)
 
-            if ids.isEmpty {
-                Text(emptyMessage)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ForEach(ids, id: \.self) { id in
-                    LinkRow(
-                        title: index.title(of: id) ?? "Untitled",
-                        kind: index.kind(of: id),
-                        action: { open(id: id, kind: index.kind(of: id)) }
-                    )
-                }
+            ForEach(ids, id: \.self) { id in
+                LinkRow(
+                    title: index.title(of: id) ?? "Untitled",
+                    kind: index.kind(of: id),
+                    action: { open(id: id, kind: index.kind(of: id)) }
+                )
             }
         }
     }
