@@ -203,6 +203,9 @@ final class DocumentStore {
         if selectedDocumentID == id {
             selectedDocumentID = nil
         }
+        // Both stores: a trashed document lives in encrypted storage even in markdown mode,
+        // and one deleted without being trashed first still has its file.
+        DocumentStorage.shared.removeFile(for: id)
         deleteDocumentFile(id: id)
     }
 
@@ -521,11 +524,17 @@ final class DocumentStore {
 
     private func loadFromDiskAsync() async {
         // Markdown mode reads the folder instead; the encrypted files are not the truth
-        // while it is on.
-        if let fromMarkdown = DocumentStorage.shared.loadDocuments(knownSpaces: SpaceStore.shared.spaces) {
+        // while it is on, apart from the trash, which has no file by design.
+        if let fromMarkdown = await DocumentStorage.shared.loadDocuments(
+            knownSpaces: SpaceStore.shared.spaces, trashedFrom: documentsDirectory
+        ) {
             documents = fromMarkdown
             rebuildIndexMap()
             isLoaded = true
+            // Anything that changed while the app was not running is picked up here, before
+            // the watcher takes over.
+            DocumentStorage.shared.startWatchingIfNeeded()
+            DocumentStorage.shared.rescan()
             return
         }
 

@@ -1,0 +1,97 @@
+import Foundation
+
+/// What a scan of the markdown folder means for the document library.
+///
+/// Pure, and separate from both the filesystem and the stores, because this is the riskiest
+/// rule set in plain-markdown storage: applying a change that did not happen overwrites
+/// what the user just typed, and missing one loses what they typed somewhere else.
+struct ExternalChangePlan: Sendable {
+    /// Documents whose file now says something different.
+    var updated: [DocumentContent] = []
+    /// Files with no identifier, adopted as new documents.
+    var inserted: [DocumentContent] = []
+    /// Documents whose file is gone.
+    var trashed: [UUID] = []
+    /// Identifiers found in files that match no document. Reported, never applied.
+    var ignoredIdentifiers: [UUID] = []
+
+    var isEmpty: Bool {
+        updated.isEmpty && inserted.isEmpty && trashed.isEmpty
+    }
+
+    /// A one-line description for the rescan button's tooltip and the log.
+    var summary: String {
+        guard !isEmpty else { return "No changes" }
+        var parts: [String] = []
+        if !updated.isEmpty {
+            parts.append("\(updated.count) updated")
+        }
+        if !inserted.isEmpty {
+            parts.append("\(inserted.count) added")
+        }
+        if !trashed.isEmpty {
+            parts.append("\(trashed.count) removed")
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+enum ExternalChangePlanner {
+    /// Compares what the folder holds against what the app holds.
+    ///
+    /// - Parameters:
+    ///   - scanned: documents read from files that carry an identifier.
+    ///   - adopted: documents built from files that carry none, with fresh identifiers.
+    ///   - known: every document the app has, trashed ones included.
+    static func plan(
+        scanned: [DocumentContent],
+        adopted: [DocumentContent] = [],
+        known: [DocumentContent]
+    ) -> ExternalChangePlan {
+        var plan = ExternalChangePlan()
+        let knownByID = Dictionary(known.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        var seen: Set<UUID> = []
+        for content in scanned {
+            // A duplicated file carries a duplicated identifier. The first one wins rather
+            // than the two fighting over the document on every scan.
+            guard seen.insert(content.id).inserted else { continue }
+
+            guard let existing = knownByID[content.id] else {
+                plan.ignoredIdentifiers.append(content.id)
+                continue
+            }
+            if differs(content, from: existing) {
+                plan.updated.append(content)
+            }
+        }
+
+        plan.inserted = adopted
+
+        // A document with no file is a deletion — but only if the app thinks it should
+        // have one. Trashed documents are deliberately absent from the folder, so treating
+        // their absence as a deletion would empty the trash on every scan.
+        for document in known where !document.isTrashed && !seen.contains(document.id) {
+            plan.trashed.append(document.id)
+        }
+
+        return plan
+    }
+
+    /// Whether a file's content differs from the document in a way worth applying.
+    ///
+    /// Timestamps are deliberately excluded. An external editor rewrites the body without
+    /// touching `modified:`, and our own writes bump it — so comparing timestamps would
+    /// both miss real edits and manufacture fake ones. Only what the markdown actually
+    /// represents is compared.
+    static func differs(_ scanned: DocumentContent, from known: DocumentContent) -> Bool {
+        scanned.title != known.title
+            || scanned.body != known.body
+            || scanned.tags != known.tags
+            || scanned.spaceID != known.spaceID
+            || scanned.icon != known.icon
+            || scanned.isPinned != known.isPinned
+            || scanned.properties ?? [:] != known.properties ?? [:]
+            || scanned.relationships ?? [:] != known.relationships ?? [:]
+    }
+}

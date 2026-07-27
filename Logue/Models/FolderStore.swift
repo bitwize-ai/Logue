@@ -97,6 +97,62 @@ final class SpaceStore {
         return space
     }
 
+    /// Takes on a folder that already exists on disk as a space.
+    ///
+    /// Unlike `createSpace` the name is kept **exactly** as the folder spells it, and no
+    /// disambiguating suffix is added. That matters: a deduped name would be written back as a
+    /// differently-named folder, which the next scan would read as another new folder, and the
+    /// library would grow every time it was looked at.
+    ///
+    /// A space that already has this identifier is returned unchanged, so re-adopting is free.
+    @discardableResult
+    func adoptSpace(
+        id: UUID,
+        name: String,
+        parentID: UUID?,
+        icon: String? = nil,
+        color: String? = nil
+    ) -> Space? {
+        if let existing = spaces.first(where: { $0.id == id }) {
+            return existing
+        }
+
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let maxOrder = spaces.filter { $0.parentID == parentID }.map(\.sortOrder).max() ?? -1
+        let space = Space(
+            id: id,
+            name: trimmed,
+            parentID: parentID,
+            sortOrder: maxOrder + 1,
+            icon: icon,
+            color: color
+        )
+        spaces.append(space)
+        saveToDisk()
+        return space
+    }
+
+    /// Follows a folder that was renamed or moved outside the app.
+    ///
+    /// The name is taken exactly as the folder spells it, with no deduplication: this is not a
+    /// user typing a name we can adjust, it is a fact on disk. Deduplicating would write a
+    /// differently-named folder, which the next scan would read as yet another new folder.
+    func adoptSpaceRename(id: UUID, name: String, parentID: UUID?) {
+        guard let index = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        // A folder cannot be moved inside itself, but a corrupted `_space.md` could claim it
+        // was — which would make the parent chain a cycle.
+        guard parentID != id, !allDescendantIDs(of: id).contains(parentID ?? id) else { return }
+
+        spaces[index].name = trimmed
+        spaces[index].parentID = parentID
+        saveToDisk()
+    }
+
     func renameSpace(id: UUID, newName: String) {
         guard let index = spaces.firstIndex(where: { $0.id == id }) else { return }
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)

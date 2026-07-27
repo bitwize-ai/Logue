@@ -1,0 +1,185 @@
+import Foundation
+@testable import Logue
+import Testing
+
+/// Deciding what a change on disk means for the library.
+///
+/// The two failures this guards are asymmetric but both bad: applying a change that did not
+/// happen overwrites what the user just typed, and ignoring one loses what they typed in
+/// another editor. Every rule below exists because one of those is possible without it.
+@Suite("External change plan")
+struct ExternalChangePlanTests {
+    private func document(_ title: String, body: String = "body", trashed: Bool = false) -> DocumentContent {
+        var doc = WritingDocument()
+        doc.title = title
+        doc.body = body
+        doc.isTrashed = trashed
+        return doc.content
+    }
+
+    // MARK: - No change
+
+    /// The most important case: a file that matches must produce nothing, or a scan turns
+    /// into a write, which turns into a scan.
+    @Test("An unchanged file produces no change")
+    func unchangedFileIsQuiet() {
+        let doc = document("Alpha")
+        let plan = ExternalChangePlanner.plan(scanned: [doc], known: [doc])
+
+        #expect(plan.isEmpty)
+        #expect(plan.summary == "No changes")
+    }
+
+    @Test("An empty folder with no documents produces no change")
+    func emptyIsQuiet() {
+        #expect(ExternalChangePlanner.plan(scanned: [], known: []).isEmpty)
+    }
+
+    /// Our own writes bump `modified:`; an external editor does not touch it. Comparing it
+    /// would both invent changes and hide them.
+    @Test("A differing timestamp alone is not a change")
+    func timestampAloneIsNotAChange() {
+        var known = document("Alpha")
+        var scanned = known
+        scanned.modifiedAt = known.modifiedAt.addingTimeInterval(500)
+        known.createdAt = known.createdAt.addingTimeInterval(-500)
+
+        #expect(ExternalChangePlanner.plan(scanned: [scanned], known: [known]).isEmpty)
+    }
+
+    // MARK: - Updates
+
+    @Test("An edited body is an update")
+    func editedBodyUpdates() throws {
+        let known = document("Alpha", body: "old")
+        var scanned = known
+        scanned.body = "new"
+
+        let plan = ExternalChangePlanner.plan(scanned: [scanned], known: [known])
+        #expect(plan.updated.count == 1)
+        #expect(try #require(plan.updated.first).body == "new")
+        #expect(plan.trashed.isEmpty)
+    }
+
+    @Test("A retitled file is an update")
+    func editedTitleUpdates() {
+        let known = document("Alpha")
+        var scanned = known
+        scanned.title = "Renamed"
+
+        #expect(ExternalChangePlanner.plan(scanned: [scanned], known: [known]).updated.count == 1)
+    }
+
+    /// Moving a file between folders is how the user refiles a document from Finder.
+    @Test("A file moved to another folder is an update")
+    func movedFileUpdates() {
+        let known = document("Alpha")
+        var scanned = known
+        scanned.spaceID = UUID()
+
+        #expect(ExternalChangePlanner.plan(scanned: [scanned], known: [known]).updated.count == 1)
+    }
+
+    @Test("Changed tags, properties and relationships are updates")
+    func metadataUpdates() {
+        let known = document("Alpha")
+
+        var tagged = known
+        tagged.tags = ["draft"]
+        var propertied = known
+        propertied.properties = ["status": .text("done")]
+        var related = known
+        related.relationships = ["blocks": ["Beta"]]
+
+        for scanned in [tagged, propertied, related] {
+            #expect(ExternalChangePlanner.plan(scanned: [scanned], known: [known]).updated.count == 1)
+        }
+    }
+
+    // MARK: - Deletion
+
+    @Test("A document whose file is gone is trashed")
+    func missingFileTrashes() {
+        let gone = document("Gone")
+        let plan = ExternalChangePlanner.plan(scanned: [], known: [gone])
+
+        #expect(plan.trashed == [gone.id])
+    }
+
+    /// Trashed documents have no file on purpose. Reading their absence as a deletion would
+    /// re-trash them on every single scan.
+    @Test("An already-trashed document is not trashed again")
+    func trashedStaysPut() {
+        let plan = ExternalChangePlanner.plan(scanned: [], known: [document("Deleted", trashed: true)])
+
+        #expect(plan.isEmpty)
+    }
+
+    @Test("Deleting one file leaves the others alone")
+    func deletionIsScoped() {
+        let kept = document("Kept")
+        let gone = document("Gone")
+
+        let plan = ExternalChangePlanner.plan(scanned: [kept], known: [kept, gone])
+        #expect(plan.trashed == [gone.id])
+        #expect(plan.updated.isEmpty)
+    }
+
+    // MARK: - New files
+
+    @Test("A file with no identifier is inserted as a new document")
+    func adoptedFileInserts() {
+        let dropped = document("Dropped in")
+        let plan = ExternalChangePlanner.plan(scanned: [], adopted: [dropped], known: [])
+
+        #expect(plan.inserted.count == 1)
+        #expect(plan.isEmpty == false)
+    }
+
+    /// An identifier matching no document is most likely a file left behind by something
+    /// outside the app. Adopting it would resurrect a document; the safe answer is to say so
+    /// and do nothing.
+    @Test("An unknown identifier is reported, not imported")
+    func unknownIdentifierIgnored() {
+        let stranger = document("Stranger")
+        let plan = ExternalChangePlanner.plan(scanned: [stranger], known: [])
+
+        #expect(plan.ignoredIdentifiers == [stranger.id])
+        #expect(plan.inserted.isEmpty)
+        #expect(plan.updated.isEmpty)
+    }
+
+    /// Copying a file in Finder duplicates its identifier. Both copies claiming the document
+    /// would make each scan overwrite the other's text.
+    @Test("A duplicated identifier is applied once")
+    func duplicateIdentifierAppliedOnce() {
+        let known = document("Alpha", body: "old")
+        var first = known
+        first.body = "first"
+        var second = known
+        second.body = "second"
+
+        let plan = ExternalChangePlanner.plan(scanned: [first, second], known: [known])
+        #expect(plan.updated.count == 1)
+        #expect(plan.trashed.isEmpty)
+    }
+
+    // MARK: - Summary
+
+    @Test("The summary names what changed")
+    func summaryDescribesPlan() {
+        let edited = document("Alpha", body: "old")
+        var scanned = edited
+        scanned.body = "new"
+
+        let plan = ExternalChangePlanner.plan(
+            scanned: [scanned],
+            adopted: [document("New")],
+            known: [edited, document("Gone")]
+        )
+
+        #expect(plan.summary.contains("1 updated"))
+        #expect(plan.summary.contains("1 added"))
+        #expect(plan.summary.contains("1 removed"))
+    }
+}

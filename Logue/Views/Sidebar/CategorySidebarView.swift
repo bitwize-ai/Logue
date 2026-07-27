@@ -11,6 +11,9 @@ struct CategorySidebarView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var colorScheme
 
+    /// `@State` rather than `@ObservedObject`: `DocumentStorage` is `@Observable`.
+    @State private var documentStorage = DocumentStorage.shared
+
     @State private var isAddingSpace = false
     @State private var newSpaceName = ""
     @State private var renamingSpaceID: UUID?
@@ -191,6 +194,9 @@ struct CategorySidebarView: View {
                 .background(AppThemeConstants.chromeBackground)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
+                        rescanButton
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button {
                             newSpaceName = ""
                             isAddingSpace = true
@@ -213,6 +219,36 @@ struct CategorySidebarView: View {
             // Pinned bottom — Trash & Settings always visible
             pinnedBottomBar
         }
+    }
+
+    // MARK: - Rescan
+
+    /// Re-reads `~/Documents/Logue`, for changes made while the app was not watching.
+    ///
+    /// Icon only, and shown only when plain markdown storage is on — with the setting off
+    /// there is no folder to read, so a button would be a promise the app cannot keep.
+    /// Changes are normally picked up on their own; this exists for the case the watcher
+    /// cannot cover, such as edits made while Logue was closed or a folder restored from a
+    /// backup.
+    @ViewBuilder
+    private var rescanButton: some View {
+        if documentStorage.mode.isMarkdown {
+            Button {
+                documentStorage.rescan()
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+            }
+            .disabled(documentStorage.isScanning)
+            .help(rescanTooltip)
+            .accessibilityLabel("Rescan Documents Folder")
+        }
+    }
+
+    private var rescanTooltip: String {
+        guard let summary = documentStorage.lastScanSummary else {
+            return "Check the Documents folder for changes made outside Logue"
+        }
+        return "Check the Documents folder for changes made outside Logue — last check: \(summary.lowercased())"
     }
 
     // MARK: - Action Item Counts

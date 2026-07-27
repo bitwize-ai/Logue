@@ -148,6 +148,42 @@ extension DocumentStore {
         saveDocument(id: document.id)
     }
 
+    // MARK: - Changes made outside the app
+
+    /// Applies what a scan of the markdown folder found.
+    ///
+    /// **Nothing is written back.** In markdown mode the file is the document, so the file is
+    /// already correct by definition — and a write here would produce an event, which would
+    /// produce a scan, which would produce a write. The one exception is trashing, because a
+    /// trashed document has no file and has to be kept somewhere.
+    func applyExternalChanges(_ plan: ExternalChangePlan) {
+        guard !plan.isEmpty else { return }
+
+        for content in plan.updated {
+            guard let index = documentIndex(for: content.id) else { continue }
+            // Derived state is kept: the AI caches belong to the document, not to the file,
+            // and an edit outside the app does not invalidate them any more than one inside it.
+            documents[index] = WritingDocument(content: content, derived: documents[index].derived)
+        }
+
+        for content in plan.inserted where documentIndex(for: content.id) == nil {
+            // Inserted at the front to match `createDocument`, so a note dropped into the
+            // folder shows up where a new note would.
+            documents.insert(WritingDocument(content: content, derived: nil), at: 0)
+        }
+
+        rebuildIndexMap()
+
+        // A file the user deleted outside the app goes to trash rather than vanishing:
+        // deleting a file is easy to do by accident, and Logue's own trash is the one place
+        // they can get it back from.
+        for id in plan.trashed {
+            deleteDocument(id: id)
+        }
+
+        invalidateCaches()
+    }
+
     /// Replaces the whole document set, used after a storage-mode switch.
     ///
     /// Writes each document so the new backing store holds them all, rather than

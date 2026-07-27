@@ -154,8 +154,15 @@ enum AppConstants {
 
     enum Delays {
         /// Coalesces a burst of filesystem events from another editor saving, so one
-        /// external save triggers one mirror scan rather than several.
+        /// external save triggers one folder scan rather than several.
         static let mirrorScanDebounce: Duration = .milliseconds(400)
+
+        /// The same window, for the GCD-based folder watcher.
+        ///
+        /// A separate constant because `DispatchQueue.asyncAfter` takes seconds and
+        /// `FSEventStream` is a C API — neither speaks `Duration`. Kept beside its twin so
+        /// the two cannot drift apart unnoticed.
+        static let folderScanDebounceSeconds: TimeInterval = 0.4
 
         /// -- UI Debounce --
         /// Search field input debounce (document list, meeting list, overview, sidebar)

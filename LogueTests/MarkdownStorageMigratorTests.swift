@@ -141,6 +141,129 @@ struct MarkdownStorageMigratorTests {
         #expect(result.writtenFiles.count == 1)
     }
 
+    // MARK: - Keeping the file a document already has
+
+    /// The user is invited to rename these files. If a save picked a name from the title
+    /// instead, their rename would come back as a second file next to the original.
+    @Test("A renamed file keeps its name when the document is saved again")
+    func reusesExistingFile() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let migrator = MarkdownStorageMigrator(rootURL: root)
+        var doc = document("Alpha")
+        #expect(migrator.export(documents: [doc], spaces: []).isSuccess)
+
+        // Rename it the way the user would, in Finder.
+        let original = try #require(migrator.fileIndex()[doc.id])
+        let renamed = root.appendingPathComponent("my own name.md")
+        try FileManager.default.moveItem(at: original, to: renamed)
+
+        doc.body = "edited in the app"
+        let result = migrator.export(documents: [doc], spaces: [], reusing: migrator.fileIndex())
+
+        #expect(result.writtenFiles[doc.id]?.lastPathComponent == "my own name.md")
+        #expect(migrator.markdownFiles().count == 1)
+    }
+
+    @Test("Moving a document between spaces moves its file and leaves nothing behind")
+    func movesFileBetweenSpaces() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let work = Space(name: "Work")
+        let migrator = MarkdownStorageMigrator(rootURL: root)
+        var doc = document("Alpha")
+        #expect(migrator.export(documents: [doc], spaces: [work]).isSuccess)
+
+        doc.spaceID = work.id
+        let result = migrator.export(documents: [doc], spaces: [work], reusing: migrator.fileIndex())
+
+        let moved = try #require(result.writtenFiles[doc.id])
+        #expect(moved.path.contains("/Work/"))
+
+        let documentFiles = migrator.markdownFiles()
+            .filter { !SpaceFile.isSpaceFile(filename: $0.lastPathComponent) }
+        #expect(documentFiles.count == 1)
+    }
+
+    @Test("The file index maps each document to its file")
+    func buildsFileIndex() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let first = document("Alpha")
+        let second = document("Beta")
+        let migrator = MarkdownStorageMigrator(rootURL: root)
+        #expect(migrator.export(documents: [first, second], spaces: []).isSuccess)
+
+        let index = migrator.fileIndex()
+        #expect(index.count == 2)
+        #expect(try #require(index[first.id]).lastPathComponent.contains("Alpha"))
+    }
+
+    // MARK: - Adopting a dropped-in file
+
+    @Test("A markdown file dropped into the folder becomes a document")
+    func adoptsDroppedFile() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let file = root.appendingPathComponent("shopping list.md")
+        try "- milk\n- bread\n".write(to: file, atomically: true, encoding: .utf8)
+
+        let adopted = try #require(
+            MarkdownStorageMigrator(rootURL: root).adopt(fileAt: file, knownSpaces: [])
+        )
+        #expect(adopted.title == "shopping list")
+        #expect(adopted.body.contains("milk"))
+    }
+
+    /// Without writing the identifier back, the next scan would not recognise the file and
+    /// would adopt it again — one dropped note becoming many.
+    @Test("Adoption writes the identifier into the same file, so a rescan finds it once")
+    func adoptionIsIdempotent() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let file = root.appendingPathComponent("notes.md")
+        try "text".write(to: file, atomically: true, encoding: .utf8)
+
+        let migrator = MarkdownStorageMigrator(rootURL: root)
+        let adopted = try #require(migrator.adopt(fileAt: file, knownSpaces: []))
+
+        #expect(FileManager.default.fileExists(atPath: file.path))
+        let rescan = migrator.importAll(knownSpaces: [])
+        #expect(rescan.unidentifiedFiles.isEmpty)
+        #expect(rescan.documents.map(\.id) == [adopted.id])
+    }
+
+    @Test("A file dropped into a space folder is filed into that space")
+    func adoptsIntoSpace() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let work = Space(name: "Work")
+        let directory = root.appendingPathComponent("Work")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("plan.md")
+        try "text".write(to: file, atomically: true, encoding: .utf8)
+
+        let adopted = try #require(
+            MarkdownStorageMigrator(rootURL: root).adopt(fileAt: file, knownSpaces: [work])
+        )
+        #expect(adopted.spaceID == work.id)
+    }
+
+    @Test("A file that cannot be read is not adopted")
+    func refusesUnreadableFile() {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let missing = root.appendingPathComponent("nothing-here.md")
+        #expect(MarkdownStorageMigrator(rootURL: root).adopt(fileAt: missing, knownSpaces: []) == nil)
+    }
+
     // MARK: - Import
 
     @Test("Exported documents import back identically")
