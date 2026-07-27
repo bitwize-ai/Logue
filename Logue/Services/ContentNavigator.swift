@@ -67,6 +67,7 @@ enum ContentNavigator {
     static func open(_ target: NavigationTarget, recordHistory: Bool = true) {
         if recordHistory, let origin = currentTarget, origin != target {
             NavigationHistory.shared.push(origin)
+            logger.debug("Recorded back entry; depth now \(NavigationHistory.shared.depth)")
         }
         select(target)
     }
@@ -75,7 +76,11 @@ enum ContentNavigator {
     /// the caller can fall back to its own back behaviour.
     @discardableResult
     static func goBack() -> Bool {
-        guard let previous = NavigationHistory.shared.popPrevious() else { return false }
+        guard let previous = NavigationHistory.shared.popPrevious() else {
+            logger.debug("Back requested but history is empty")
+            return false
+        }
+        logger.debug("Going back; depth now \(NavigationHistory.shared.depth)")
         // Do not re-record: going back is not a new destination.
         select(previous)
         return true
