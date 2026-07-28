@@ -64,12 +64,13 @@ enum ContentNavigator {
     }
 
     /// Selects the target, recording where we came from so Back can return there.
-    static func open(_ target: NavigationTarget, recordHistory: Bool = true) {
+    @discardableResult
+    static func open(_ target: NavigationTarget, recordHistory: Bool = true) -> Bool {
         if recordHistory, let origin = currentTarget, origin != target {
             NavigationHistory.shared.push(origin)
             logger.debug("Recorded back entry; depth now \(NavigationHistory.shared.depth)")
         }
-        select(target)
+        return select(target)
     }
 
     /// Returns to the previous link-navigation target. Returns whether it moved, so
@@ -81,28 +82,48 @@ enum ContentNavigator {
             return false
         }
         logger.debug("Going back; depth now \(NavigationHistory.shared.depth)")
-        // Do not re-record: going back is not a new destination.
-        select(previous)
+
+        // Reports what `select` actually did, not merely that an entry was popped. It used to
+        // return true unconditionally, and `select` returns silently for an id it cannot find — so
+        // following a link and then permanently deleting the document you came from left Back
+        // popping the entry, changing nothing, and telling its caller it had worked. The caller
+        // trusted that and skipped its list fallback: a dead button.
+        //
+        // The entry is dropped either way. A target that no longer resolves will not resolve on the
+        // next press either, so keeping it would make Back stick rather than fall through.
+        guard select(previous) else {
+            logger.info("Back entry no longer resolves; falling through to the caller")
+            return false
+        }
         return true
     }
 
     /// Performs the selection. Unknown identifiers are logged and ignored rather than
     /// clearing the current selection.
-    private static func select(_ target: NavigationTarget) {
+    /// Returns whether the selection actually changed, so a caller can fall back.
+    @discardableResult
+    private static func select(_ target: NavigationTarget) -> Bool {
         switch target {
         case let .document(id):
-            guard DocumentStore.shared.documents.contains(where: { $0.id == id }) else {
-                logger.warning("Ignored navigation to unknown document")
-                return
+            // Trashed as well as missing: `resolve` excludes trashed documents from link
+            // resolution, so letting Back open one would contradict it and land the user in a
+            // document the rest of the app treats as deleted.
+            guard let document = DocumentStore.shared.documents.first(where: { $0.id == id }),
+                  !document.isTrashed
+            else {
+                logger.warning("Ignored navigation to an unknown or trashed document")
+                return false
             }
             DocumentStore.shared.selectedDocumentID = id
+            return true
 
         case let .meeting(id):
             guard MeetingStore.shared.meetings.contains(where: { $0.id == id }) else {
                 logger.warning("Ignored navigation to unknown meeting")
-                return
+                return false
             }
             MeetingStore.shared.selectedMeetingID = id
+            return true
 
         case .space:
             // Space selection lives in sidebar view state, not a store, so there is
@@ -110,6 +131,7 @@ enum ContentNavigator {
             // raises the window but does not change selection. Wiring it needs a
             // shared space-selection state first.
             logger.info("Space navigation is not supported yet")
+            return false
         }
     }
 

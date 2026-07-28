@@ -302,10 +302,33 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let otherTitles = activeMeetings.filter { $0.id != id }.map(\.title)
-        meetings[index].title = uniqueTitle(trimmed, among: otherTitles)
+        let oldTitle = meetings[index].title
+        let resolved = uniqueTitle(trimmed, among: otherTitles)
+        meetings[index].title = resolved
         meetings[index].modifiedAt = Date()
         invalidateCaches()
         scheduleMetadataSave(for: id)
+
+        // A meeting is a link target, so renaming one breaks every `[[link]]` pointing at it.
+        DocumentStore.shared.repairInboundLinks(from: oldTitle, to: resolved, renamedID: nil)
+    }
+
+    /// Retargets `[[wikilinks]]` inside meeting summaries after something they link to is renamed.
+    ///
+    /// Summaries are link sources as far as `LinkIndex` is concerned, so leaving them out of a
+    /// rename broke links the Links panel went on displaying as live.
+    func repairInboundLinks(from oldTitle: String, to newTitle: String) {
+        guard oldTitle.caseInsensitiveCompare(newTitle) != .orderedSame else { return }
+
+        for (index, meeting) in meetings.enumerated() {
+            guard let summary = meeting.summary, !summary.isEmpty else { continue }
+            let rewritten = LinkRenamer.rewriting(body: summary, from: oldTitle, to: newTitle)
+            guard rewritten != summary else { continue }
+
+            meetings[index].summary = rewritten
+            meetings[index].modifiedAt = Date()
+            scheduleMetadataSave(for: meeting.id)
+        }
     }
 
     func togglePin(id: UUID) {
