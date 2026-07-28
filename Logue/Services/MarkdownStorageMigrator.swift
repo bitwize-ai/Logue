@@ -190,10 +190,15 @@ struct MarkdownStorageMigrator {
         // exist, and the folder a document belongs in is created by the loop above. Writing them
         // first left a space whose only folder came from a document with no `_space.md` in it —
         // which the next scan read as a space with no folder, and deleted.
+        // The same map as above, not a second walk of the tree. `spaceFolderMap` is built purely
+        // from the `_space.md` files a snapshot found, and the loop above creates directories
+        // only — never an identity file — so re-reading here could not have returned anything
+        // different. It did cost a full traversal per saved document, which a bulk import pays
+        // once per file.
         writeSpaceFiles(
             spaces: identities ?? spaces,
             allSpaces: spaces,
-            folders: spaceFolderMap(in: spaces),
+            folders: folders,
             into: &result
         )
 
