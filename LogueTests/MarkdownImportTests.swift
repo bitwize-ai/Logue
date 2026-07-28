@@ -39,6 +39,23 @@ struct MarkdownImportTests {
         #expect(doc.body == "# Different Heading\n\nBody text.")
     }
 
+    @Test("A heading repeating the frontmatter title is not left in the body")
+    func frontmatterTitleStripsMatchingHeading() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: Quarterly Plan\n---\n# Quarterly Plan\n\nBody."
+        )
+        #expect(doc.title == "Quarterly Plan")
+        #expect(doc.body == "Body.")
+
+        // Matching ignores case and surrounding whitespace.
+        let loose = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: quarterly plan\n---\n#   Quarterly Plan  \n\nBody."
+        )
+        #expect(loose.body == "Body.")
+    }
+
     @Test("Frontmatter without a title still strips the block and falls back to the H1")
     func frontmatterWithoutTitle() throws {
         let contents = "---\ntags: [x]\n---\n# Real Title\nText."

@@ -61,9 +61,17 @@ enum MarkdownImport {
             body = frontmatter.remainder
             title = frontmatter.title
         }
-        if title == nil, let heading = parseLeadingHeading(body) {
-            body = heading.remainder
-            title = heading.title
+        // The heading is read whatever the frontmatter said, so a note carrying both
+        // — the common Obsidian shape — does not open with its title twice. It only
+        // supplies the title when the frontmatter did not, and is only removed when
+        // it is the title, so an unrelated first heading stays part of the document.
+        if let heading = parseLeadingHeading(body) {
+            if title == nil {
+                body = heading.remainder
+                title = heading.title
+            } else if matchesTitle(heading.title, title) {
+                body = heading.remainder
+            }
         }
 
         body = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -130,6 +138,17 @@ enum MarkdownImport {
             return String(value.dropFirst().dropLast())
         }
         return value
+    }
+
+    /// Whether a heading says the same thing as the title, ignoring case and
+    /// surrounding whitespace — enough to spot a duplicate without discarding a
+    /// heading that merely resembles one.
+    private static func matchesTitle(_ heading: String, _ title: String?) -> Bool {
+        guard let title else { return false }
+        return heading.compare(
+            title,
+            options: [.caseInsensitive, .diacriticInsensitive]
+        ) == .orderedSame
     }
 
     /// Uses a `# Heading` as the title when it is the first non-empty line.
