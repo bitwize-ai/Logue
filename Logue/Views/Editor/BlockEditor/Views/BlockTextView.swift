@@ -517,6 +517,9 @@ class MarkdownNSTextView: NSTextView {
 
     /// Whether inline markdown styling (bold, italic, etc.) is active.
     var markdownStyleEnabled: Bool = false
+    /// Retains the `[[` completion menu's target for as long as the menu is up.
+    /// Here rather than on `BlockNSTextView` because the completion menu lives on this class.
+    var wikiLinkMenuTarget: WikiLinkMenuTarget?
     /// The MarkdownStyler instance for WYSIWYG rendering.
     let markdownStyler = MarkdownStyler()
     /// Base font for restyling.
@@ -929,7 +932,6 @@ final class BlockNSTextView: MarkdownNSTextView {
     var autoCapitalize: Bool = true
     /// Retains the `[[` completion menu's ObjC target while the menu is open.
     /// Extension-visible: +WikiLink
-    var wikiLinkMenuTarget: WikiLinkMenuTarget?
     /// When set, this NSTextView exposes itself as `AXHeading` with the given level (1-6)
     /// so VoiceOver rotor-by-heading navigation finds it. Paragraph / list blocks leave this nil.
     var headingLevel: Int? {

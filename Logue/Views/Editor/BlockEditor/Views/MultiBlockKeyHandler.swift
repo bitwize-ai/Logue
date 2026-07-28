@@ -105,7 +105,13 @@ final class KeyHandlerNSView: NSView {
             coordinator?.onSelectAll()
             return true
         case "v":
-            coordinator?.onPaste?()
+            // `onPaste` is optional-chained — unlike `onCut`/`onSelectAll` — so nil is reachable.
+            // Returning true there swallowed Cmd+V instead of letting the responder chain paste,
+            // and the same key path matched Cmd+Option+V.
+            guard !event.modifierFlags.contains(.option), let onPaste = coordinator?.onPaste else {
+                return super.performKeyEquivalent(with: event)
+            }
+            onPaste()
             return true
         default:
             return super.performKeyEquivalent(with: event)

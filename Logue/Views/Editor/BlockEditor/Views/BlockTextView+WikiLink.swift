@@ -25,7 +25,14 @@ final class WikiLinkMenuTarget: NSObject {
     }
 }
 
-extension BlockNSTextView {
+/// On `MarkdownNSTextView`, not `BlockNSTextView`, so table cells get it too.
+///
+/// The styler runs in table cells — `TableCellNSTextView` also inherits `MarkdownNSTextView` — so a
+/// wikilink inside a table was underlined, coloured, and carried a `logue-wikilink://` URL, but the
+/// handler that intercepts it was one subclass over. Clicking one handed the URL to macOS, which
+/// answered "there is no application set to open the URL". Registering the scheme would be the wrong
+/// fix: nothing outside the app should be able to open these.
+extension MarkdownNSTextView {
     /// AppKit's link-click entry point.
     ///
     /// Reached for a plain click when the view is not editable and for Command-click
@@ -99,6 +106,11 @@ extension BlockNSTextView {
     /// Called after text changes. Does nothing when there is no in-progress link, so
     /// it is safe to call on every keystroke.
     func presentWikiLinkCompletionIfNeeded() {
+        // Code blocks are this same class with styling off, so without this the menu opened while
+        // typing a shell guard (`if [[ -z "$x" ]]`) or a Python slice, and the following keystrokes
+        // went to the menu's type-select instead of into the code.
+        guard markdownStyleEnabled else { return }
+
         guard let completion = WikiLinkCompletion.atCursor(
             in: string,
             cursor: selectedRange().location
@@ -134,7 +146,14 @@ extension BlockNSTextView {
             menu.addItem(item)
         }
 
-        menu.popUp(positioning: nil, at: caretPointForMenu(), in: self)
+        // Deferred one run-loop turn: this is reached from `insertText(_:replacementRange:)` while
+        // `NSTextInputContext` is mid-`handleEvent`, and `NSMenu.popUp` spins a nested modal run
+        // loop. Presenting from inside that is asking for input-system reentrancy.
+        let point = caretPointForMenu()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            menu.popUp(positioning: nil, at: point, in: self)
+        }
     }
 
     /// Replaces the in-progress `[[query` with a finished link.

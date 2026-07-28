@@ -84,3 +84,85 @@ struct WikiLinkStylingTests {
         #expect(target(in: storage, at: 3) == nil)
     }
 }
+
+/// The delimiter list `deleteBackward` deletes through, and the range arithmetic behind the
+/// hidden `Target|` of an aliased link.
+///
+/// Both were found by review. The parity one is the worst bug in the feature: one Backspace
+/// silently rewrote a *different* link and the change was persisted.
+@Suite("WikiLink delimiter pairing")
+@MainActor
+struct WikiLinkDelimiterPairingTests {
+    private func styler(for text: String) -> MarkdownStyler {
+        let storage = NSTextStorage(string: text)
+        let styler = MarkdownStyler()
+        styler.restyleInline(
+            storage,
+            defaultFont: .systemFont(ofSize: 14),
+            defaultParaStyle: NSMutableParagraphStyle(),
+            defaultTextColor: .labelColor
+        )
+        return styler
+    }
+
+    /// `pairedDelimiter` pairs by `idx % 2`, so an aliased link contributing a third range flipped
+    /// the parity of every delimiter after it.
+    @Test("Every link contributes exactly two delimiter ranges, aliased or not")
+    func twoRangesPerLink() {
+        #expect(styler(for: "[[A]]").delimiterRanges.count == 2)
+        #expect(styler(for: "[[A|a]]").delimiterRanges.count == 2)
+        #expect(styler(for: "[[A|a]] [[B]]").delimiterRanges.count == 4)
+    }
+
+    /// The reviewer's repro: caret after the `[[` of `[[B]]`, Backspace. With the parity broken,
+    /// the opening of `[[B]]` paired with the *closing* of `[[A|a]]`, so the deletion spanned two
+    /// links and rewrote the first one.
+    @Test("An aliased link does not misalign the pairing of a later link")
+    func aliasDoesNotBreakLaterPairing() throws {
+        let styler = styler(for: "[[A|a]] [[B]]")
+
+        // `[[B]]` opens at offset 8 and closes at 11.
+        let opening = try #require(styler.delimiterRange(containing: 8))
+        let paired = try #require(styler.pairedDelimiter(for: opening))
+
+        #expect(paired.location == 11)
+        #expect(NSMaxRange(paired) == 13)
+    }
+
+    @Test("A plain link's delimiters pair with each other")
+    func plainLinkPairs() throws {
+        let styler = styler(for: "see [[Memo]] now")
+
+        let opening = try #require(styler.delimiterRange(containing: 4))
+        let paired = try #require(styler.pairedDelimiter(for: opening))
+
+        #expect(paired.location == 10)
+    }
+
+    /// `String.distance` counted `Character`s where an `NSRange.length` was needed, so anything
+    /// multi-unit before the pipe left the raw target visible and split a surrogate pair.
+    @Test("The hidden span of an aliased link reaches the pipe, whatever is before it")
+    func aliasHiddenSpanIsMeasuredInUTF16() throws {
+        // Plain ASCII: `[[` plus `Alpha|` is 8 UTF-16 units.
+        let ascii = styler(for: "[[Alpha|first]]")
+        #expect(try #require(ascii.delimiterRanges.first).length == 8)
+
+        // An emoji target is one `Character` but two UTF-16 units.
+        let emoji = styler(for: "[[\u{1F600}A|alias]]")
+        #expect(try #require(emoji.delimiterRanges.first).length == 6)
+
+        // A ZWJ family is one `Character` and eleven UTF-16 units.
+        let family = styler(for: "[[\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}|Family]]")
+        #expect(try #require(family.delimiterRanges.first).length == 11)
+    }
+
+    /// The consequence of getting that length wrong: the target and pipe stay on screen.
+    @Test("An emoji target does not leave the pipe visible")
+    func emojiTargetHidesThePipe() throws {
+        let styler = styler(for: "[[\u{1F600}A|alias]]")
+        let hidden = try #require(styler.delimiterRanges.first)
+
+        // The hidden span ends immediately after the pipe, so `alias` is what remains.
+        #expect(NSMaxRange(hidden) == 6)
+    }
+}
