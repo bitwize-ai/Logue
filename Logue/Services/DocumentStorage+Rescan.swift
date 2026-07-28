@@ -148,19 +148,7 @@ extension DocumentStorage {
         var settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
             plan, comparedTo: known, current: documentStore.documents.map(\.content)
         )
-
-        // The same reasoning for deletions, which that guard does not cover. A document created
-        // while the folder was being read cannot be absent from the walk for any reason other than
-        // not existing when it started. Importing a batch mid-scan trashed every document in it,
-        // and the files with them.
-        let createdDuringWalk = settled.trashed.filter { !documentsPredatingWalk.contains($0) }
-        if !createdDuringWalk.isEmpty {
-            settled.trashed.removeAll { !documentsPredatingWalk.contains($0) }
-            Self.scanLogger.info(
-                "Kept \(createdDuringWalk.count, privacy: .public) document(s) created while the folder was being read"
-            )
-            hasPendingScan = true
-        }
+        keepDocumentsCreatedDuringWalk(in: &settled, predatingWalk: documentsPredatingWalk)
 
         if settled.updated.count != plan.updated.count {
             Self.scanLogger.info(
@@ -328,5 +316,24 @@ extension DocumentStorage {
             }
         }
         Self.scanLogger.info("Adopted \(creations.count, privacy: .public) folder(s) as spaces")
+    }
+
+    /// Removes deletions for documents that did not exist when the walk began.
+    ///
+    /// `discardingUpdatesThatMovedOn` does this for updates but not for deletions. A document
+    /// created while the folder was being read is absent from the walk for the one reason that is
+    /// not a deletion, and trashing it takes its file with it — importing a batch mid-scan trashed
+    /// every document in it.
+    private func keepDocumentsCreatedDuringWalk(
+        in plan: inout ExternalChangePlan, predatingWalk: Set<UUID>
+    ) {
+        let created = plan.trashed.filter { !predatingWalk.contains($0) }
+        guard !created.isEmpty else { return }
+
+        plan.trashed.removeAll { !predatingWalk.contains($0) }
+        Self.scanLogger.info(
+            "Kept \(created.count, privacy: .public) document(s) created while the folder was being read"
+        )
+        hasPendingScan = true
     }
 }
