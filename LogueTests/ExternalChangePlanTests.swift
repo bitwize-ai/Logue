@@ -115,6 +115,32 @@ struct ExternalChangePlanTests {
         #expect(plan.isEmpty)
     }
 
+    /// A document whose write failed has no file because we could not make one, not because the
+    /// user removed it. Trashing it would turn a full disk into a deletion.
+    @Test("A document whose write failed is not read as a deletion")
+    func failedWriteIsNotADeletion() {
+        let unwritten = document("Could not be written")
+        let plan = ExternalChangePlanner.plan(
+            scanned: [], known: [unwritten], withoutFiles: [unwritten.id]
+        )
+
+        #expect(plan.trashed.isEmpty)
+        #expect(plan.unwalkable == [unwritten.id])
+    }
+
+    /// The exemption has to be per-document, or one failed write would freeze deletions for the
+    /// whole library.
+    @Test("Exempting a failed write still lets a real deletion through")
+    func failedWriteExemptionIsScoped() {
+        let unwritten = document("Could not be written")
+        let gone = document("Gone")
+        let plan = ExternalChangePlanner.plan(
+            scanned: [], known: [unwritten, gone], withoutFiles: [unwritten.id]
+        )
+
+        #expect(plan.trashed == [gone.id])
+    }
+
     @Test("Deleting one file leaves the others alone")
     func deletionIsScoped() {
         let kept = document("Kept")

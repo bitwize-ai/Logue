@@ -43,7 +43,8 @@ final class DocumentStore {
     var loadedSeedData = false
 
     /// Serialized save task — cancels previous in-flight write so the latest snapshot always wins.
-    @ObservationIgnored private var _saveTask: Task<Void, Never>?
+    /// Extension-visible: +Persistence
+    @ObservationIgnored var bulkSaveTask: Task<Void, Never>?
 
     /// O(1) UUID → array index lookup cache. Rebuilt whenever `documents` changes.
     @ObservationIgnored private var _documentIndexMap: [UUID: Int] = [:]
@@ -381,7 +382,8 @@ final class DocumentStore {
 
     // MARK: - Persistence (per-document file storage)
 
-    private var documentsDirectory: URL {
+    /// Extension-visible: +Persistence
+    var documentsDirectory: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL.temporaryDirectory
         return support.appendingPathComponent("Logue/documents")
@@ -452,30 +454,21 @@ final class DocumentStore {
         // come through here, so restoring a backup used to be trashed by the next app activation.
         if DocumentStorage.shared.mode.isMarkdown {
             let spaces = SpaceStore.shared.spaces
-            for document in documents {
-                DocumentStorage.shared.save(document, spaces: spaces)
+            // What `save` declines still has to go somewhere. It returns false for a trashed
+            // document, which is kept out of the folder on purpose, and for one it could not
+            // write — and a bulk save that ignored that left a restored backup with documents in
+            // no store at all. This is the path `BackupManager.applyImport` takes, so it is
+            // exactly where losing one matters most.
+            let unwritten = documents.filter { !DocumentStorage.shared.save($0, spaces: spaces) }
+            if unwritten.contains(where: { !$0.isTrashed }) {
+                Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
+                    .error("Some documents could not be written to the folder — using encrypted storage")
             }
+            writeEncrypted(unwritten)
             return
         }
 
-        _saveTask?.cancel()
-        let snapshot = documents
-        let dir = documentsDirectory
-        _saveTask = Task.detached(priority: .utility) {
-            do {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                for doc in snapshot {
-                    guard !Task.isCancelled else { return }
-                    let url = dir.appendingPathComponent("\(doc.id.uuidString).json")
-                    let data = try EncryptionManager.encryptCodable(doc)
-                    try data.write(to: url, options: .atomic)
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
-                    .error("Failed to save documents: \(error.localizedDescription, privacy: .public)")
-            }
-        }
+        writeEncrypted(documents)
     }
 
     /// Removes encrypted files for documents that no longer exist.

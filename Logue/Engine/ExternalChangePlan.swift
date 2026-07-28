@@ -64,7 +64,8 @@ enum ExternalChangePlanner {
         adopted: [DocumentContent] = [],
         known: [DocumentContent],
         ambiguous: Set<UUID> = [],
-        stillOnDisk: Set<UUID> = []
+        stillOnDisk: Set<UUID> = [],
+        withoutFiles: Set<UUID> = []
     ) -> ExternalChangePlan {
         var plan = ExternalChangePlan()
         plan.ambiguousIdentifiers = ambiguous
@@ -106,7 +107,11 @@ enum ExternalChangePlanner {
             where !document.isTrashed && !seen.contains(document.id)
             && !ambiguous.contains(document.id)
         {
-            guard !stillOnDisk.contains(document.id) else {
+            // `withoutFiles` is the one case where we know the file is absent and know it is not a
+            // deletion: writing it failed, so it never existed to be deleted. Reported like an
+            // unwalkable document rather than trashed — the document is real, and the encrypted
+            // fallback is holding it until a write succeeds.
+            guard !stillOnDisk.contains(document.id), !withoutFiles.contains(document.id) else {
                 plan.unwalkable.append(document.id)
                 continue
             }

@@ -38,6 +38,30 @@ final class DocumentStorage {
         }
     }
 
+    /// Documents that belong in the folder but have no file there, because writing one failed.
+    ///
+    /// Falling back to encrypted storage — which `save` does by returning `false` — is only half an
+    /// answer on its own. In markdown mode the folder is the library: `loadDocuments` reads it and
+    /// takes nothing else from encrypted storage but the trash, and a scan reads "no file" as a
+    /// deletion. So a document whose write failed was written somewhere nothing reads, then trashed
+    /// by the next scan for being missing from the folder. This set is what tells both of those
+    /// apart from a real deletion.
+    ///
+    /// Persisted, because the failure outlives the launch that hit it — a full disk or a folder on
+    /// an unmounted drive is still there tomorrow. An identifier leaves the set the moment a write
+    /// for it succeeds, or the document is trashed.
+    ///
+    /// Extension-visible: +Rescan
+    private(set) var unwritableDocuments: Set<UUID> {
+        didSet {
+            guard unwritableDocuments != oldValue else { return }
+            UserDefaults.standard.set(
+                unwritableDocuments.map(\.uuidString),
+                forKey: AppConstants.UserDefaultsKeys.unwritableDocuments
+            )
+        }
+    }
+
     /// Extension-visible: +Rescan
     @ObservationIgnored var watcher: MarkdownFolderWatcher?
 
@@ -181,6 +205,22 @@ final class DocumentStorage {
     private init() {
         let raw = UserDefaults.standard.string(forKey: AppConstants.UserDefaultsKeys.documentStorageMode)
         mode = DocumentStorageMode(rawValue: raw ?? "") ?? .encrypted
+
+        let stored = UserDefaults.standard.stringArray(forKey: AppConstants.UserDefaultsKeys.unwritableDocuments)
+        unwritableDocuments = Set((stored ?? []).compactMap(UUID.init(uuidString:)))
+    }
+
+    /// Records that a document has no file in the folder, or that it has one again.
+    ///
+    /// Both directions matter. Forgetting to clear leaves a document permanently exempt from the
+    /// deletion check, so removing its file in Finder would stop working — silently, which is the
+    /// worst way for a folder-is-the-library promise to break.
+    private func setUnwritable(_ isUnwritable: Bool, for id: UUID) {
+        if isUnwritable {
+            unwritableDocuments.insert(id)
+        } else {
+            unwritableDocuments.remove(id)
+        }
     }
 
     // MARK: - Switching
@@ -393,8 +433,16 @@ final class DocumentStorage {
             // copy still marked trashed, and two entries for one id put the *trashed* one last —
             // where `rebuildIndexMap` lets it win every lookup, so the next save would take the
             // trashed branch and remove the user's file.
+            // Documents whose write failed come back too. They are the encrypted fallback `save`
+            // takes when the folder cannot be written to, and without this the fallback wrote to
+            // somewhere nothing ever read — the document was simply gone at the next launch.
             let fromFolderIDs = Set(fromFolder.map(\.id))
-            return fromFolder + stored.filter { $0.isTrashed && !fromFolderIDs.contains($0.id) }
+            let recovered = stored.filter {
+                ($0.isTrashed || unwritableDocuments.contains($0.id)) && !fromFolderIDs.contains($0.id)
+            }
+            // Anything that reappeared in the folder is no longer missing a file.
+            unwritableDocuments.subtract(fromFolderIDs)
+            return fromFolder + recovered
         } catch {
             logger.error("Could not load trashed documents: \(error.localizedDescription, privacy: .public)")
             return fromFolder
@@ -414,6 +462,10 @@ final class DocumentStorage {
 
         if document.isTrashed {
             removeFile(for: document.id)
+            // A trashed document is *meant* to have no file, and it is read back from encrypted
+            // storage on its own. Leaving it marked would exempt it from the deletion check
+            // forever, including after it is restored.
+            setUnwritable(false, for: document.id)
             return false
         }
 
@@ -443,8 +495,10 @@ final class DocumentStorage {
         // back to encrypted storage, which is the whole point of returning a Bool.
         guard result.isSuccess else {
             logger.error("Could not write a document to the markdown folder — falling back to encrypted storage")
+            setUnwritable(true, for: document.id)
             return false
         }
+        setUnwritable(false, for: document.id)
         return true
     }
 

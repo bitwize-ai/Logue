@@ -130,11 +130,9 @@ extension DocumentStorage {
         // the walk can be tested against the filesystem rather than believed. From the snapshot, so
         // it costs nothing extra.
         let lastKnownFiles = liveMigrator.fileIndex(using: snapshot)
-        let plan = await Task.detached {
-            scan.plan(
-                spaces: spaces, known: known, lastKnownFiles: lastKnownFiles, using: snapshot
-            )
-        }.value
+        let plan = await buildPlan(
+            scan, spaces: spaces, known: known, lastKnownFiles: lastKnownFiles, snapshot: snapshot
+        )
 
         report(
             plan,
@@ -316,6 +314,30 @@ extension DocumentStorage {
             }
         }
         Self.scanLogger.info("Adopted \(creations.count, privacy: .public) folder(s) as spaces")
+    }
+
+    /// Diffs the folder against the library, off the main actor.
+    ///
+    /// `unwritableDocuments` is read here rather than inside the detached task: it is main-actor
+    /// state, and it says which documents have no file because writing one failed. Their absence
+    /// from the walk is our own doing, not the user deleting anything.
+    private func buildPlan(
+        _ scan: MarkdownFolderScan,
+        spaces: [Space],
+        known: [DocumentContent],
+        lastKnownFiles: [UUID: URL],
+        snapshot: FolderSnapshot
+    ) async -> ExternalChangePlan {
+        let withoutFiles = unwritableDocuments
+        return await Task.detached {
+            scan.plan(
+                spaces: spaces,
+                known: known,
+                lastKnownFiles: lastKnownFiles,
+                withoutFiles: withoutFiles,
+                using: snapshot
+            )
+        }.value
     }
 
     /// Removes deletions for documents that did not exist when the walk began.
