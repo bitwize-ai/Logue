@@ -31,19 +31,30 @@ extension DocumentStore {
     func importFiles(at urls: [URL], into spaceID: UUID?) async -> ImportOutcome {
         let logger = Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
         let parsed = await Task.detached(priority: .userInitiated) {
-            urls.map { url in (name: url.lastPathComponent, result: Self.read(url)) }
+            urls.map { url in (name: url.lastPathComponent, url: url, result: Self.read(url)) }
         }.value
 
         var outcome = ImportOutcome()
         for file in parsed {
+            // In markdown mode the folder *is* the library, so a file already inside it is
+            // already a document — or is about to be adopted as one by the next scan. Importing
+            // it would make a second document from the same text and leave the original file
+            // behind to be adopted separately.
+            if let reason = Self.alreadyStoredReason(for: file.url) {
+                outcome.skipped.append(ImportOutcome.Skipped(file: file.name, reason: reason))
+                continue
+            }
             switch file.result {
             case let .success(document):
-                createDocument(
+                let created = createDocument(
                     title: document.title,
                     body: document.body,
                     inSpace: spaceID,
                     select: false
                 )
+                for tag in document.tags {
+                    addTag(tag, to: created.id)
+                }
                 outcome.imported += 1
             case let .failure(error):
                 let reason = (error as? MarkdownImport.ImportError).map(Self.description) ?? "could not be read"
@@ -106,6 +117,17 @@ extension DocumentStore {
         let first = data[data.startIndex]
         let second = data[data.index(after: data.startIndex)]
         return (first == 0xFF && second == 0xFE) || (first == 0xFE && second == 0xFF)
+    }
+
+    /// Why a file should not be imported because the app already stores it, or `nil` when it is
+    /// an ordinary outside file. Symlinks are resolved on both sides so an aliased path cannot
+    /// slip past the check.
+    private static func alreadyStoredReason(for url: URL) -> String? {
+        guard DocumentStorage.shared.mode.isMarkdown else { return nil }
+        let root = DocumentStorage.markdownRootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let file = url.resolvingSymlinksInPath().standardizedFileURL.path
+        guard file.hasPrefix(root + "/") else { return nil }
+        return "already in the Logue folder"
     }
 
     nonisolated private static func description(for error: MarkdownImport.ImportError) -> String {

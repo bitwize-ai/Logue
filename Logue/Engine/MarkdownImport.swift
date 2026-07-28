@@ -19,6 +19,10 @@ enum MarkdownImport {
     struct ImportedDocument: Equatable {
         let title: String
         let body: String
+        /// Carried through because a document has somewhere to put them, and because the same
+        /// file dropped straight into the storage folder keeps its tags — the two paths
+        /// disagreeing on one file is worse than either rule on its own.
+        let tags: [String]
     }
 
     enum ImportError: Error, Equatable {
@@ -57,9 +61,11 @@ enum MarkdownImport {
         var body = contents
         var title: String?
 
+        var tags: [String] = []
         if let frontmatter = parseFrontmatter(body) {
             body = frontmatter.remainder
             title = frontmatter.title
+            tags = frontmatter.tags
         }
         // The heading is read whatever the frontmatter said, so a note carrying both
         // — the common Obsidian shape — does not open with its title twice. It only
@@ -78,20 +84,23 @@ enum MarkdownImport {
         let fallback = (fileName as NSString).deletingPathExtension
         let resolved = sanitisedTitle(title ?? fallback, fallback: fallback)
 
-        return ImportedDocument(title: resolved.isEmpty ? "Imported Note" : resolved, body: body)
+        return ImportedDocument(
+            title: resolved.isEmpty ? "Imported Note" : resolved,
+            body: body,
+            tags: tags
+        )
     }
 
     // MARK: - Title Sources
 
     /// A minimal YAML frontmatter reader: a `---` fence on the first line, a closing
-    /// fence, and an optional `title:` key between them. Anything more exotic in the
-    /// block (tags, dates) is simply dropped with it — those keys have no home in a
-    /// `WritingDocument`, and keeping the raw block would show YAML as prose.
+    /// fence, and the `title:` and `tags:` keys between them. Anything else in the block is
+    /// dropped with it, because keeping the raw block would show YAML to the user as prose.
     ///
     /// Returns `nil` unless the block actually looks like YAML. A markdown file may
     /// open with a `---` thematic break, and treating that as a fence would discard
     /// every paragraph up to the next one — silent, unrecoverable content loss.
-    private static func parseFrontmatter(_ text: String) -> (title: String?, remainder: String)? {
+    private static func parseFrontmatter(_ text: String) -> (title: String?, tags: [String], remainder: String)? {
         let lines = text.components(separatedBy: "\n")
         guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
         guard let closing = lines.dropFirst().firstIndex(where: {
@@ -116,7 +125,36 @@ enum MarkdownImport {
             }
         }
         let remainder = lines[(closing + 1)...].joined(separator: "\n")
-        return (title, remainder)
+        return (title, parsedTags(in: block), remainder)
+    }
+
+    /// Tags written either inline (`tags: [a, b]`) or as a YAML sequence beneath the key.
+    private static func parsedTags(in block: ArraySlice<String>) -> [String] {
+        var collecting = false
+        var tags: [String] = []
+        for line in block {
+            let indented = line.first?.isWhitespace == true
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if collecting, indented, trimmed.hasPrefix("- ") {
+                tags.append(cleanedTag(String(trimmed.dropFirst(2))))
+                continue
+            }
+            collecting = false
+            guard !indented, trimmed.lowercased().hasPrefix("tags:") else { continue }
+            let inline = String(trimmed.dropFirst("tags:".count)).trimmingCharacters(in: .whitespaces)
+            if inline.hasPrefix("["), inline.hasSuffix("]") {
+                tags += inline.dropFirst().dropLast().split(separator: ",").map { cleanedTag(String($0)) }
+            } else if inline.isEmpty {
+                collecting = true
+            } else {
+                tags.append(cleanedTag(inline))
+            }
+        }
+        return tags.filter { !$0.isEmpty }
+    }
+
+    private static func cleanedTag(_ raw: String) -> String {
+        unquoted(raw.trimmingCharacters(in: .whitespaces))
     }
 
     /// Whether a line inside a fence is plausibly YAML: blank, a comment, a

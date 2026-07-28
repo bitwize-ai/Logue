@@ -192,6 +192,35 @@ struct MarkdownImportTests {
         #expect(doc.body == "Body.")
     }
 
+    // MARK: - Tags
+
+    @Test("Tags are carried across, written inline or as a sequence")
+    func tagsAreImported() throws {
+        let inline = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ntags: [project, q3]\n---\nBody."
+        )
+        #expect(inline.tags == ["project", "q3"])
+
+        let sequence = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ntags:\n  - work\n  - urgent\n---\nBody."
+        )
+        #expect(sequence.tags == ["work", "urgent"])
+
+        let quoted = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ntags: [\"quoted\", 'other']\n---\nBody."
+        )
+        #expect(quoted.tags == ["quoted", "other"])
+    }
+
+    @Test("A file with no tags key imports with none")
+    func noTagsKey() throws {
+        let doc = try MarkdownImport.document(fileName: "n.md", contents: "---\ntitle: T\n---\nBody.")
+        #expect(doc.tags.isEmpty)
+    }
+
     // MARK: - Line Endings
 
     @Test("Frontmatter in a Windows-authored file is parsed, not shown as prose")
