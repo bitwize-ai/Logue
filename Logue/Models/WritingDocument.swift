@@ -2,7 +2,9 @@ import Foundation
 
 // MARK: - RewriteResult
 
-struct RewriteResult: Codable, Sendable {
+/// `Equatable` so the persistence split can be tested: a derived half that round-trips has to be
+/// comparable to the one that went in, and this is the only member that was not already.
+struct RewriteResult: Codable, Equatable, Sendable {
     let style: String
     let originalText: String
     let rewrittenText: String
@@ -26,12 +28,105 @@ struct WritingDocument: Identifiable, Codable, Sendable {
         case reviewGrade, reviewReactions, factChecks, piiFindings
         case vocabSuggestions, aiDetectionResult, plagiarismResult, rewriteResult
         case storedWidthMode = "widthMode"
-        case icon
+        case icon, relationships, properties
+        case storedIsOrganised = "isOrganised"
     }
 
     /// Optional single-grapheme icon shown in lists and titles.
     /// Validate user input through `DocumentIcon.sanitised` before assigning.
     var icon: String?
+
+    /// Backing storage for `isOrganised`.
+    ///
+    /// Optional for two reasons: the usual Codable back-compat, and so documents
+    /// saved before the inbox existed read as **organised**. Defaulting them to
+    /// unorganised would dump an entire existing library into the inbox on update.
+    /// Defaults to `false` so a freshly constructed document is unorganised and
+    /// lands in the inbox, while a *decoded* document missing the key stays `nil`
+    /// and reads as organised.
+    var storedIsOrganised: Bool? = false
+
+    /// Whether this document has been filed. New documents start unorganised and
+    /// appear in the inbox; documents predating the inbox are treated as organised.
+    var isOrganised: Bool {
+        get { storedIsOrganised ?? true }
+        set { storedIsOrganised = newValue }
+    }
+
+    /// Typed metadata keyed by frontmatter name. Optional so documents saved before
+    /// this field existed still decode — Swift's synthesized `Codable` throws
+    /// `keyNotFound` for a missing non-optional key even when it has a default.
+    var properties: [String: PropertyValue]?
+
+    /// Non-nil properties, for reading.
+    var propertyValues: [String: PropertyValue] {
+        properties ?? [:]
+    }
+
+    /// Property keys in a stable sorted order, so the inspector does not reshuffle.
+    var propertyKeys: [String] {
+        propertyValues.keys.sorted()
+    }
+
+    func property(_ key: String) -> PropertyValue? {
+        propertyValues[key]
+    }
+
+    /// Sets or removes a property. The key is sanitised, and a system-reserved or
+    /// unusable key is ignored rather than stored.
+    mutating func setProperty(_ key: String, value: PropertyValue?) {
+        guard let sanitised = PropertyKey.sanitisedKey(key) else { return }
+
+        var store = propertyValues
+        if let value {
+            store[sanitised] = value
+        } else {
+            store.removeValue(forKey: sanitised)
+        }
+        properties = store.isEmpty ? nil : store
+    }
+
+    /// Declared relationships, keyed by frontmatter name (`belongs_to`, `has`,
+    /// `related_to`). Optional so documents saved before this field existed still
+    /// decode — Swift's synthesized `Codable` throws `keyNotFound` for a missing
+    /// non-optional key even when it has a default.
+    ///
+    /// Stored as raw strings rather than `[RelationshipKind: [String]]` so the JSON
+    /// uses readable frontmatter keys and survives an unknown key from a newer build.
+    var relationships: [String: [String]]?
+
+    /// Declared relationships with unknown keys discarded.
+    var typedRelationships: [RelationshipKind: [String]] {
+        var result: [RelationshipKind: [String]] = [:]
+        for (key, targets) in relationships ?? [:] {
+            guard let kind = RelationshipKind(key: key), !targets.isEmpty else { continue }
+            result[kind] = targets
+        }
+        return result
+    }
+
+    /// Replaces the targets for one relationship kind.
+    ///
+    /// Blank targets are discarded and duplicates collapsed case-insensitively, so
+    /// the stored list matches what the graph can actually resolve. An empty result
+    /// removes the key rather than persisting an empty array.
+    mutating func setRelationship(_ kind: RelationshipKind, targets: [String]) {
+        var seen = Set<String>()
+        var cleaned: [String] = []
+        for target in targets {
+            let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { continue }
+            cleaned.append(trimmed)
+        }
+
+        var store = relationships ?? [:]
+        if cleaned.isEmpty {
+            store.removeValue(forKey: kind.key)
+        } else {
+            store[kind.key] = cleaned
+        }
+        relationships = store.isEmpty ? nil : store
+    }
 
     /// Backing storage for `widthMode`. Optional so documents persisted before this
     /// property existed still decode — the synthesised decoder uses

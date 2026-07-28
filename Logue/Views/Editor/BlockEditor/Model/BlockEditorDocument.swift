@@ -123,6 +123,36 @@ final class BlockEditorDocument {
         }
     }
 
+    /// Replaces the selected blocks with the blocks parsed from `markdown`.
+    ///
+    /// Used when pasting over a multi-block selection. A non-contiguous selection is
+    /// removed in full and the pasted blocks land at the first selected position —
+    /// unlike a move, there is no ordering to scramble, so collapsing the gap is safe.
+    ///
+    /// Returns the ID of the last pasted block, for placing the caret.
+    @discardableResult
+    func replaceBlocks(ids selectedIDs: Set<BlockID>, withMarkdown markdown: String) -> BlockID? {
+        guard !selectedIDs.isEmpty,
+              !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let insertIndex = blocks.firstIndex(where: { selectedIDs.contains($0.id) })
+        else { return nil }
+
+        let pasted = BlockSerializer.parse(markdown: markdown)
+        guard !pasted.isEmpty else { return nil }
+
+        recordUndo()
+        blocks.removeAll { selectedIDs.contains($0.id) }
+        blocks.insert(contentsOf: pasted, at: min(insertIndex, blocks.count))
+
+        // `parse` never returns an empty array, so the document cannot end up empty
+        // here — but keep the invariant explicit alongside the other mutators.
+        if blocks.isEmpty {
+            blocks.append(.emptyParagraph())
+        }
+
+        return pasted.last?.id
+    }
+
     // MARK: - Update Text
 
     func updateText(blockID: BlockID, text: String) {

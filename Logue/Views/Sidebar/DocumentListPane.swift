@@ -10,6 +10,19 @@ enum DocSortOrder: String, CaseIterable {
     case createdNewest = "Newest Created"
     case createdOldest = "Oldest Created"
 
+    /// The nearest equivalent a saved view can store.
+    ///
+    /// `SavedViewSort` has no created-at cases, so those fall back to modified in the same
+    /// direction rather than silently becoming the default.
+    var asSavedViewSort: SavedViewSort {
+        switch self {
+        case .modifiedNewest, .createdNewest: .recentlyModified
+        case .modifiedOldest, .createdOldest: .oldestModified
+        case .titleAZ: .titleAscending
+        case .titleZA: .titleDescending
+        }
+    }
+
     var icon: String {
         switch self {
         case .modifiedNewest, .createdNewest: "arrow.down"
@@ -37,12 +50,14 @@ enum DocSortOrder: String, CaseIterable {
 
 enum DocFilterMode: String, CaseIterable {
     case all = "All Documents"
+    case inbox = "Inbox"
     case pinned = "Pinned"
     case recent = "Recent"
 
     var icon: String {
         switch self {
         case .all: "doc.text"
+        case .inbox: "tray"
         case .pinned: "pin"
         case .recent: "clock"
         }
@@ -54,22 +69,46 @@ enum DocFilterMode: String, CaseIterable {
 /// Column 2 content when Documents category is selected.
 /// Shows search, filter/sort/view menus, and a selectable document list or gallery.
 struct DocumentListPane: View {
-    @Environment(DocumentStore.self) private var store
+    // Extension-visible: +Organise
+    @Environment(DocumentStore.self) var store
     @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedItem: ContentListItem?
-    @State private var searchText = ""
-    @State private var filterMode: DocFilterMode = .all
-    @State private var sortOrder: DocSortOrder = .modifiedNewest
+    // Extension-visible: +Organise
+    @State var searchText = ""
+    // Extension-visible: +Organise
+    @State var filterMode: DocFilterMode = .all
+    // Extension-visible: +Organise
+    @State var sortOrder: DocSortOrder = .modifiedNewest
     @State private var renamingDocID: UUID?
     @State private var renameText = ""
     @FocusState private var isRenameFieldFocused: Bool
     @State private var hasAutoSelected = false
+    // Extension-visible: +Organise
+    /// Active saved view, when one is chosen instead of a built-in filter.
+    @State var activeSavedViewID: UUID?
+    // Extension-visible: +Organise
+    /// Active type filter, when one is chosen.
+    @State var activeTypeName: String?
+    // Extension-visible: +Organise
+    /// The naming prompt currently up, if any.
+    @State var organisePrompt: OrganisePrompt?
+    /// Documents ticked for a bulk action. Non-empty shows the bulk bar.
+    @State private var bulkSelection: Set<UUID> = []
+    @State private var bulkTagText = ""
+    @State private var showingBulkTagField = false
 
     private var filteredDocs: [WritingDocument] {
-        let base: [WritingDocument] = switch filterMode {
-        case .all: store.activeDocuments
-        case .recent: store.recentDocuments
-        case .pinned: store.pinnedDocuments
+        let base: [WritingDocument] = if let activeSavedViewID {
+            store.documents(matching: activeSavedViewID)
+        } else if let activeTypeName {
+            store.activeDocuments.filter { $0.typeName == activeTypeName }
+        } else {
+            switch filterMode {
+            case .all: store.activeDocuments
+            case .inbox: store.inboxDocuments
+            case .recent: store.recentDocuments
+            case .pinned: store.pinnedDocuments
+            }
         }
         let searched: [WritingDocument] = if searchText.isEmpty {
             base
@@ -97,6 +136,11 @@ struct DocumentListPane: View {
         listView
             .searchable(text: $searchText, prompt: "Search documents")
             .navigationTitle("Documents")
+            .sheet(item: $organisePrompt) { prompt in
+                OrganiseNamingSheet(prompt: prompt) { name in
+                    commitOrganisePrompt(prompt, name: name)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -105,6 +149,8 @@ struct DocumentListPane: View {
                             ForEach(DocFilterMode.allCases, id: \.rawValue) { mode in
                                 Button {
                                     filterMode = mode
+                                    activeSavedViewID = nil
+                                    activeTypeName = nil
                                 } label: {
                                     HStack {
                                         Label(mode.rawValue, systemImage: mode.icon)
@@ -112,6 +158,77 @@ struct DocumentListPane: View {
                                             Spacer()
                                             Image(systemName: "checkmark")
                                         }
+                                    }
+                                }
+                            }
+                        }
+
+                        Section("Views") {
+                            ForEach(store.savedViews) { view in
+                                Button {
+                                    activeSavedViewID = view.id
+                                    activeTypeName = nil
+                                } label: {
+                                    HStack {
+                                        Label(view.name, systemImage: view.symbolName)
+                                        if activeSavedViewID == view.id {
+                                            Spacer()
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+
+                            Divider()
+
+                            Button {
+                                organisePrompt = .newView
+                            } label: {
+                                Label("Save Current Filter as View…", systemImage: "plus")
+                            }
+
+                            if let active = store.savedViews.first(where: { $0.id == activeSavedViewID }) {
+                                Button {
+                                    organisePrompt = .renameView(active)
+                                } label: {
+                                    Label("Rename This View…", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    deleteSavedView(active)
+                                } label: {
+                                    Label("Delete This View", systemImage: "trash")
+                                }
+                            }
+                        }
+
+                        if !store.documentTypes.isEmpty {
+                            Section("Types") {
+                                ForEach(DocumentType.ordered(store.documentTypes)) { type in
+                                    Button {
+                                        activeTypeName = type.name
+                                        activeSavedViewID = nil
+                                    } label: {
+                                        HStack {
+                                            Label(type.name, systemImage: type.symbolName)
+                                            if activeTypeName == type.name {
+                                                Spacer()
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if let active = store.documentTypes.first(where: { $0.name == activeTypeName }) {
+                                    Divider()
+                                    Button {
+                                        organisePrompt = .renameType(active)
+                                    } label: {
+                                        Label("Rename This Type…", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        deleteType(active)
+                                    } label: {
+                                        Label("Delete This Type", systemImage: "trash")
                                     }
                                 }
                             }
@@ -183,6 +300,91 @@ struct DocumentListPane: View {
     // MARK: - List View
 
     private var listView: some View {
+        VStack(spacing: 0) {
+            if filterMode == .inbox, activeSavedViewID == nil, activeTypeName == nil {
+                inboxHeader
+            }
+            if !bulkSelection.isEmpty {
+                bulkActionBar
+            }
+            documentList
+        }
+    }
+
+    /// Explains the inbox rather than showing an unexplained subset of documents.
+    private var inboxHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "tray")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("\(store.inboxCount) to organise")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.quaternary.opacity(0.4))
+    }
+
+    /// Shown while documents are ticked. Every action here is reversible except
+    /// Trash, which moves to Trash rather than deleting outright.
+    private var bulkActionBar: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Text("\(bulkSelection.count) selected")
+                    .font(.caption.weight(.medium))
+
+                Spacer()
+
+                Button("Tag") { showingBulkTagField.toggle() }
+                    .font(.caption)
+
+                if filterMode == .inbox {
+                    Button("Organise") {
+                        store.applyBulk(to: bulkSelection) { BulkAction.markingOrganised($0) }
+                        bulkSelection.removeAll()
+                    }
+                    .font(.caption)
+                }
+
+                Button("Trash", role: .destructive) {
+                    store.applyBulk(to: bulkSelection) { BulkAction.trashing($0) }
+                    bulkSelection.removeAll()
+                }
+                .font(.caption)
+
+                Button("Clear") { bulkSelection.removeAll() }
+                    .font(.caption)
+            }
+
+            if showingBulkTagField {
+                HStack(spacing: 6) {
+                    TextField("Tag name", text: $bulkTagText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                        .onSubmit(applyBulkTag)
+                    Button("Add", action: applyBulkTag)
+                        .font(.caption)
+                        .disabled(bulkTagText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(AppThemeConstants.accent.opacity(0.10))
+    }
+
+    private func applyBulkTag() {
+        let tag = bulkTagText
+        guard !tag.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        store.applyBulk(to: bulkSelection) { BulkAction.addingTag(tag, to: $0) }
+        bulkTagText = ""
+        showingBulkTagField = false
+        bulkSelection.removeAll()
+    }
+
+    private var documentList: some View {
         List(selection: $selectedItem) {
             ForEach(filteredDocs) { doc in
                 if renamingDocID == doc.id {
@@ -201,7 +403,9 @@ struct DocumentListPane: View {
         .scrollContentBackground(.hidden)
         .background(AppThemeConstants.surfaceBackground)
         .overlay {
-            if filteredDocs.isEmpty {
+            if !store.isLoaded {
+                ContentLoadingView()
+            } else if filteredDocs.isEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? "No Documents" : "No Results",
                     systemImage: searchText.isEmpty ? "doc.text" : "magnifyingglass"
@@ -234,6 +438,38 @@ struct DocumentListPane: View {
 
     @ViewBuilder
     private func docContextMenu(for doc: WritingDocument) -> some View {
+        Button(bulkSelection.contains(doc.id) ? "Deselect" : "Select for bulk action") {
+            if bulkSelection.contains(doc.id) {
+                bulkSelection.remove(doc.id)
+            } else {
+                bulkSelection.insert(doc.id)
+            }
+        }
+
+        if !store.documentTypes.isEmpty {
+            Menu("Set Type") {
+                Button("New Type from This Document…") {
+                    organisePrompt = .newType(doc)
+                }
+                Divider()
+                ForEach(DocumentType.ordered(store.documentTypes)) { type in
+                    Button(type.name) { store.applyType(type, to: doc.id) }
+                }
+            }
+        }
+
+        Button(doc.isOrganised ? "Move to Inbox" : "Mark Organised") {
+            if doc.isOrganised {
+                var updated = doc
+                updated.isOrganised = false
+                store.updateDocument(updated)
+            } else {
+                store.markOrganised(id: doc.id)
+            }
+        }
+
+        Divider()
+
         Button {
             store.togglePin(id: doc.id)
         } label: {

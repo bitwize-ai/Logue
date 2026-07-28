@@ -23,6 +23,29 @@ extension BlockEditorView {
     }
 }
 
+// MARK: - Block Paste
+
+extension BlockEditorView {
+    /// Replaces the multi-block selection with the clipboard's markdown.
+    ///
+    /// Only acts while a multi-block selection is active — inside a focused text
+    /// block, `BlockTextView.paste(_:)` owns the clipboard instead.
+    func pasteOverSelectedBlocks() {
+        guard multiBlockSelection.isActive,
+              let markdown = NSPasteboard.general.string(forType: .string)
+        else { return }
+
+        let selectedIDs = multiBlockSelection.selectedBlockIDs
+        multiBlockSelection.clear()
+
+        guard let focusTarget = document.replaceBlocks(ids: selectedIDs, withMarkdown: markdown)
+        else { return }
+
+        focusedBlockID = focusTarget
+        syncMarkdownFromBlocks()
+    }
+}
+
 // MARK: - Markdown Sync
 
 extension BlockEditorView {

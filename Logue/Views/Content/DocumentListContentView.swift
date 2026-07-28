@@ -47,6 +47,7 @@ struct DocumentListContentView: View {
         case .all: base
         case .pinned: base.filter(\.isPinned)
         case .recent: Array(base.sorted { $0.modifiedAt > $1.modifiedAt }.prefix(10))
+        case .inbox: InboxFilter.inbox(from: base)
         }
 
         let tagged: [WritingDocument] = if let tag = selectedTagFilter {
@@ -99,7 +100,9 @@ struct DocumentListContentView: View {
                 Divider()
             }
 
-            if documents.isEmpty {
+            if !store.isLoaded {
+                ContentLoadingView()
+            } else if documents.isEmpty {
                 emptyState
             } else if viewMode == .grid {
                 documentGrid

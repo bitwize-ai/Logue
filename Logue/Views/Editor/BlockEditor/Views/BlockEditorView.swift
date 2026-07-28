@@ -193,6 +193,7 @@ struct BlockEditorView: View {
                                 pendingCursorOffset = 0
                             }
                         },
+                        onPaste: { pasteOverSelectedBlocks() },
                         onMoveUp: { moveSelectedBlocks(.up) },
                         onMoveDown: { moveSelectedBlocks(.down) }
                     )

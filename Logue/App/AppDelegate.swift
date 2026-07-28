@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var resourceUsageObserver: NSObjectProtocol?
     private weak var resourceUsageWindow: NSWindow?
     private var bugReportObserver: NSObjectProtocol?
+    private var deepLinkObservers: [NSObjectProtocol] = []
     private weak var bugReportWindow: NSWindow?
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -141,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) { [weak self] _ in
             Task { @MainActor in self?.showResourceUsageWindow() }
         }
+
+        registerDeepLinkObservers()
 
         bugReportObserver = NotificationCenter.default.addObserver(
             forName: .openReportBugWindow,
@@ -221,6 +224,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Called when the app becomes active (Spotlight launch, dock icon click, Finder open).
     /// Shows the main window if none are currently visible, unless a floating panel was intentionally opened.
     func applicationDidBecomeActive(_: Notification) {
+        // Before the window handling below, which returns early in one case: coming back to Logue is
+        // exactly when the documents folder is most likely to have changed behind us, and this also
+        // restarts a folder watcher that could not start earlier — on a drive that was not mounted at
+        // launch, say. Quiet on purpose: it does nothing when nothing changed, and a spinner on every
+        // window focus would be noise.
+        Task { @MainActor in
+            await DocumentStorage.shared.rescan(minimumVisibleDuration: nil, announcing: false)
+        }
+
         if suppressMainWindowRestore {
             suppressMainWindowRestore = false
             return
@@ -230,6 +242,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if !hasVisibleWindows {
             showMainWindow()
+        }
+    }
+
+    /// Observes the notifications `DeepLinkRouter` posts and performs the selection.
+    ///
+    /// Without these, a valid deep link parsed, raised the window, and then did
+    /// nothing — the notification had no listener.
+    private func registerDeepLinkObservers() {
+        let pairs: [(Notification.Name, (UUID) -> NavigationTarget)] = [
+            (.deepLinkOpenDocument, { .document(id: $0) }),
+            (.deepLinkOpenMeeting, { .meeting(id: $0) }),
+            (.deepLinkOpenSpace, { .space(id: $0) }),
+        ]
+
+        for (name, makeTarget) in pairs {
+            let token = NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { notification in
+                guard let identifier =
+                    notification.userInfo?[DeepLink.UserInfoKey.identifier] as? UUID
+                else { return }
+                MainActor.assumeIsolated {
+                    ContentNavigator.open(makeTarget(identifier))
+                }
+            }
+            deepLinkObservers.append(token)
         }
     }
 
@@ -257,6 +295,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_: Notification) {
+        for observer in deepLinkObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        deepLinkObservers.removeAll()
+
         if let observer = shortcutsObserver {
             NotificationCenter.default.removeObserver(observer)
             shortcutsObserver = nil
