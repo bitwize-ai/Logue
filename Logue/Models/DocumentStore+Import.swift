@@ -43,13 +43,13 @@ extension DocumentStore {
             } catch let error as MarkdownImport.ImportError {
                 let reason = description(for: error)
                 outcome.skipped.append(ImportOutcome.Skipped(file: name, reason: reason))
-                logger.warning("Import skipped \(name, privacy: .public): \(reason, privacy: .public)")
+                logger.warning("Import skipped \(name, privacy: .private): \(reason, privacy: .public)")
             } catch {
                 outcome.skipped.append(
                     ImportOutcome.Skipped(file: name, reason: "could not be read")
                 )
                 logger.error(
-                    "Import failed to read \(name, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    "Import failed to read \(name, privacy: .private): \(error.localizedDescription, privacy: .public)"
                 )
             }
         }
@@ -59,16 +59,42 @@ extension DocumentStore {
     }
 
     /// Reads a text file, tolerating the encodings exported notes actually use.
-    /// UTF-8 first (every modern exporter), then UTF-16 (some Windows tools),
-    /// then Latin-1, which cannot fail and at worst mangles exotic bytes visibly.
+    ///
+    /// The size is checked before reading: a multi-gigabyte file named `.md` would
+    /// otherwise be held in memory twice, as `Data` and again as `String`, only to
+    /// be rejected.
+    ///
+    /// UTF-16 is tried only when a byte-order mark says so. Without one it assumes
+    /// big-endian and accepts almost any byte sequence, so a Latin-1 file would
+    /// decode to plausible-looking CJK rather than falling through — `Café résumé`
+    /// came back as `䍡曩⁲畭湡整潫`. Windows-1252 is the better guess for what UTF-8
+    /// rejects, and Latin-1 is the backstop that cannot fail.
     private func readText(at url: URL) throws -> String {
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= MarkdownImport.maxFileBytes else {
+            throw MarkdownImport.ImportError.fileTooLarge(bytes: size)
+        }
+
         let data = try Data(contentsOf: url)
-        for encoding: String.Encoding in [.utf8, .utf16, .isoLatin1] {
+        var encodings: [String.Encoding] = [.utf8]
+        if hasUTF16ByteOrderMark(data) {
+            encodings.insert(.utf16, at: 0)
+        }
+        encodings.append(contentsOf: [.windowsCP1252, .isoLatin1])
+
+        for encoding in encodings {
             if let text = String(data: data, encoding: encoding) {
                 return text
             }
         }
         throw CocoaError(.fileReadInapplicableStringEncoding)
+    }
+
+    private func hasUTF16ByteOrderMark(_ data: Data) -> Bool {
+        guard data.count >= 2 else { return false }
+        let first = data[data.startIndex]
+        let second = data[data.index(after: data.startIndex)]
+        return (first == 0xFF && second == 0xFE) || (first == 0xFE && second == 0xFF)
     }
 
     private func description(for error: MarkdownImport.ImportError) -> String {
