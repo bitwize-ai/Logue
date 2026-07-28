@@ -138,27 +138,50 @@ A new pure type, `Logue/Engine/SpeakerAlignment.swift`, replaces that with:
 - **Chunked weighted majority.** Transcript segments longer than `chunkThresholdSeconds` are divided
   into `chunkDurationSeconds` slices; each slice votes, weighted by its duration. A long segment
   spanning a speaker change no longer collapses to a single label chosen by its midpoint.
-- **Continuity guard.** Switching away from the previous segment's speaker requires the new speaker's
-  overlap to exceed the previous speaker's by at least `continuityThreshold`. This suppresses
+- **Continuity under ambiguity.** When the runner-up speaker holds at least `ambiguityOverlapRatio`
+  of the winner's overlap, the interval genuinely spans both speakers and picking the marginal
+  winner is a coin flip, so the previous segment's speaker is kept instead. This suppresses
   single-segment speaker flapping.
-- **Ambiguity handling.** When a second speaker's overlap exceeds `ambiguityOverlapRatio` of the
-  winner's, the previous speaker is preferred over an effectively arbitrary choice between two
-  near-equal candidates.
+
+  The source branch had two separate guards here — this one plus a `continuityThreshold` requiring
+  a switch to beat the previous speaker's overlap by 5%. The second is unreachable: the previous
+  speaker's overlap can never exceed the runner-up's (the runner-up is by definition the largest
+  non-winner), so any case that would trip the continuity threshold trips the ambiguity check
+  first. Only one guard is implemented.
 - **Boundary splitting.** A transcript segment overlapping two or more speaker ranges by a meaningful
   margin is split at the boundaries, with its text distributed across the parts in proportion to
-  their durations. Split parts are ordering- and duration-clamped, capped in count, and the original
-  segment is kept intact whenever no valid split can be produced.
+  their durations. Parts are butted against each other so the split covers the original span with no
+  holes. Splitting is abandoned — the segment kept whole — whenever a faithful split is impossible:
+  too many speakers, a part that would fall below `minSplitPartDuration`, or fewer words than parts.
+  Splitting must never invent, duplicate, or drop text.
 - **Island smoothing.** A single segment flanked on both sides by the same other speaker adopts that
-  speaker.
+  speaker, bounded to islands shorter than `maxSmoothedIslandDuration`. The source branch smoothed
+  regardless of duration, which would erase a genuine short turn ("Yes", "I agree"); with timeline
+  normalization already collapsing rapid alternations upstream, a two-second island is far more
+  likely to be real speech than model flapping.
 - **Tight fallback.** When no speaker segment overlaps at all, the nearest-neighbour fallback window
   is capped at 0.5 seconds rather than 3.5. `speakerLabelTolerance` keeps its current value and its
   current role in `alignTranscriptionWithSpeakers`, which gathers text into speaker segments and is a
   different operation.
 
-Two elements of the source branch are deliberately excluded: a file-scope
-`var alignmentRunCounterByMeetingID` dictionary (mutable global state, unsynchronized, serving only
-debug telemetry), and per-segment `Logger.info` calls, which would emit thousands of log lines per
-meeting. Summary-level logging is retained.
+Several elements of the source branch are deliberately excluded.
+
+Two on style grounds: a file-scope `var alignmentRunCounterByMeetingID` dictionary (mutable global
+state, unsynchronized, serving only debug telemetry), and per-segment `Logger.info` calls, which
+would emit thousands of log lines per meeting. Summary-level logging is retained.
+
+Two because they are defects:
+
+- Its word-distribution routine reduces per-part word targets in a `while excess > 0` loop that only
+  decrements a target already greater than one, and resets its cursor when it runs off the end. When
+  every part needs one word but there are fewer words than parts, no target is reducible and the loop
+  never terminates. Splitting a short segment across two speakers would hang the post-recording
+  pipeline. The replacement allocates words by cumulative proportion and returns "do not split" when
+  there are fewer words than parts.
+- Its ordering clamp drops any segment shorter than 0.6 seconds, and it runs across the whole output
+  rather than only over generated split parts — so short original segments ("Yes.", "Okay.") are
+  silently deleted from the transcript. Ordering here never drops a segment: if a split would produce
+  an undersized part, the split is abandoned and the original kept.
 
 `MeetingStore+Diarization.updateSpeakerData` keeps its signature and its early-out when every
 transcript segment already carries a label; it delegates the algorithm to `SpeakerAlignment` and
@@ -181,21 +204,14 @@ becomes `SpeakerSegment` data:
 Called from `processSortformerDiarization` before `applySortformerUpdates`. Speaker-count-agnostic
 throughout — no step assumes or enforces a speaker count.
 
-### Model preload
+### Model preload — no change needed
 
-`DiarizationManager` gains a `preloadModels()` entry point so Sortformer models are resident before
-the first recording rather than loaded on demand at recording start.
+This item was planned and then dropped: the current code already does it, and does more.
 
-Two problems in the source branch's version are corrected. Its guard
-(`cachedSortformerModels == nil, !isModelReady`) admits concurrent callers, so two calls both
-download. And a launch-time HuggingFace download changes behaviour for users who never record.
-
-The implementation will therefore be idempotent via a stored in-flight `Task` handle, and the
-launch-time preload will warm only models already present in the local HuggingFace cache; a first-run
-network download still happens at recording start as it does today. If FluidAudio's API cannot
-express a cache-only load, the preload is instead gated behind a persisted flag set once the user has
-completed at least one recording. Either way, no user acquires a background download they did not
-already implicitly request.
+`DiarizationManager.prewarmGlobalCache()` runs from `RecordingSessionManager`'s initializer at app
+launch and warms the Sortformer, Parakeet ASR, and Silero VAD caches. The source branch's
+`preloadModels()` covered Sortformer only, so porting it would have been a regression in coverage and
+a duplicate of existing behaviour. No preload work is included.
 
 ### Bounded wait for model initialization on stop
 
@@ -238,10 +254,14 @@ touches the same signatures.
 
 The following are unreachable and will be removed:
 
-- `DiarizationManager.startPeriodicProcessing(onUpdate:)` and its `periodicTask` storage
+- `DiarizationManager.startPeriodicProcessing(onUpdate:)`, `stopPeriodicProcessing()`,
+  `processIncrementalChunk()`, `processRemainingChunk()`, and the `periodicTask`,
+  `lastProcessedSampleIndex`, and `lastProcessedTime` state they carried
 - `RecordingSessionManager+Diarization.applyDiarizationResult(_:for:isPeriodic:)`
 - `RecordingSessionManager.isPeriodicDiarizationStopped` and `hasPeriodicDiarizationResults`, and the
-  `isFinalizing || !isPeriodicDiarizationStopped` guard in `applySortformerUpdates` that reads them
+  `isFinalizing || !isPeriodicDiarizationStopped` guard in `applySortformerUpdates` that reads them.
+  With the guard gone, `applySortformerUpdates` no longer needs its `isFinalizing` parameter.
+- `AppConstants.Delays.batchDiarizationInitialDelay`, used only by the periodic loop
 
 Stale comments will be corrected, including the `RecordingSessionManager` comment describing
 post-recording diarization via `processCompleteRecording()` — superseded by `processCompleteWith(_:)`
@@ -254,11 +274,13 @@ outside this work's purpose.
 
 ### New constants
 
-Added to `AppConstants.Diarization`: `chunkThresholdSeconds`, `chunkDurationSeconds`,
-`continuityThreshold`, `ambiguityOverlapRatio`, `minSpeakerSegmentDuration`, `sameSpeakerMergeGap`,
-`alternationWindowSeconds`, `labelFallbackTolerance`, and the split-related bounds (minimum
-subsegment duration, maximum split parts, meaningful overlap threshold). The source branch hardcoded
-several of these inline. The model-init wait timeout goes in `AppConstants.Delays`.
+Added to `AppConstants.Diarization`: `minSpeakerSegmentDuration`, `sameSpeakerMergeGap`,
+`alternationWindowSeconds`, `timelineMaxGap`, `chunkThresholdSeconds`, `chunkDurationSeconds`,
+`ambiguityOverlapRatio`, `labelFallbackTolerance`, `minSplitOverlap`, `minSplitPartDuration`,
+`maxSplitParts`, and `maxSmoothedIslandDuration`. The source branch hardcoded most of these inline.
+`continuityThreshold` is not added — see the unreachable second guard noted above. The model-init
+wait timeout, `diarizationInitStopWait`, goes in `AppConstants.Delays`, replacing the
+now-unused `batchDiarizationInitialDelay`.
 
 ## Architecture
 
@@ -272,14 +294,20 @@ RecordingSessionManager+Diarization.processSortformerDiarization
     ├── DiarizationManager.processCompleteWith(_:)   ─┐ concurrent
     ├── DiarizationManager.transcribeBuffer(_:)      ─┘
     │
-    ├── SortformerTimeline.normalize(_:)              ← new, pure
-    ├── applySortformerUpdates(_:for:isFinalizing:timeOffset:)
-    ├── renumberSpeakers(for:)
-    ├── MeetingStore.replaceTranscript(for:with:timeOffset:)
+    ├── MeetingStore.replaceTranscript(for:with:sessionStart:)
+    │       └── final text is in place before any speaker is assigned
     │
-    └── MeetingStore.updateSpeakerData(for:speakers:speakerSegments:)
-            └── SpeakerAlignment.assignLabels(...)    ← new, pure
+    ├── SortformerTimeline.normalize(_:)              ← new, pure
+    ├── applySortformerUpdates(_:for:sessionStart:)
+    │       └── MeetingStore.updateSpeakerData(for:speakers:speakerSegments:)
+    │               └── SpeakerAlignment.align(...)   ← new, pure
+    │
+    └── renumberSpeakers(for:)
 ```
+
+Batch ASR replaces the transcript *before* speakers are assigned, so alignment runs against the final
+text rather than the streaming draft it supersedes. The source branch ordered these the other way
+round, which meant labels were computed against text that was about to be discarded.
 
 Keeping the algorithms out of the extension files matters for size as well as clarity.
 `RecordingSessionManager+Diarization.swift` is 446 lines today; absorbing the timeline normalization
@@ -293,26 +321,38 @@ concern the guideline exists to prevent.
 Swift Testing suites (`@Suite`, `@Test`, `#expect`) in `LogueTests/`. All three are pure logic — no
 model downloads, no inference, seconds to run, unlike the `LogueTests/LLMIntegration` suites.
 
-**`SpeakerAlignmentTests.swift`**
+**`SpeakerAlignmentTests.swift`** (21 tests)
 
 - Overlap voting picks the majority-overlap speaker where midpoint matching picks the wrong one
-- A long segment spanning a speaker change splits at the boundary with text distributed by duration
-- The continuity guard suppresses a single-segment flap on a marginal overlap gain
-- Ambiguous overlap (second-best above the ratio) prefers the previous speaker
-- Island smoothing rewrites a lone segment flanked by one other speaker
-- No overlap beyond the 0.5s fallback window leaves the label `nil`
-- Empty speaker segments, empty transcript, and a single speaker are all no-ops
-- A split producing no valid parts returns the original segment unchanged
+- A near-tie keeps the previous speaker; a near-tie with no previous speaker takes the winner; a
+  decisive overlap still switches
+- A segment spanning two, then three, speakers splits at the boundaries, and every word survives the
+  redistribution
+- Splitting is declined when there are fewer words than parts, and when the second speaker's overlap
+  is negligible
+- A segment shorter than the split minimum is never dropped, and alignment never returns fewer
+  segments than it received
+- An already-labelled segment is neither relabelled, split, nor smoothed
+- A brief island is smoothed; a two-second island keeps its own speaker
+- The 0.5s fallback labels a segment just past a speaker's end and declines one far from every speaker
+- Empty speaker segments, empty transcript, an unmapped speaker id, and a single speaker are handled
 
-**`SortformerTimelineTests.swift`**
+**`SortformerTimelineTests.swift`** (13 tests)
 
-- Sub-threshold fragments are discarded
-- Adjacent same-speaker segments within the merge gap combine
-- A-B-A alternation inside the window collapses to the duration-dominant speaker
-- Overlapping starts clamp forward; oversized gaps are capped
-- A three-speaker timeline survives normalization with all three speakers intact — the regression
+- Sub-threshold fragments are discarded, and input consisting only of fragments yields nothing
+- Adjacent same-speaker segments within the merge gap combine; different speakers do not
+- A-B-A alternation inside the window collapses to the duration-dominant speaker; a slow alternation
+  is preserved
+- Overlapping starts clamp forward, a fully swallowed segment is dropped rather than inverted, and
+  output is ordered by start time
+- A three-speaker timeline keeps all three speakers, including a quiet third speaker — the regression
   guard against reintroducing two-speaker collapsing
-- Empty input returns empty
+- Empty input returns empty; a single segment passes through unchanged
+
+The three guards that carry the most judgement — the ambiguity check, the island-duration bound, and
+splitting — were each verified by mutation: disabling the guard in the implementation must fail the
+specific test written for it. Tests that cannot fail prove nothing, and a suite that passes on the
+first implementation attempt deserves that check.
 
 **`SpeakerRenameTests.swift`**
 
