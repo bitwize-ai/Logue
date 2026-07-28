@@ -256,3 +256,31 @@ Logue is open source under the [MIT License](LICENSE) — © 2026 [Bitwize](http
 
 Some vendored dependencies under [`Vendor/`](/Vendor) are licensed separately (MIT, BSD,
 Apache-2.0); see each package for details.
+
+## 📈 Project Growth
+
+<p align="center">
+  <a href="https://star-history.com/#bitwize-ai/Logue&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=bitwize-ai/Logue&type=Date&theme=dark">
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=bitwize-ai/Logue&type=Date">
+      <img alt="Star history chart for Logue" src="https://api.star-history.com/svg?repos=bitwize-ai/Logue&type=Date" width="600">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <a aria-label="Stargazers" href="https://github.com/bitwize-ai/Logue/stargazers" target="_blank">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/bitwize-ai/Logue?style=flat-square&labelColor=000000&color=4630EB">
+  </a>
+&ensp;
+  <a aria-label="Forks" href="https://github.com/bitwize-ai/Logue/forks" target="_blank">
+    <img alt="GitHub forks" src="https://img.shields.io/github/forks/bitwize-ai/Logue?style=flat-square&labelColor=000000&color=4630EB">
+  </a>
+&ensp;
+  <img alt="Repository views" src="https://hits.sh/github.com/bitwize-ai/Logue.svg?style=flat-square&label=views&labelColor=000000&color=4630EB">
+</p>
+
+<p align="center">
+  If Logue is useful to you, a ⭐ helps other privacy-minded people find it.
+</p>
