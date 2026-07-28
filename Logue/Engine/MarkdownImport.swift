@@ -32,14 +32,22 @@ enum MarkdownImport {
     /// Title precedence: YAML frontmatter `title:` → leading `# ` heading → filename.
     /// Whichever source supplies the title is removed from the body so the imported
     /// document does not open with its own title duplicated as the first line.
-    static func document(fileName: String, contents: String) throws -> ImportedDocument {
+    static func document(fileName: String, contents rawContents: String) throws -> ImportedDocument {
         let ext = (fileName as NSString).pathExtension.lowercased()
         guard allowedExtensions.contains(ext) else {
             throw ImportError.unsupportedExtension(ext)
         }
-        guard contents.utf8.count <= maxFileBytes else {
-            throw ImportError.fileTooLarge(bytes: contents.utf8.count)
+        guard rawContents.utf8.count <= maxFileBytes else {
+            throw ImportError.fileTooLarge(bytes: rawContents.utf8.count)
         }
+        // Normalise line endings first and parse only the result. `CharacterSet
+        // .whitespaces` is Zs plus tab — it does not contain `\r` — so a Windows
+        // file would otherwise fail every `== "---"` comparison and show its raw
+        // YAML block as prose. Normalising also keeps `\r` out of the stored body.
+        let contents = rawContents
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
         // Nothing to import. Checked against the raw contents rather than the
         // parsed body, so a heading-only file still imports as a titled note.
         guard !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

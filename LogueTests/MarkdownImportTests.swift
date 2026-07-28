@@ -116,6 +116,23 @@ struct MarkdownImportTests {
         }
     }
 
+    // MARK: - Line Endings
+
+    @Test("Frontmatter in a Windows-authored file is parsed, not shown as prose")
+    func crlfFrontmatterIsParsed() throws {
+        let contents = "---\r\ntitle: From Obsidian\r\ntags: [a]\r\n---\r\n# Heading\r\nBody line.\r\n"
+        let doc = try MarkdownImport.document(fileName: "note.md", contents: contents)
+        #expect(doc.title == "From Obsidian")
+        #expect(doc.body == "# Heading\nBody line.")
+    }
+
+    @Test("No carriage returns survive into the stored body")
+    func crlfBodyIsNormalised() throws {
+        let doc = try MarkdownImport.document(fileName: "n.md", contents: "# T\r\n\r\nOne\r\nTwo\r\n")
+        #expect(!doc.body.contains("\r"))
+        #expect(doc.body == "One\nTwo")
+    }
+
     @Test("Unicode contents and filenames survive intact")
     func unicodeSurvives() throws {
         let doc = try MarkdownImport.document(
