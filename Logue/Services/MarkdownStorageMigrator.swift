@@ -133,8 +133,6 @@ struct MarkdownStorageMigrator {
     ) -> ExportResult {
         var result = ExportResult()
 
-        writeSpaceFiles(spaces: spaces, into: &result)
-
         for content in documents where !content.isTrashed {
             let directory = rootURL.appendingPathComponent(
                 MirrorLayout.directoryComponents(forSpace: content.spaceID, in: spaces)
@@ -164,6 +162,12 @@ struct MarkdownStorageMigrator {
                 logger.error("Export failed for one document: \(error.localizedDescription, privacy: .public)")
             }
         }
+
+        // After the documents, not before: identities are only written into folders that already
+        // exist, and the folder a document belongs in is created by the loop above. Writing them
+        // first left a space whose only folder came from a document with no `_space.md` in it —
+        // which the next scan read as a space with no folder, and deleted.
+        writeSpaceFiles(spaces: spaces, into: &result)
 
         return result
     }
@@ -200,6 +204,11 @@ struct MarkdownStorageMigrator {
     /// scan adopts them as documents.
     func reconcile(documents: [DocumentContent], spaces: [Space]) -> ReconcileResult {
         var result = ReconcileResult()
+        // Every space gets a folder here, including empty ones. This is the only place that
+        // creates them wholesale, and it is safe precisely because it is a migration: the app is
+        // the authority on what exists at the moment the setting is turned on.
+        createSpaceFolders(spaces: spaces)
+
         let existing = fileIndex()
         let live = Dictionary(
             documents.filter { !$0.isTrashed }.map { ($0.id, $0) },
@@ -318,27 +327,109 @@ struct MarkdownStorageMigrator {
         }
     }
 
-    private func writeSpaceFiles(spaces: [Space], into result: inout ExportResult) {
+    /// Writes `_space.md` into folders that **already exist**, and creates none.
+    ///
+    /// Creating them here is what made a folder deleted in Finder come straight back: this runs
+    /// on every save and every scan, so the deletion was undone before the user could look away
+    /// — and undone as an *empty* folder, because the documents inside it were correctly
+    /// trashed. Folders are created only where a folder is genuinely wanted: a full migration,
+    /// a space created in the app, or a document being filed into one.
+    private func writeSpaceFiles(
+        spaces: [Space],
+        allSpaces: [Space]? = nil,
+        into _: inout ExportResult
+    ) {
         for space in spaces {
-            let directory = rootURL.appendingPathComponent(
-                MirrorLayout.directoryComponents(forSpace: space.id, in: spaces)
-                    .joined(separator: "/")
-            )
+            let directory = folderURL(forSpace: space.id, in: allSpaces ?? spaces)
+            guard FileManager.default.fileExists(atPath: directory.path) else { continue }
+            write(SpaceFile.render(space), toSpaceFileIn: directory)
+        }
+    }
+
+    private func write(_ rendered: String, toSpaceFileIn directory: URL) {
+        let url = directory.appendingPathComponent(SpaceFile.filename)
+        do {
+            echoFilter?.expect(rendered, at: url)
+            try rendered.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            // A space file that cannot be written costs the folder its identity, which degrades
+            // a later rename into a delete-and-create. Bad, but not worth failing a save over.
+            logger.error("Could not write a space file: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - Space folders
+
+    func folderURL(forSpace spaceID: UUID?, in spaces: [Space]) -> URL {
+        rootURL.appendingPathComponent(
+            MirrorLayout.directoryComponents(forSpace: spaceID, in: spaces).joined(separator: "/")
+        )
+    }
+
+    /// Which folder each space occupies, found by the identifier inside its `_space.md`.
+    ///
+    /// By identifier rather than by name, because a name can be changed on either side and the
+    /// identifier cannot. It is also how a space with no folder at all is recognised — which is
+    /// how a folder deleted outside the app is noticed.
+    func spaceFolderIndex() -> [UUID: [String]] {
+        var index: [UUID: [String]] = [:]
+        for url in markdownFiles() where SpaceFile.isSpaceFile(filename: url.lastPathComponent) {
+            guard let contents = try? String(contentsOf: url, encoding: .utf8),
+                  let identity = SpaceFile.identity(from: contents)
+            else { continue }
+            let components = relativeComponents(ofDirectory: url.deletingLastPathComponent())
+            guard !components.isEmpty, index[identity.id] == nil else { continue }
+            index[identity.id] = components
+        }
+        return index
+    }
+
+    /// Creates a folder for every space, for the migration that turns the setting on.
+    func createSpaceFolders(spaces: [Space]) {
+        for space in spaces {
             do {
-                try FileManager.default.createDirectory(
-                    at: directory, withIntermediateDirectories: true
-                )
-                let spaceFileURL = directory.appendingPathComponent(SpaceFile.filename)
-                let rendered = SpaceFile.render(space)
-                echoFilter?.expect(rendered, at: spaceFileURL)
-                try rendered.write(to: spaceFileURL, atomically: true, encoding: .utf8)
+                try createFolder(for: space, in: spaces)
             } catch {
-                // A space folder that cannot be written is logged but does not fail the
-                // whole migration: its documents will land at the root, which is
-                // recoverable, unlike losing them.
-                logger.error("Could not write a space file: \(error.localizedDescription, privacy: .public)")
+                // Its documents land at the root instead, which is recoverable — unlike failing
+                // the migration and leaving the user with nothing.
+                logger.error("Could not create a space folder: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    /// Creates a space's folder and writes its identity, for a space made in the app.
+    func createFolder(for space: Space, in spaces: [Space]) throws {
+        let directory = folderURL(forSpace: space.id, in: spaces)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        write(SpaceFile.render(space), toSpaceFileIn: directory)
+    }
+
+    /// Moves a space's folder, for a space renamed or re-parented in the app.
+    ///
+    /// The identity is rewritten afterwards so the moved folder still names its space.
+    func moveFolder(from components: [String], for space: Space, in spaces: [Space]) throws {
+        let source = rootURL.appendingPathComponent(components.joined(separator: "/"))
+        let destination = folderURL(forSpace: space.id, in: spaces)
+        guard source.standardizedFileURL != destination.standardizedFileURL,
+              FileManager.default.fileExists(atPath: source.path)
+        else { return }
+
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try FileManager.default.moveItem(at: source, to: destination)
+        write(SpaceFile.render(space), toSpaceFileIn: destination)
+    }
+
+    /// Moves a space's folder to the Trash, for a space deleted in the app.
+    ///
+    /// A folder that is already gone is not an error — that is the case where the deletion came
+    /// *from* the folder being removed in the first place.
+    func retireFolder(at components: [String]) throws {
+        guard !components.isEmpty else { return }
+        let directory = rootURL.appendingPathComponent(components.joined(separator: "/"))
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        try retireFile(directory)
     }
 
     // MARK: - Import
@@ -452,11 +543,14 @@ struct MarkdownStorageMigrator {
         return SpaceFile.identity(from: contents)
     }
 
-    /// Writes `_space.md` for every space, so folders created outside the app gain an
-    /// identity and can be renamed without becoming a different space.
-    func writeSpaceIdentities(spaces: [Space]) {
+    /// Writes `_space.md` for spaces that already have a folder, so a folder created outside
+    /// the app gains an identity and can be renamed later without becoming a different space.
+    ///
+    /// `among` is the full space list, needed to work out where each folder lives; `spaces` is
+    /// the subset to write. They differ when only one space has changed.
+    func writeSpaceIdentities(spaces: [Space], among all: [Space]? = nil) {
         var ignored = ExportResult()
-        writeSpaceFiles(spaces: spaces, into: &ignored)
+        writeSpaceFiles(spaces: spaces, allSpaces: all ?? spaces, into: &ignored)
     }
 
     /// Directory components of a file, relative to the root.

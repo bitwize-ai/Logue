@@ -135,6 +135,66 @@ struct SpaceFolderAdoptionTests {
         #expect(resolution == .rename(id: notes.id, to: "Notes", parentComponents: ["Work"]))
     }
 
+    // MARK: - Folders that are gone
+
+    @Test("A space whose folder is missing has vanished")
+    func missingFolderVanishes() {
+        let work = Space(name: "Work")
+
+        #expect(SpaceFolderAdoption.vanishedSpaceIDs(in: [work], folders: []) == [work.id])
+    }
+
+    @Test("A space whose folder is present has not")
+    func presentFolderSurvives() {
+        let work = Space(name: "Work")
+
+        #expect(SpaceFolderAdoption.vanishedSpaceIDs(in: [work], folders: [work.id]).isEmpty)
+    }
+
+    /// A child space cannot outlive its parent: keeping it would leave a space whose place in the
+    /// tree no longer exists.
+    @Test("Children of a vanished space vanish with it")
+    func childrenVanishWithParent() {
+        let work = Space(name: "Work")
+        let projects = Space(name: "Projects", parentID: work.id)
+        let quarter = Space(name: "Q3", parentID: projects.id)
+
+        let vanished = SpaceFolderAdoption.vanishedSpaceIDs(
+            in: [work, projects, quarter], folders: [projects.id, quarter.id]
+        )
+
+        #expect(vanished == [work.id, projects.id, quarter.id])
+    }
+
+    @Test("A vanished child does not take its parent with it")
+    func parentSurvivesVanishedChild() {
+        let work = Space(name: "Work")
+        let projects = Space(name: "Projects", parentID: work.id)
+
+        let vanished = SpaceFolderAdoption.vanishedSpaceIDs(
+            in: [work, projects], folders: [work.id]
+        )
+
+        #expect(vanished == [projects.id])
+    }
+
+    @Test("A sibling with a folder is unaffected")
+    func siblingSurvives() {
+        let work = Space(name: "Work")
+        let personal = Space(name: "Personal")
+
+        let vanished = SpaceFolderAdoption.vanishedSpaceIDs(
+            in: [work, personal], folders: [personal.id]
+        )
+
+        #expect(vanished == [work.id])
+    }
+
+    @Test("No spaces means nothing vanished")
+    func emptyLibraryVanishesNothing() {
+        #expect(SpaceFolderAdoption.vanishedSpaceIDs(in: [], folders: []).isEmpty)
+    }
+
     @Test("The order does not depend on the order the folders were found in")
     func orderIsStable() {
         let paths = [["Work", "Projects"], ["Work"], ["Reading"]]

@@ -67,7 +67,20 @@ extension DocumentStorage {
         let documentStore = DocumentStore.shared
         let scan = MarkdownFolderScan(rootURL: Self.markdownRootURL, echoFilter: echoFilter)
 
-        // Folders first, and on the main actor because it mutates the space store: the
+        // Nothing at all if the folder itself is missing. See `isRootPresent`: a moved folder or
+        // an unfinished sync is indistinguishable from a deleted one, and acting on it would
+        // empty the library.
+        guard scan.isRootPresent else {
+            Self.scanLogger.error("Skipped a scan: the documents folder is not there")
+            endScan(summary: nil)
+            return nil
+        }
+
+        // Deletions before adoption, or a space whose folder is gone would be handed straight back
+        // to `adoptNewFolders` as a folder to recreate.
+        deleteVanishedSpaces(using: scan, spaceStore: spaceStore)
+
+        // Folders next, and on the main actor because it mutates the space store: the
         // spaces have to exist before a document can be filed into one.
         adoptNewFolders(using: scan, spaceStore: spaceStore)
 
@@ -92,6 +105,35 @@ extension DocumentStorage {
 
         endScan(summary: plan.summary)
         return plan
+    }
+
+    /// Removes spaces whose folder the user deleted.
+    ///
+    /// `deleteSpace` does the rest of the work: it takes nested spaces with it and trashes the
+    /// documents and meetings inside them. The documents' files are already gone with the folder,
+    /// so the document scan that follows finds nothing left to do for them.
+    ///
+    /// Deleting a folder is a real instruction, but a whole tree of notes is a lot to lose to a
+    /// misread, so nothing here destroys anything: the documents go to Logue's trash and the
+    /// folder is already in the user's.
+    private func deleteVanishedSpaces(using scan: MarkdownFolderScan, spaceStore: SpaceStore) {
+        let vanished = scan.vanishedSpaceIDs(in: spaceStore.spaces)
+        guard !vanished.isEmpty else { return }
+
+        // Top of each deleted subtree only — `deleteSpace` cascades, and asking it to delete a
+        // child after its parent is gone would find nothing.
+        let roots = vanished.filter { id in
+            guard let parentID = spaceStore.spaces.first(where: { $0.id == id })?.parentID
+            else { return true }
+            return !vanished.contains(parentID)
+        }
+
+        for id in roots {
+            spaceStore.deleteSpace(id: id)
+        }
+        Self.scanLogger.info(
+            "Removed \(vanished.count, privacy: .public) space(s) whose folder was deleted"
+        )
     }
 
     /// Turns folders created outside the app into spaces.

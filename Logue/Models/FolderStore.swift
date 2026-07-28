@@ -94,6 +94,9 @@ final class SpaceStore {
         let space = Space(name: deduped, parentID: parentID, sortOrder: maxOrder + 1)
         spaces.append(space)
         saveToDisk()
+        // Immediately, not lazily: a space with no folder is how a scan recognises a folder the
+        // user deleted, so a space that never got one would delete itself on the next scan.
+        createFolder(for: space)
         return space
     }
 
@@ -159,14 +162,21 @@ final class SpaceStore {
         guard !trimmed.isEmpty else { return }
         let parentID = spaces[index].parentID
         let otherNames = spaces.filter { $0.id != id && $0.parentID == parentID }.map(\.name)
+
+        // Captured before the change: the path is derived from the name, so afterwards there is
+        // no way to work out where the folder used to be.
+        let previousComponents = folderComponents(for: id)
+
         spaces[index].name = uniqueTitle(trimmed, among: otherNames)
         saveToDisk()
+        moveFolder(for: id, from: previousComponents)
     }
 
     func setSpaceIcon(id: UUID, icon: String?) {
         guard let index = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[index].icon = icon
         saveToDisk()
+        refreshFolderIdentity(for: id)
     }
 
     func setAIInsight(id: UUID, key: String, content: String, contentSignature: String) {
@@ -231,6 +241,10 @@ final class SpaceStore {
         let childIDs = allDescendantIDs(of: id)
         let allIDs = childIDs.union([id])
 
+        // Captured before the spaces go, for the same reason as in `renameSpace`. Only the top of
+        // the tree is needed: retiring its folder takes the children with it.
+        let folderToRetire = folderComponents(for: id)
+
         // Trash all documents and meetings in this space and descendants
         for spaceID in allIDs {
             DocumentStore.shared.trashDocuments(inSpace: spaceID)
@@ -238,6 +252,10 @@ final class SpaceStore {
         }
         spaces.removeAll { allIDs.contains($0.id) }
         saveToDisk()
+
+        // Without this the folder stays behind with its `_space.md` still naming the space, and
+        // the next scan reads it as a folder the user made and creates the space all over again.
+        retireFolders(at: [folderToRetire])
     }
 
     func space(for id: UUID) -> Space? {
@@ -250,10 +268,13 @@ final class SpaceStore {
         if let newParentID, allDescendantIDs(of: id).contains(newParentID) {
             return
         }
+        let previousComponents = folderComponents(for: id)
+
         spaces[index].parentID = newParentID
         let siblings = spaces.filter { $0.parentID == newParentID && $0.id != id }
         spaces[index].sortOrder = (siblings.map(\.sortOrder).min() ?? 1) - 1
         saveToDisk()
+        moveFolder(for: id, from: previousComponents)
     }
 
     // MARK: - Persistence

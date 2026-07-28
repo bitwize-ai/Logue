@@ -19,6 +19,29 @@ struct MarkdownFolderScan: Sendable {
         MarkdownStorageMigrator(rootURL: rootURL, echoFilter: echoFilter)
     }
 
+    /// Whether the folder is there at all.
+    ///
+    /// Checked before anything else. An unmounted volume, a folder the user moved, or a sync that
+    /// has not finished all look identical to "every folder was deleted" — and the answer to that
+    /// would be to empty the library. So a missing root means do nothing.
+    var isRootPresent: Bool {
+        FileManager.default.fileExists(atPath: rootURL.path)
+    }
+
+    // MARK: - Step zero: folders that are gone
+
+    /// Spaces whose folder no longer exists.
+    ///
+    /// Only meaningful because the app writes a folder as soon as a space is created and moves it
+    /// whenever the space is renamed — so a space with no folder can only be one the user removed
+    /// from Finder.
+    func vanishedSpaceIDs(in spaces: [Space]) -> Set<UUID> {
+        guard isRootPresent else { return [] }
+        return SpaceFolderAdoption.vanishedSpaceIDs(
+            in: spaces, folders: Set(migrator.spaceFolderIndex().keys)
+        )
+    }
+
     // MARK: - Step one: folders
 
     /// Folders with no space yet, parents first.
@@ -47,6 +70,11 @@ struct MarkdownFolderScan: Sendable {
     /// into them as part of that, which is the one write a scan performs. Without it the next
     /// scan would adopt the same file again.
     func plan(spaces: [Space], known: [DocumentContent]) -> ExternalChangePlan {
+        // The same guard as `vanishedSpaceIDs`, kept here as well rather than left to the caller:
+        // a missing root reads as "no files at all", and the honest-looking conclusion from that
+        // is to trash every document in the library.
+        guard isRootPresent else { return ExternalChangePlan() }
+
         let imported = migrator.importAll(knownSpaces: spaces)
         let adopted = imported.unidentifiedFiles.compactMap {
             migrator.adopt(fileAt: $0, knownSpaces: spaces)

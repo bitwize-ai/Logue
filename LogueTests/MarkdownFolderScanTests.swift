@@ -19,6 +19,20 @@ struct MarkdownFolderScanTests {
         var documents: [DocumentContent] = []
 
         mutating func apply(_ scan: MarkdownFolderScan) -> ExternalChangePlan {
+            // Deletions first, exactly as the app orders them: a space whose folder is gone must
+            // not be handed to adoption as a folder to recreate.
+            let vanished = scan.vanishedSpaceIDs(in: spaces)
+            if !vanished.isEmpty {
+                var doomed = vanished
+                for space in spaces where doomed.contains(space.parentID ?? space.id) {
+                    doomed.insert(space.id)
+                }
+                spaces.removeAll { doomed.contains($0.id) }
+                for index in documents.indices where doomed.contains(documents[index].spaceID ?? UUID()) {
+                    documents[index].isTrashed = true
+                }
+            }
+
             for creation in scan.spaceCreations(in: spaces) {
                 let identity = scan.identity(forDirectoryComponents: creation.components)
                 // The same decision the app makes, so this harness tests the real rule rather
@@ -246,6 +260,170 @@ struct MarkdownFolderScanTests {
 
         // And it stays trashed rather than being trashed again on every later scan.
         #expect(library.apply(scan).isEmpty)
+    }
+
+    // MARK: - Deleting folders outside the app
+
+    /// The bug the user hit: a folder deleted in Finder came straight back, empty. `_space.md` was
+    /// written for every space on every pass and created the directory as a side effect, so the
+    /// deletion was undone within seconds — and undone empty, because the documents inside were
+    /// correctly trashed.
+    @Test("A folder deleted outside the app is not recreated")
+    func deletedFolderStaysDeleted() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try write("text", to: root.appendingPathComponent("Work/plan.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+        #expect(library.spaces.count == 1)
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Work"))
+        _ = library.apply(scan)
+
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("Work").path) == false)
+    }
+
+    @Test("A folder deleted outside the app removes its space")
+    func deletedFolderRemovesSpace() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try write("text", to: root.appendingPathComponent("Work/plan.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Work"))
+        _ = library.apply(scan)
+
+        #expect(library.spaces.isEmpty)
+    }
+
+    /// The documents go to trash rather than disappearing: deleting a folder is easy to do by
+    /// accident, and Logue's trash is the only place they can be got back from.
+    @Test("Documents in a deleted folder are trashed, not lost")
+    func deletedFolderTrashesDocuments() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try write("text", to: root.appendingPathComponent("Work/plan.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Work"))
+        _ = library.apply(scan)
+
+        #expect(library.documents.count == 1)
+        #expect(library.documents.first?.isTrashed == true)
+    }
+
+    @Test("Deleting a parent folder removes its nested spaces too")
+    func deletedParentRemovesChildren() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try write("text", to: root.appendingPathComponent("Work/Projects/Q3/plan.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+        #expect(library.spaces.count == 3)
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Work"))
+        _ = library.apply(scan)
+
+        #expect(library.spaces.isEmpty)
+        #expect(library.documents.first?.isTrashed == true)
+    }
+
+    @Test("Deleting one folder leaves its siblings alone")
+    func deletionIsScopedToOneFolder() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try write("text", to: root.appendingPathComponent("Work/plan.md"))
+        try write("text", to: root.appendingPathComponent("Personal/notes.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+        #expect(library.spaces.count == 2)
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Work"))
+        _ = library.apply(scan)
+
+        #expect(library.spaces.map(\.name) == ["Personal"])
+        #expect(library.documents.filter { !$0.isTrashed }.count == 1)
+    }
+
+    @Test("Deleting a nested folder keeps its parent")
+    func deletingChildKeepsParent() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try write("text", to: root.appendingPathComponent("Work/plan.md"))
+        try write("text", to: root.appendingPathComponent("Work/Projects/q3.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+        #expect(library.spaces.count == 2)
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Work/Projects"))
+        _ = library.apply(scan)
+
+        #expect(library.spaces.map(\.name) == ["Work"])
+        #expect(library.documents.filter { !$0.isTrashed }.count == 1)
+    }
+
+    /// The catastrophic case. A folder on an unmounted volume, or one the user moved, or a sync
+    /// that has not finished, all look exactly like "every folder was deleted".
+    @Test("A missing root folder changes nothing at all")
+    func missingRootIsIgnored() throws {
+        let root = temporaryRoot()
+        try write("text", to: root.appendingPathComponent("Work/plan.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+        #expect(library.spaces.count == 1)
+
+        try FileManager.default.removeItem(at: root)
+        _ = library.apply(scan)
+
+        #expect(scan.isRootPresent == false)
+        #expect(library.spaces.count == 1)
+        #expect(library.documents.filter { !$0.isTrashed }.count == 1)
+    }
+
+    /// Emptying a folder is not deleting it. The documents go, the space stays — otherwise
+    /// clearing a folder out to refill it would take the space with it.
+    @Test("Emptying a folder keeps the space and trashes only its documents")
+    func emptiedFolderKeepsSpace() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try write("text", to: root.appendingPathComponent("Work/plan.md"))
+
+        var library = Library()
+        let scan = MarkdownFolderScan(rootURL: root)
+        _ = library.apply(scan)
+
+        let file = try #require(
+            MarkdownStorageMigrator(rootURL: root).markdownFiles()
+                .first { !SpaceFile.isSpaceFile(filename: $0.lastPathComponent) }
+        )
+        try FileManager.default.removeItem(at: file)
+        _ = library.apply(scan)
+
+        #expect(library.spaces.map(\.name) == ["Work"])
+        #expect(library.documents.first?.isTrashed == true)
     }
 
     // MARK: - Our own writes

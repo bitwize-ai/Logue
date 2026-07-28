@@ -46,6 +46,34 @@ enum SpaceFolderAdoption {
         )
     }
 
+    /// Spaces whose folder is gone, so the space should go too.
+    ///
+    /// The app writes a folder the moment a space is created, renames it when the space is
+    /// renamed and moves it when the space moves — so a space with no folder can only mean the
+    /// folder was removed outside the app. That is the whole basis for treating this as a
+    /// deletion, and why those writes are not optional.
+    ///
+    /// Descendants are included even if some child still has a folder, because a child space
+    /// cannot outlive its parent: keeping it would leave a space whose place in the tree no
+    /// longer exists.
+    ///
+    /// The caller must not run this when the root folder itself is missing. An unmounted volume,
+    /// a folder the user moved, or a sync that has not finished all look like "every folder is
+    /// gone", and this would answer "delete everything".
+    static func vanishedSpaceIDs(in spaces: [Space], folders: Set<UUID>) -> Set<UUID> {
+        let missing = spaces.filter { !folders.contains($0.id) }.map(\.id)
+        guard !missing.isEmpty else { return [] }
+
+        var doomed = Set(missing)
+        var queue = missing
+        while let id = queue.popLast() {
+            for child in spaces where child.parentID == id && doomed.insert(child.id).inserted {
+                queue.append(child.id)
+            }
+        }
+        return doomed
+    }
+
     /// Folders with no space, ordered so every parent is created before its children.
     ///
     /// Ancestors are included even when only a leaf was passed: someone can create
