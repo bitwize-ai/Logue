@@ -13,11 +13,6 @@ import OSLog
 struct MarkdownStorageMigrator {
     let rootURL: URL
 
-    /// Told about every write, so the watcher can recognise our own events and not read a
-    /// file back over the text the user is typing. `nil` for a one-off migration, where
-    /// nothing is watching yet.
-    let echoFilter: WriteEchoFilter?
-
     /// How a file that no longer belongs is disposed of.
     ///
     /// The Trash rather than deletion, so anything retired on the user's behalf is one
@@ -26,13 +21,11 @@ struct MarkdownStorageMigrator {
 
     init(
         rootURL: URL,
-        echoFilter: WriteEchoFilter? = nil,
         retireFile: @escaping @Sendable (URL) throws -> Void = {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
         }
     ) {
         self.rootURL = rootURL
-        self.echoFilter = echoFilter
         self.retireFile = retireFile
     }
 
@@ -146,7 +139,6 @@ struct MarkdownStorageMigrator {
                     at: directory, withIntermediateDirectories: true
                 )
                 let rendered = MarkdownDocumentFile.render(content)
-                echoFilter?.expect(rendered, at: url)
                 try rendered.write(to: url, atomically: true, encoding: .utf8)
 
                 try verify(content, at: url)
@@ -244,7 +236,6 @@ struct MarkdownStorageMigrator {
 
     private func retire(_ url: URL, into result: inout ReconcileResult) {
         do {
-            echoFilter?.forget(url)
             try retireFile(url)
             result.retiredFiles.append(url)
         } catch {
@@ -272,13 +263,18 @@ struct MarkdownStorageMigrator {
         in directory: URL,
         current: URL?
     ) -> URL {
-        if let current {
-            return current.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL
-                ? current
-                : directory.appendingPathComponent(current.lastPathComponent)
+        if let current, current.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL {
+            return current
         }
 
         let taken = Set((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+
+        // Moving between folders keeps the name the user gave the file — unless something in the
+        // destination already has it. Writing there anyway would overwrite a different document's
+        // file, and the next scan would find that document fileless and trash it.
+        if let current, !taken.contains(current.lastPathComponent) {
+            return directory.appendingPathComponent(current.lastPathComponent)
+        }
         return directory.appendingPathComponent(
             DocumentFilename.filename(for: WritingDocument(content: content, derived: nil), avoiding: taken)
         )
@@ -349,7 +345,6 @@ struct MarkdownStorageMigrator {
     private func write(_ rendered: String, toSpaceFileIn directory: URL) {
         let url = directory.appendingPathComponent(SpaceFile.filename)
         do {
-            echoFilter?.expect(rendered, at: url)
             try rendered.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             // A space file that cannot be written costs the folder its identity, which degrades
@@ -493,7 +488,6 @@ struct MarkdownStorageMigrator {
 
         do {
             let rendered = MarkdownDocumentFile.render(content)
-            echoFilter?.expect(rendered, at: url)
             try rendered.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             logger.error("Could not claim a dropped-in file: \(error.localizedDescription, privacy: .public)")

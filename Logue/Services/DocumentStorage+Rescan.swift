@@ -32,7 +32,6 @@ extension DocumentStorage {
     func stopWatching() {
         watcher?.stop()
         watcher = nil
-        echoFilter.reset()
     }
 
     // MARK: - Scanning
@@ -65,7 +64,7 @@ extension DocumentStorage {
 
         let spaceStore = SpaceStore.shared
         let documentStore = DocumentStore.shared
-        let scan = MarkdownFolderScan(rootURL: Self.markdownRootURL, echoFilter: echoFilter)
+        let scan = MarkdownFolderScan(rootURL: Self.markdownRootURL)
 
         // Nothing at all if the folder itself is missing. See `isRootPresent`: a moved folder or
         // an unfinished sync is indistinguishable from a deleted one, and acting on it would
@@ -94,7 +93,20 @@ extension DocumentStorage {
             )
         }
 
-        documentStore.applyExternalChanges(plan)
+        // The plan was diffed against `known`, taken before the folder was read. The user can type
+        // during that read, and applying an update built from the older snapshot would replace what
+        // they just typed with what the file said beforehand. Anything that moved on is dropped and
+        // left for the next scan, which diffs against the newer text.
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: known, current: documentStore.documents.map(\.content)
+        )
+        if settled.updated.count != plan.updated.count {
+            Self.scanLogger.info(
+                "Held back \(plan.updated.count - settled.updated.count, privacy: .public) update(s) for a document edited during the scan"
+            )
+        }
+
+        documentStore.applyExternalChanges(settled)
 
         if let minimumVisibleDuration {
             let remaining = minimumVisibleDuration - started.duration(to: .now)
@@ -103,8 +115,8 @@ extension DocumentStorage {
             }
         }
 
-        endScan(summary: plan.summary)
-        return plan
+        endScan(summary: settled.summary)
+        return settled
     }
 
     /// Removes spaces whose folder the user deleted.

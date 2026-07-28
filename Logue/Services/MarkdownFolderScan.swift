@@ -8,15 +8,9 @@ import Foundation
 /// this codebase have shipped with every unit passing and the chain between them broken.
 struct MarkdownFolderScan: Sendable {
     let rootURL: URL
-    let echoFilter: WriteEchoFilter?
-
-    init(rootURL: URL, echoFilter: WriteEchoFilter? = nil) {
-        self.rootURL = rootURL
-        self.echoFilter = echoFilter
-    }
 
     private var migrator: MarkdownStorageMigrator {
-        MarkdownStorageMigrator(rootURL: rootURL, echoFilter: echoFilter)
+        MarkdownStorageMigrator(rootURL: rootURL)
     }
 
     /// Whether the folder is there at all.
@@ -37,9 +31,22 @@ struct MarkdownFolderScan: Sendable {
     /// from Finder.
     func vanishedSpaceIDs(in spaces: [Space]) -> Set<UUID> {
         guard isRootPresent else { return [] }
-        return SpaceFolderAdoption.vanishedSpaceIDs(
-            in: spaces, folders: Set(migrator.spaceFolderIndex().keys)
-        )
+
+        // Two independent ways of finding a space's folder, and either one counts. The identity
+        // index is the good one, because it survives a rename. The path check is the safety net:
+        // without it, anything that stops us *reading* `_space.md` — the user deleting it, a
+        // permissions error, an iCloud placeholder, a write that failed earlier — was read as "the
+        // folder is gone", and the answer to that is to delete the space and trash everything in
+        // it. A folder sitting right there in Finder must never be read that way.
+        var present = Set(migrator.spaceFolderIndex().keys)
+        for space in spaces where !present.contains(space.id) {
+            let directory = migrator.folderURL(forSpace: space.id, in: spaces)
+            if FileManager.default.fileExists(atPath: directory.path) {
+                present.insert(space.id)
+            }
+        }
+
+        return SpaceFolderAdoption.vanishedSpaceIDs(in: spaces, folders: present)
     }
 
     // MARK: - Step one: folders

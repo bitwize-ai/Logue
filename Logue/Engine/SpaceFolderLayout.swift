@@ -33,11 +33,26 @@ enum SpaceFolderLayout {
         var visited: Set<UUID> = []
         var current: UUID? = spaceID
 
-        while let id = current, chain.count < maxDepth, visited.insert(id).inserted {
+        var isDeeperThanMaxDepth = false
+
+        while let id = current, visited.insert(id).inserted {
+            if chain.count >= maxDepth {
+                isDeeperThanMaxDepth = true
+                break
+            }
+            // A parent that is not in `spaces` ends the walk: a space whose parent record is gone
+            // is treated as top level, which is the least surprising reading of a broken chain.
             guard let space = byID[id] else { break }
             chain.append(space)
             current = space.parentID
         }
+
+        // A hierarchy deeper than the cap yields no path at all. Stopping mid-walk used to return
+        // the deepest components and silently drop the outermost ones, producing a path that does
+        // not exist — which reads downstream as "this space has no folder", and the answer to that
+        // was to delete the space and trash everything in it. Placing its documents at the root is
+        // visibly wrong and harmless, which is the right way to fail.
+        guard !isDeeperThanMaxDepth else { return [] }
 
         return chain.reversed().map { component(for: $0, in: spaces) }
     }

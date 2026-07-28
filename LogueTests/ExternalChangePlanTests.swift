@@ -183,3 +183,99 @@ struct ExternalChangePlanTests {
         #expect(plan.summary.contains("1 removed"))
     }
 }
+
+/// Holding back an update for a document the user edited while the folder was being read.
+///
+/// A scan reads the folder off the main actor. If the user types during that read, applying an
+/// update built from the earlier snapshot puts the file's older text back over what they wrote —
+/// the one failure this feature cannot have.
+@Suite("Concurrent edit protection")
+struct ConcurrentEditProtectionTests {
+    private func document(_ title: String, body: String) -> DocumentContent {
+        var doc = WritingDocument()
+        doc.title = title
+        doc.body = body
+        return doc.content
+    }
+
+    @Test("An update survives when the document has not changed since the snapshot")
+    func unchangedDocumentKeepsUpdate() {
+        let snapshot = document("Alpha", body: "old")
+        var fromFile = snapshot
+        fromFile.body = "from the file"
+
+        var plan = ExternalChangePlan()
+        plan.updated = [fromFile]
+
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: [snapshot], current: [snapshot]
+        )
+        #expect(settled.updated.count == 1)
+    }
+
+    @Test("An update is dropped when the user typed during the scan")
+    func editedDocumentDropsUpdate() {
+        let snapshot = document("Alpha", body: "old")
+        var fromFile = snapshot
+        fromFile.body = "from the file"
+        var typedSince = snapshot
+        typedSince.body = "what the user just typed"
+
+        var plan = ExternalChangePlan()
+        plan.updated = [fromFile]
+
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: [snapshot], current: [typedSince]
+        )
+        #expect(settled.updated.isEmpty)
+    }
+
+    @Test("Dropping one update leaves the others, and insertions and deletions alone")
+    func dropIsScoped() {
+        let steady = document("Steady", body: "same")
+        let edited = document("Edited", body: "old")
+        var editedSince = edited
+        editedSince.body = "typed"
+
+        var steadyFromFile = steady
+        steadyFromFile.body = "from the file"
+        var editedFromFile = edited
+        editedFromFile.body = "from the file"
+
+        var plan = ExternalChangePlan()
+        plan.updated = [steadyFromFile, editedFromFile]
+        plan.inserted = [document("New", body: "new")]
+        plan.trashed = [UUID()]
+
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: [steady, edited], current: [steady, editedSince]
+        )
+
+        #expect(settled.updated.map(\.id) == [steady.id])
+        #expect(settled.inserted.count == 1)
+        #expect(settled.trashed.count == 1)
+    }
+
+    @Test("A document that vanished from memory during the scan is left for the next one")
+    func missingDocumentDropsUpdate() {
+        let snapshot = document("Alpha", body: "old")
+        var fromFile = snapshot
+        fromFile.body = "from the file"
+
+        var plan = ExternalChangePlan()
+        plan.updated = [fromFile]
+
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: [snapshot], current: []
+        )
+        #expect(settled.updated.isEmpty)
+    }
+
+    @Test("An empty plan is returned untouched")
+    func emptyPlanUnchanged() {
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            ExternalChangePlan(), comparedTo: [], current: []
+        )
+        #expect(settled.isEmpty)
+    }
+}

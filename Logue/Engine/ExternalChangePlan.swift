@@ -61,6 +61,16 @@ enum ExternalChangePlanner {
                 plan.ignoredIdentifiers.append(content.id)
                 continue
             }
+
+            // A file naming a document that is in the trash is not an edit to apply. Markdown files
+            // carry no trashed flag, so reading one back as an update would clear `isTrashed` and
+            // bring the document out of the trash on its own — which happens whenever removing the
+            // file failed, or the user put it back from their Trash.
+            guard !existing.isTrashed else {
+                plan.ignoredIdentifiers.append(content.id)
+                continue
+            }
+
             if differs(content, from: existing) {
                 plan.updated.append(content)
             }
@@ -76,6 +86,34 @@ enum ExternalChangePlanner {
         }
 
         return plan
+    }
+
+    /// Drops updates for documents whose in-memory text changed while the folder was being read.
+    ///
+    /// A scan reads the folder off the main actor, which takes long enough for the user to type. An
+    /// update built from the snapshot taken beforehand would put the file's older text back over
+    /// what they just wrote — the one failure this feature cannot be allowed to have. Dropping it
+    /// costs a scan: the next one diffs against the newer text and applies whatever is still true.
+    static func discardingUpdatesThatMovedOn(
+        _ plan: ExternalChangePlan,
+        comparedTo snapshot: [DocumentContent],
+        current: [DocumentContent]
+    ) -> ExternalChangePlan {
+        guard !plan.updated.isEmpty else { return plan }
+
+        let snapshotByID = Dictionary(snapshot.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let currentByID = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        var settled = plan
+        settled.updated = plan.updated.filter { update in
+            guard let before = snapshotByID[update.id], let now = currentByID[update.id] else {
+                // Gone from memory entirely, or never there: leave it to the next scan rather than
+                // guess.
+                return false
+            }
+            return !differs(now, from: before)
+        }
+        return settled
     }
 
     /// Whether a file's content differs from the document in a way worth applying.

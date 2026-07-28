@@ -38,11 +38,6 @@ final class DocumentStorage {
         }
     }
 
-    /// Recognises the filesystem events our own writes cause.
-    ///
-    /// Extension-visible: +Rescan
-    @ObservationIgnored let echoFilter = WriteEchoFilter()
-
     /// Extension-visible: +Rescan
     @ObservationIgnored var watcher: MarkdownFolderWatcher?
 
@@ -73,7 +68,7 @@ final class DocumentStorage {
     ///
     /// Extension-visible: +Rescan
     var liveMigrator: MarkdownStorageMigrator {
-        MarkdownStorageMigrator(rootURL: Self.markdownRootURL, echoFilter: echoFilter)
+        MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
     }
 
     /// Where plain markdown documents live: `~/Logue`.
@@ -151,11 +146,20 @@ final class DocumentStorage {
 
     enum SwitchError: LocalizedError {
         case exportFailed(count: Int, firstReason: String)
+        case folderUnavailable
+        case folderIncomplete(found: Int, expected: Int)
 
         var errorDescription: String? {
             switch self {
             case let .exportFailed(count, reason):
                 "\(count) document(s) could not be written, so nothing was changed. First problem: \(reason)"
+            case .folderUnavailable:
+                "The Logue folder could not be found, so nothing was changed. If it is on a drive "
+                    + "that is not connected, or you moved it, put it back and try again."
+            case let .folderIncomplete(found, expected):
+                "The folder holds \(found) document(s) but Logue has \(expected), so nothing was "
+                    + "changed. Press the rescan button in the sidebar to reconcile them first — "
+                    + "switching now would discard the difference."
             }
         }
     }
@@ -213,13 +217,34 @@ final class DocumentStorage {
     ///
     /// Keeping it is still offered, for someone who has the folder in git or is about to move it
     /// somewhere themselves.
-    func switchToEncrypted(knownSpaces: [Space], retiringFolder: Bool) -> [WritingDocument] {
+    func switchToEncrypted(
+        knownSpaces: [Space],
+        retiringFolder: Bool,
+        expectedDocumentCount: Int
+    ) throws -> [WritingDocument] {
+        // Refused rather than attempted when the folder is not there. Switching off reads the
+        // folder and then prunes the encrypted copies of everything the folder did not account
+        // for — so against a missing folder it read nothing and pruned the entire library. An
+        // unmounted volume, a folder the user moved, and an unfinished sync all look like this.
+        guard MarkdownFolderScan(rootURL: Self.markdownRootURL).isRootPresent else {
+            throw SwitchError.folderUnavailable
+        }
+
         // Stopped first: a scan arriving mid-switch would plan against a library that is
         // about to be replaced.
         stopWatching()
 
         let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
         let imported = migrator.importAll(knownSpaces: knownSpaces)
+
+        // A partially present folder is the dangerous case, because it looks like a successful
+        // read of a smaller library. Refusing sends the user to Rescan, which reconciles the
+        // difference visibly instead of destroying it.
+        guard imported.documents.count >= expectedDocumentCount else {
+            throw SwitchError.folderIncomplete(
+                found: imported.documents.count, expected: expectedDocumentCount
+            )
+        }
 
         let documents = imported.documents.map { content in
             WritingDocument(content: content, derived: loadDerived(id: content.id))
@@ -273,7 +298,12 @@ final class DocumentStorage {
 
         do {
             let stored = try await DocumentStore.readEncryptedDocuments(in: encryptedDirectory)
-            return fromFolder + stored.filter(\.isTrashed)
+            // Deduped by identifier, folder winning. A restored document keeps a stale encrypted
+            // copy still marked trashed, and two entries for one id put the *trashed* one last —
+            // where `rebuildIndexMap` lets it win every lookup, so the next save would take the
+            // trashed branch and remove the user's file.
+            let fromFolderIDs = Set(fromFolder.map(\.id))
+            return fromFolder + stored.filter { $0.isTrashed && !fromFolderIDs.contains($0.id) }
         } catch {
             logger.error("Could not load trashed documents: \(error.localizedDescription, privacy: .public)")
             return fromFolder
@@ -308,14 +338,18 @@ final class DocumentStorage {
     }
 
     /// Removes a document's file, used when it is trashed or deleted.
+    ///
+    /// To the Trash, never `removeItem`. This is reached from `trashDocuments(inSpace:)`, which a
+    /// scan can reach by deciding a space no longer exists — so a wrong decision anywhere upstream
+    /// used to erase live files outright. It should cost the user a trip to the Trash, not their
+    /// text.
     func removeFile(for id: UUID) {
         guard mode.isMarkdown else { return }
 
         let migrator = liveMigrator
         guard let url = migrator.fileIndex()[id] else { return }
         do {
-            echoFilter.forget(url)
-            try FileManager.default.removeItem(at: url)
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         } catch {
             logger.error("Could not remove a document file: \(error.localizedDescription, privacy: .public)")
         }

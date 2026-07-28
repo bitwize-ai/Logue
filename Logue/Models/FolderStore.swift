@@ -236,7 +236,13 @@ final class SpaceStore {
         }
     }
 
-    func deleteSpace(id: UUID) {
+    /// Deletes a space and everything under it.
+    ///
+    /// `retiringFolder` is false when the deletion *came from* the folder disappearing. Retiring
+    /// then is not merely redundant: the path is recomputed from the name, and if the user has
+    /// already made a new folder there — deleting and recreating one is a normal thing to do —
+    /// this would move that new folder to the Trash.
+    func deleteSpace(id: UUID, retiringFolder: Bool = true) {
         // Recursively delete child spaces
         let childIDs = allDescendantIDs(of: id)
         let allIDs = childIDs.union([id])
@@ -255,7 +261,9 @@ final class SpaceStore {
 
         // Without this the folder stays behind with its `_space.md` still naming the space, and
         // the next scan reads it as a folder the user made and creates the space all over again.
-        retireFolders(at: [folderToRetire])
+        if retiringFolder {
+            retireFolders(at: [folderToRetire])
+        }
     }
 
     func space(for id: UUID) -> Space? {

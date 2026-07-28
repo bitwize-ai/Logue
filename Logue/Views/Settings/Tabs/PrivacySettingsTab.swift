@@ -123,14 +123,23 @@ struct PrivacySettingsTab: View {
         storageError = nil
         storage.folderRetirementFailed = false
 
-        let restored = storage.switchToEncrypted(
-            knownSpaces: spaceStore.spaces, retiringFolder: retiringFolder
-        )
-        Task { await documentStore.adoptAfterStorageSwitch(restored) }
+        do {
+            let restored = try storage.switchToEncrypted(
+                knownSpaces: spaceStore.spaces,
+                retiringFolder: retiringFolder,
+                // What the folder has to account for. Fewer means files are missing rather than
+                // deleted, and switching would prune the encrypted copies of the difference.
+                expectedDocumentCount: documentStore.activeDocuments.count
+            )
+            Task { await documentStore.adoptAfterStorageSwitch(restored) }
 
-        if storage.folderRetirementFailed {
-            storageError = "Your documents were re-encrypted, but the folder could not be moved "
-                + "to the Trash. It is still in your home folder and can be moved by hand."
+            if storage.folderRetirementFailed {
+                storageError = "Your documents were re-encrypted, but the folder could not be moved "
+                    + "to the Trash. It is still in your home folder and can be moved by hand."
+            }
+        } catch {
+            // Nothing was changed: the switch refuses before it reads rather than part-way through.
+            storageError = error.localizedDescription
         }
     }
 

@@ -440,7 +440,9 @@ final class DocumentStore {
                     at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
                 )
                 for file in Self.staleDocumentFiles(among: files, keeping: ids) {
-                    try fm.removeItem(at: file)
+                    // The Trash, because this decides what to delete from a set the user cannot
+                    // see. If the rule is ever wrong, it should be recoverable.
+                    try fm.trashItem(at: file, resultingItemURL: nil)
                 }
             } catch {
                 Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")

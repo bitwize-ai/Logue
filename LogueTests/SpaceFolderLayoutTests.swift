@@ -154,3 +154,59 @@ struct SpaceFolderLayoutTests {
         #expect(resolved == nil)
     }
 }
+
+/// Hierarchies deeper than the cap.
+///
+/// The cap used to truncate from the wrong end: it kept the deepest components and dropped the
+/// outermost ones, so a space's path named folders that do not exist. Downstream that reads as "this
+/// space has no folder", and the answer to that is to delete the space and trash everything in it.
+@Suite("Space folder layout depth")
+struct SpaceFolderLayoutDepthTests {
+    /// Builds a chain `L1/L2/.../Ln`.
+    private func chain(depth: Int) -> [Space] {
+        var spaces: [Space] = []
+        var parentID: UUID?
+        for level in 1 ... depth {
+            let space = Space(name: "L\(level)", parentID: parentID)
+            spaces.append(space)
+            parentID = space.id
+        }
+        return spaces
+    }
+
+    @Test("A hierarchy within the cap resolves from the top down")
+    func withinCapResolves() throws {
+        let spaces = chain(depth: 3)
+        let leaf = try #require(spaces.last)
+
+        let components = SpaceFolderLayout.directoryComponents(forSpace: leaf.id, in: spaces)
+        #expect(components == ["L1", "L2", "L3"])
+    }
+
+    @Test("A hierarchy at exactly the cap still resolves from the top down")
+    func atCapResolves() throws {
+        let spaces = chain(depth: SpaceFolderLayout.maxDepth)
+        let leaf = try #require(spaces.last)
+
+        let components = SpaceFolderLayout.directoryComponents(forSpace: leaf.id, in: spaces)
+        #expect(components.first == "L1")
+        #expect(components.count == SpaceFolderLayout.maxDepth)
+    }
+
+    /// The defect: it returned the deepest twelve, so the path began at `L3` and pointed nowhere.
+    @Test("A hierarchy deeper than the cap yields no path rather than a wrong one")
+    func beyondCapYieldsNoPath() throws {
+        let spaces = chain(depth: SpaceFolderLayout.maxDepth + 2)
+        let leaf = try #require(spaces.last)
+
+        #expect(SpaceFolderLayout.directoryComponents(forSpace: leaf.id, in: spaces).isEmpty)
+    }
+
+    @Test("Spaces above the cap are unaffected")
+    func shallowSiblingsUnaffected() {
+        let spaces = chain(depth: SpaceFolderLayout.maxDepth + 2)
+        let second = spaces[1]
+
+        #expect(SpaceFolderLayout.directoryComponents(forSpace: second.id, in: spaces) == ["L1", "L2"])
+    }
+}
