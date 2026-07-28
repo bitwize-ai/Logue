@@ -532,9 +532,16 @@ final class DocumentStore {
     func clearAllData() {
         documents = []
         selectedDocumentID = nil
+        savedViews = []
+        documentTypes = []
+
         let dir = documentsDirectory
+        // The organisation directory is new and was outside every reset path, so "erase all data"
+        // left the user's saved views and types behind for the next launch to load.
+        let organisationDir = organisationStorageDirectory
         Task.detached(priority: .utility) {
             try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: organisationDir)
             // Note: SemanticIndex spans both meetings and documents — clearing only the
             // document namespace via `removeDocument` would be inefficient. We rely on
             // `MeetingStore.clearAllData()` (which calls `SemanticIndex.clearAll()`)

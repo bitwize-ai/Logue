@@ -50,6 +50,11 @@ enum FilterField: Equatable, Codable, Sendable {
     case modifiedAt
     case createdAt
     case property(String)
+    /// Whether the document is pinned. Added so the sidebar's built-in filters are expressible as
+    /// a saved view — without it, "save what I am looking at" could not capture Pinned or Inbox.
+    case isPinned
+    /// Whether the document has been triaged out of the Inbox.
+    case isOrganised
 
     var label: String {
         switch self {
@@ -58,6 +63,8 @@ enum FilterField: Equatable, Codable, Sendable {
         case .tag: "Tag"
         case .modifiedAt: "Modified"
         case .createdAt: "Created"
+        case .isPinned: "Pinned"
+        case .isOrganised: "Organised"
         case let .property(key): key.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
@@ -151,6 +158,10 @@ struct FilterCondition: Equatable, Codable, Identifiable, Sendable {
             document.tags.isEmpty ? [""] : document.tags
         case let .property(key):
             [document.property(key)?.displayString ?? ""]
+        case .isPinned:
+            [document.isPinned ? "true" : "false"]
+        case .isOrganised:
+            [document.isOrganised ? "true" : "false"]
         case .modifiedAt, .createdAt:
             []
         }

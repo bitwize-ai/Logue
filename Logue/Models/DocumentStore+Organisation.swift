@@ -31,7 +31,16 @@ extension DocumentStore {
     /// Loads saved views and types. Safe to call more than once.
     func loadOrganisation() {
         savedViews = load([SavedView].self, from: savedViewsURL) ?? []
-        documentTypes = load([DocumentType].self, from: documentTypesURL) ?? DocumentType.starterTypes
+
+        if let stored = load([DocumentType].self, from: documentTypesURL) {
+            documentTypes = stored
+        } else {
+            // Persisted on first run rather than re-derived each launch. Left unsaved, the starter
+            // types got fresh identifiers every time the app opened, so anything that referred to
+            // one by id — a rename, a deletion — could not survive a restart.
+            documentTypes = DocumentType.starterTypes
+            persist(documentTypes, to: documentTypesURL)
+        }
     }
 
     private func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
@@ -63,6 +72,28 @@ extension DocumentStore {
     }
 
     // MARK: - Saved views
+
+    /// Where saved views and types live, so a full erase reaches them.
+    ///
+    /// Extension-visible: DocumentStore
+    var organisationStorageDirectory: URL {
+        organisationDirectory
+    }
+
+    /// Restores saved views and types from a backup.
+    ///
+    /// `nil` means the backup predates them, so what is already loaded is kept rather than cleared —
+    /// restoring an old backup should not silently delete views it never knew about.
+    func replaceOrganisation(savedViews: [SavedView]?, documentTypes: [DocumentType]?) {
+        if let savedViews {
+            self.savedViews = savedViews
+            persist(savedViews, to: savedViewsURL)
+        }
+        if let documentTypes {
+            self.documentTypes = documentTypes
+            persist(documentTypes, to: documentTypesURL)
+        }
+    }
 
     func addSavedView(_ view: SavedView) {
         savedViews.append(view)

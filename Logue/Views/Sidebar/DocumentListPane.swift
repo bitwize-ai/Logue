@@ -10,6 +10,19 @@ enum DocSortOrder: String, CaseIterable {
     case createdNewest = "Newest Created"
     case createdOldest = "Oldest Created"
 
+    /// The nearest equivalent a saved view can store.
+    ///
+    /// `SavedViewSort` has no created-at cases, so those fall back to modified in the same
+    /// direction rather than silently becoming the default.
+    var asSavedViewSort: SavedViewSort {
+        switch self {
+        case .modifiedNewest, .createdNewest: .recentlyModified
+        case .modifiedOldest, .createdOldest: .oldestModified
+        case .titleAZ: .titleAscending
+        case .titleZA: .titleDescending
+        }
+    }
+
     var icon: String {
         switch self {
         case .modifiedNewest, .createdNewest: "arrow.down"
@@ -56,20 +69,29 @@ enum DocFilterMode: String, CaseIterable {
 /// Column 2 content when Documents category is selected.
 /// Shows search, filter/sort/view menus, and a selectable document list or gallery.
 struct DocumentListPane: View {
-    @Environment(DocumentStore.self) private var store
+    // Extension-visible: +Organise
+    @Environment(DocumentStore.self) var store
     @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedItem: ContentListItem?
-    @State private var searchText = ""
-    @State private var filterMode: DocFilterMode = .all
-    @State private var sortOrder: DocSortOrder = .modifiedNewest
+    // Extension-visible: +Organise
+    @State var searchText = ""
+    // Extension-visible: +Organise
+    @State var filterMode: DocFilterMode = .all
+    // Extension-visible: +Organise
+    @State var sortOrder: DocSortOrder = .modifiedNewest
     @State private var renamingDocID: UUID?
     @State private var renameText = ""
     @FocusState private var isRenameFieldFocused: Bool
     @State private var hasAutoSelected = false
+    // Extension-visible: +Organise
     /// Active saved view, when one is chosen instead of a built-in filter.
-    @State private var activeSavedViewID: UUID?
+    @State var activeSavedViewID: UUID?
+    // Extension-visible: +Organise
     /// Active type filter, when one is chosen.
-    @State private var activeTypeName: String?
+    @State var activeTypeName: String?
+    // Extension-visible: +Organise
+    /// The naming prompt currently up, if any.
+    @State var organisePrompt: OrganisePrompt?
     /// Documents ticked for a bulk action. Non-empty shows the bulk bar.
     @State private var bulkSelection: Set<UUID> = []
     @State private var bulkTagText = ""
@@ -114,6 +136,11 @@ struct DocumentListPane: View {
         listView
             .searchable(text: $searchText, prompt: "Search documents")
             .navigationTitle("Documents")
+            .sheet(item: $organisePrompt) { prompt in
+                OrganiseNamingSheet(prompt: prompt) { name in
+                    commitOrganisePrompt(prompt, name: name)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -136,21 +163,40 @@ struct DocumentListPane: View {
                             }
                         }
 
-                        if !store.savedViews.isEmpty {
-                            Section("Views") {
-                                ForEach(store.savedViews) { view in
-                                    Button {
-                                        activeSavedViewID = view.id
-                                        activeTypeName = nil
-                                    } label: {
-                                        HStack {
-                                            Label(view.name, systemImage: view.symbolName)
-                                            if activeSavedViewID == view.id {
-                                                Spacer()
-                                                Image(systemName: "checkmark")
-                                            }
+                        Section("Views") {
+                            ForEach(store.savedViews) { view in
+                                Button {
+                                    activeSavedViewID = view.id
+                                    activeTypeName = nil
+                                } label: {
+                                    HStack {
+                                        Label(view.name, systemImage: view.symbolName)
+                                        if activeSavedViewID == view.id {
+                                            Spacer()
+                                            Image(systemName: "checkmark")
                                         }
                                     }
+                                }
+                            }
+
+                            Divider()
+
+                            Button {
+                                organisePrompt = .newView
+                            } label: {
+                                Label("Save Current Filter as View…", systemImage: "plus")
+                            }
+
+                            if let active = store.savedViews.first(where: { $0.id == activeSavedViewID }) {
+                                Button {
+                                    organisePrompt = .renameView(active)
+                                } label: {
+                                    Label("Rename This View…", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    deleteSavedView(active)
+                                } label: {
+                                    Label("Delete This View", systemImage: "trash")
                                 }
                             }
                         }
@@ -169,6 +215,20 @@ struct DocumentListPane: View {
                                                 Image(systemName: "checkmark")
                                             }
                                         }
+                                    }
+                                }
+
+                                if let active = store.documentTypes.first(where: { $0.name == activeTypeName }) {
+                                    Divider()
+                                    Button {
+                                        organisePrompt = .renameType(active)
+                                    } label: {
+                                        Label("Rename This Type…", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        deleteType(active)
+                                    } label: {
+                                        Label("Delete This Type", systemImage: "trash")
                                     }
                                 }
                             }
@@ -386,6 +446,10 @@ struct DocumentListPane: View {
 
         if !store.documentTypes.isEmpty {
             Menu("Set Type") {
+                Button("New Type from This Document…") {
+                    organisePrompt = .newType(doc)
+                }
+                Divider()
                 ForEach(DocumentType.ordered(store.documentTypes)) { type in
                     Button(type.name) { store.applyType(type, to: doc.id) }
                 }
