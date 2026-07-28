@@ -223,7 +223,7 @@ struct CategorySidebarView: View {
 
     // MARK: - Rescan
 
-    /// Re-reads `~/Documents/Logue`, for changes made while the app was not watching.
+    /// Re-reads `~/Logue`, for changes made while the app was not watching.
     ///
     /// Icon only, and shown only when plain markdown storage is on — with the setting off
     /// there is no folder to read, so a button would be a promise the app cannot keep.
@@ -260,9 +260,9 @@ struct CategorySidebarView: View {
 
     private var rescanTooltip: String {
         guard let summary = documentStorage.lastScanSummary else {
-            return "Check the Documents folder for changes made outside Logue"
+            return "Check the Logue folder for changes made outside Logue"
         }
-        return "Check the Documents folder for changes made outside Logue — last check: \(summary.lowercased())"
+        return "Check the Logue folder for changes made outside Logue — last check: \(summary.lowercased())"
     }
 
     // MARK: - Action Item Counts

@@ -52,9 +52,11 @@ struct MarkdownStorageWarningSheet: View {
             )
             point(
                 "icloud",
-                "Your Documents folder may sync to iCloud",
-                "If it does, unencrypted copies of your notes go to iCloud too. Check System "
-                    + "Settings → Apple Account → iCloud Drive if you are unsure."
+                "It stays out of iCloud by default",
+                "The folder sits beside Documents rather than inside it, because iCloud Drive's "
+                    + "\"Desktop & Documents Folders\" option would otherwise sync unencrypted "
+                    + "copies of your notes. Backup tools that cover your whole home folder still "
+                    + "will."
             )
             point(
                 "waveform",

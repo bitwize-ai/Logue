@@ -201,7 +201,7 @@ extension DocumentStore {
     /// turned off.
     ///
     /// Trash lives in the app rather than in the folder — a deleted document should not sit
-    /// in `~/Documents` waiting to be noticed — so trashed documents have no file to import.
+    /// in `~/Logue` waiting to be noticed — so trashed documents have no file to import.
     /// They are carried over from the encrypted copies that were never deleted, which is
     /// also why `replaceAll` can prune safely afterwards: by then they are in `documents`.
     func adoptAfterStorageSwitch(_ imported: [WritingDocument]) async {

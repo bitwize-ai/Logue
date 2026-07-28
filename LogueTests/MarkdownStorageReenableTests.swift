@@ -215,3 +215,104 @@ struct MarkdownStorageReenableTests {
         #expect(documentFiles(migrator).count == 1)
     }
 }
+
+/// Moving the folder out of `~/Documents` and into the home folder.
+///
+/// The move decides whether real user data changes place, and the guard that matters is the one
+/// against merging: two folders both claiming to be the library cannot be combined, because there
+/// is no way to tell which copy of a document the user meant to keep.
+@Suite("Documents folder relocation")
+struct MarkdownStorageRelocationTests {
+    private func temporaryDirectory() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logue-move-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func cleanUp(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @Test("A folder at the old location moves to the new one")
+    func movesLegacyFolder() throws {
+        let parent = temporaryDirectory()
+        defer { cleanUp(parent) }
+
+        let legacy = parent.appendingPathComponent("Documents/Logue")
+        let destination = parent.appendingPathComponent("Logue")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try "note".write(to: legacy.appendingPathComponent("a.md"), atomically: true, encoding: .utf8)
+
+        #expect(DocumentStorage.moveFolderIfLeftBehind(from: legacy, to: destination))
+        #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("a.md").path))
+        #expect(FileManager.default.fileExists(atPath: legacy.path) == false)
+    }
+
+    @Test("Nested folders survive the move")
+    func movesNestedContents() throws {
+        let parent = temporaryDirectory()
+        defer { cleanUp(parent) }
+
+        let legacy = parent.appendingPathComponent("Documents/Logue")
+        let destination = parent.appendingPathComponent("Logue")
+        let nested = legacy.appendingPathComponent("Work/Projects")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try "note".write(to: nested.appendingPathComponent("q3.md"), atomically: true, encoding: .utf8)
+
+        #expect(DocumentStorage.moveFolderIfLeftBehind(from: legacy, to: destination))
+        #expect(FileManager.default.fileExists(
+            atPath: destination.appendingPathComponent("Work/Projects/q3.md").path
+        ))
+    }
+
+    /// The guard that matters. Merging would interleave two versions of the same documents, and
+    /// nothing can tell which of a pair the user meant.
+    @Test("A folder already at the new location is never merged into")
+    func refusesToMerge() throws {
+        let parent = temporaryDirectory()
+        defer { cleanUp(parent) }
+
+        let legacy = parent.appendingPathComponent("Documents/Logue")
+        let destination = parent.appendingPathComponent("Logue")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try "old".write(to: legacy.appendingPathComponent("a.md"), atomically: true, encoding: .utf8)
+        try "new".write(to: destination.appendingPathComponent("b.md"), atomically: true, encoding: .utf8)
+
+        #expect(DocumentStorage.moveFolderIfLeftBehind(from: legacy, to: destination) == false)
+        #expect(FileManager.default.fileExists(atPath: legacy.appendingPathComponent("a.md").path))
+        #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("b.md").path))
+    }
+
+    @Test("No folder at the old location is not an error")
+    func nothingToMove() {
+        let parent = temporaryDirectory()
+        defer { cleanUp(parent) }
+
+        #expect(DocumentStorage.moveFolderIfLeftBehind(
+            from: parent.appendingPathComponent("Documents/Logue"),
+            to: parent.appendingPathComponent("Logue")
+        ) == false)
+    }
+
+    @Test("The same path for both does nothing")
+    func identicalPathsDoNothing() throws {
+        let parent = temporaryDirectory()
+        defer { cleanUp(parent) }
+        let folder = parent.appendingPathComponent("Logue")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        #expect(DocumentStorage.moveFolderIfLeftBehind(from: folder, to: folder) == false)
+        #expect(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    @Test("The new location is the home folder, not Documents")
+    func rootIsInHomeFolder() {
+        let path = DocumentStorage.markdownRootURL.path
+
+        #expect(path == NSHomeDirectory() + "/Logue")
+        #expect(path.contains("/Documents/") == false)
+        #expect(DocumentStorage.legacyMarkdownRootURL.path.contains("/Documents/"))
+    }
+}

@@ -7,7 +7,7 @@ import OSLog
 enum DocumentStorageMode: String, Codable, Sendable {
     /// Encrypted JSON in Application Support. The default.
     case encrypted
-    /// Plain `.md` files in `~/Documents/Logue`, editable outside the app.
+    /// Plain `.md` files in `~/Logue`, editable outside the app.
     case markdown
 
     var isMarkdown: Bool {
@@ -22,7 +22,7 @@ enum DocumentStorageMode: String, Codable, Sendable {
 /// `DocumentStore` delegates here so the rest of the app never learns which mode is
 /// active. Derived AI state stays encrypted in Application Support in **both** modes —
 /// it has no markdown representation, and keeping it out of the folder also keeps
-/// `~/Documents/Logue` to files a person would want to see.
+/// `~/Logue` to files a person would want to see.
 @MainActor
 @Observable
 final class DocumentStorage {
@@ -76,13 +76,70 @@ final class DocumentStorage {
         MarkdownStorageMigrator(rootURL: Self.markdownRootURL, echoFilter: echoFilter)
     }
 
-    /// Where plain markdown documents live. Deliberately in `~/Documents` rather than
-    /// Application Support: if the promise is "edit these outside the app", they have to
-    /// be somewhere a person can reach without being told a trick.
-    static var markdownRootURL: URL {
+    /// Where plain markdown documents live: `~/Logue`.
+    ///
+    /// In the home folder rather than Application Support because the promise is "edit these
+    /// outside the app", and that has to mean somewhere a person can reach without being told a
+    /// trick. Outside `~/Documents` because that is exactly what iCloud Drive's "Desktop &
+    /// Documents Folders" option syncs — so keeping unencrypted notes there meant a setting the
+    /// user turned on years ago could put them in the cloud today.
+    nonisolated static var markdownRootURL: URL {
+        homeURL.appendingPathComponent(AppConstants.appName)
+    }
+
+    /// Where the folder used to be, before it moved out of `~/Documents`.
+    ///
+    /// Kept so a folder left at the old path is moved rather than abandoned next to the new one —
+    /// two folders that both look like the library is the confusion this design exists to remove.
+    nonisolated static var legacyMarkdownRootURL: URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL.temporaryDirectory
         return documents.appendingPathComponent(AppConstants.appName)
+    }
+
+    nonisolated private static var homeURL: URL {
+        // `NSHomeDirectory()` rather than `FileManager.homeDirectoryForCurrentUser`: identical
+        // while unsandboxed, and unambiguous about which one is meant if that ever changes.
+        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+    }
+
+    /// Moves a folder left behind at an old location, once.
+    ///
+    /// Only when the destination does not exist yet. Merging two folders that both claim to be the
+    /// library would interleave two versions of the same documents, and there is no way to tell
+    /// which of a pair is the one the user meant — so the second is left alone and logged instead.
+    ///
+    /// Static and taking both paths so the rule can be tested; it decides whether real user data
+    /// moves.
+    @discardableResult
+    nonisolated static func moveFolderIfLeftBehind(from legacy: URL, to destination: URL) -> Bool {
+        let manager = FileManager.default
+        guard legacy.standardizedFileURL != destination.standardizedFileURL,
+              manager.fileExists(atPath: legacy.path),
+              !manager.fileExists(atPath: destination.path)
+        else { return false }
+
+        do {
+            try manager.createDirectory(
+                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try manager.moveItem(at: legacy, to: destination)
+            return true
+        } catch {
+            Logger(subsystem: AppConstants.bundleID, category: "DocumentStorage").error(
+                "Could not move the documents folder to its new location: \(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
+    }
+
+    /// Extension-visible: +Rescan
+    func adoptLegacyFolderIfNeeded() {
+        guard Self.moveFolderIfLeftBehind(
+            from: Self.legacyMarkdownRootURL, to: Self.markdownRootURL
+        )
+        else { return }
+        logger.info("Moved the documents folder out of Documents into the home folder")
     }
 
     private init() {
@@ -114,6 +171,8 @@ final class DocumentStorage {
         documents: [WritingDocument],
         spaces: [Space]
     ) throws {
+        adoptLegacyFolderIfNeeded()
+
         let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
         try migrator.prepareRoot()
 
@@ -146,11 +205,11 @@ final class DocumentStorage {
 
     /// Switches back to encrypted storage, reading the folder first.
     ///
-    /// `retiringFolder` moves `~/Documents/Logue` to the Trash once its documents are safely
-    /// read back, and is the default the UI offers. A folder left behind is a second thing that
-    /// looks like the library but is not: nothing writes to it, nothing reads from it, and edits
-    /// made there quietly do nothing. The Trash, not deletion — those files are the user's, and
-    /// "Put Back" has to remain possible.
+    /// `retiringFolder` moves `~/Logue` to the Trash once its documents are safely read back, and
+    /// is the default the UI offers. A folder left behind is a second thing that looks like the
+    /// library but is not: nothing writes to it, nothing reads from it, and edits made there
+    /// quietly do nothing. The Trash, not deletion — those files are the user's, and "Put Back"
+    /// has to remain possible.
     ///
     /// Keeping it is still offered, for someone who has the folder in git or is about to move it
     /// somewhere themselves.
@@ -198,11 +257,15 @@ final class DocumentStorage {
     /// handle it.
     ///
     /// Trashed documents come from encrypted storage even in markdown mode. They have no
-    /// file — putting deleted notes in `~/Documents` would be its own surprise — so without
+    /// file — putting deleted notes in `~/Logue` would be its own surprise — so without
     /// this, emptying the trash would be the only way out of it and restoring would give
     /// back an empty document.
     func loadDocuments(knownSpaces: [Space], trashedFrom encryptedDirectory: URL) async -> [WritingDocument]? {
         guard mode.isMarkdown else { return nil }
+
+        // Someone who enabled this before the folder moved has it at the old path; move it before
+        // reading, or the app would find an empty folder and trash every document in the library.
+        adoptLegacyFolderIfNeeded()
 
         let fromFolder = liveMigrator.importAll(knownSpaces: knownSpaces).documents.map { content in
             WritingDocument(content: content, derived: loadDerived(id: content.id))

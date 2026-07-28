@@ -43,7 +43,7 @@ struct PrivacySettingsTab: View {
             Text("Plain Markdown Storage")
                 .font(.headline)
 
-            Text("Store documents as ordinary .md files in your Documents folder, so you can "
+            Text("Store documents as ordinary .md files in a Logue folder in your home folder, so you can "
                 + "edit them in another app, track them in git, or let AI agents read them. "
                 + "Meetings, transcripts and audio always stay encrypted.")
                 .font(.callout)
@@ -94,16 +94,16 @@ struct PrivacySettingsTab: View {
             titleVisibility: .visible
         ) {
             // Moving the folder to the Trash is the first and default choice deliberately. A
-            // folder left in Documents looks like the library but is not one: nothing writes to
-            // it and nothing reads it, so an edit made there silently does nothing. Keeping it
-            // is still offered for anyone who tracks it in git or wants to move it themselves.
+            // folder left behind looks like the library but is not one: nothing writes to it and
+            // nothing reads it, so an edit made there silently does nothing. Keeping it is still
+            // offered for anyone who tracks it in git or wants to move it themselves.
             Button("Turn Off and Move Folder to Trash") { disableMarkdownStorage(retiringFolder: true) }
             Button("Turn Off and Keep Folder") { disableMarkdownStorage(retiringFolder: false) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your documents move back into Logue's encrypted storage. The folder in "
-                + "Documents is no longer read or written after this, so leaving it behind means "
-                + "edits made there do nothing. Moving it to the Trash keeps it recoverable.")
+            Text("Your documents move back into Logue's encrypted storage. The Logue folder is no "
+                + "longer read or written after this, so leaving it behind means edits made there "
+                + "do nothing. Moving it to the Trash keeps it recoverable.")
         }
     }
 
@@ -130,7 +130,7 @@ struct PrivacySettingsTab: View {
 
         if storage.folderRetirementFailed {
             storageError = "Your documents were re-encrypted, but the folder could not be moved "
-                + "to the Trash. It is still in your Documents folder and can be moved by hand."
+                + "to the Trash. It is still in your home folder and can be moved by hand."
         }
     }
 

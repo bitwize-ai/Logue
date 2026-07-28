@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-/// Watches `~/Documents/Logue` for changes made outside the app.
+/// Watches `~/Logue` for changes made outside the app.
 ///
 /// FSEvents rather than a `DispatchSource` file descriptor: the latter reports only the one
 /// directory it was opened on, and this folder is a tree the user is invited to reorganise.
