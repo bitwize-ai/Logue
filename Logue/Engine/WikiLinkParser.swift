@@ -29,6 +29,16 @@ struct WikiLink: Equatable, Sendable {
 /// Deliberately independent of any store, so it can be unit-tested and reused by
 /// the editor, the link index, and search without pulling in persistence.
 enum WikiLinkParser {
+    /// The app's title-identity rule: what makes two titles the same link target.
+    ///
+    /// One definition, because this decides what `[[Foo]]` matches and it used to exist
+    /// character-for-character in three places — the graph, the navigator and the renamer. Three
+    /// copies of a rule means three chances for them to disagree after someone tweaks one, and the
+    /// symptom would be a link that resolves in the panel but not on click.
+    static func titleKey(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
     /// `[[` then any run without newlines or brackets, then `]]`.
     ///
     /// Excluding `[` and `]` from the body keeps a malformed `[[a]]b]]` from

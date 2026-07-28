@@ -30,13 +30,13 @@ enum ContentNavigator {
         meetings: [MeetingNote]
     ) -> NavigationTarget? {
         let stripped = WikiLinkParser.links(in: rawTarget).first?.target ?? rawTarget
-        let key = normalise(stripped)
+        let key = WikiLinkParser.titleKey(stripped)
         guard !key.isEmpty else { return nil }
 
-        if let match = documents.first(where: { !$0.isTrashed && normalise($0.title) == key }) {
+        if let match = documents.first(where: { !$0.isTrashed && WikiLinkParser.titleKey($0.title) == key }) {
             return .document(id: match.id)
         }
-        if let match = meetings.first(where: { normalise($0.title) == key }) {
+        if let match = meetings.first(where: { WikiLinkParser.titleKey($0.title) == key }) {
             return .meeting(id: match.id)
         }
         return nil
@@ -151,8 +151,4 @@ enum ContentNavigator {
     }
 
     // MARK: - Private
-
-    nonisolated private static func normalise(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
 }

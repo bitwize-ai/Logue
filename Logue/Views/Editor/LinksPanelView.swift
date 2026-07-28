@@ -49,19 +49,41 @@ struct LinksPanelView: View {
             }
             .padding(16)
         }
-        .task(id: rebuildKey) { rebuild() }
+        .task(id: rebuildKey) { await rebuild() }
     }
 
-    /// Rebuild when the document changes or its body is edited.
+    /// What makes the panel stale.
+    ///
+    /// Body *length* was the trigger before, which misses any edit that preserves it — retyping
+    /// `[[Notes]]` as `[[Ideas]]` left the key identical, so the panel went on listing `Notes` as an
+    /// outgoing link and never showed `Ideas`. Hashing the link targets rather than the prose also
+    /// means ordinary typing does not rebuild the graph at all.
+    ///
+    /// The document counts are here because the index is a snapshot of the whole library: another
+    /// document being created, renamed or trashed while the panel is open changes what resolves, and
+    /// watching only the current document left phantom backlinks on screen.
     private var rebuildKey: String {
-        "\(documentID.uuidString)-\(documentBody.count)"
+        let targets = WikiLinkParser.uniqueTargets(in: documentBody).sorted().joined(separator: "\u{1F}")
+        return [
+            documentID.uuidString,
+            String(targets.hashValue),
+            String(documentStore.documents.count),
+            String(meetingStore.meetings.count),
+        ].joined(separator: "-")
     }
 
-    private func rebuild() {
-        index = LinkIndex.build(
-            documents: documentStore.documents,
-            meetings: meetingStore.meetings
-        )
+    /// Builds off the main actor.
+    ///
+    /// `LinkIndex.build` runs a regular expression over every document body and every meeting
+    /// summary. The editor commits its body on a 300 ms debounce, so with this panel open the whole
+    /// library was re-scanned on the main thread every 300 ms of typing.
+    private func rebuild() async {
+        let documents = documentStore.documents
+        let meetings = meetingStore.meetings
+
+        index = await Task.detached(priority: .userInitiated) {
+            LinkIndex.build(documents: documents, meetings: meetings)
+        }.value
     }
 
     // MARK: - Sections

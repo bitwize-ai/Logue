@@ -180,9 +180,28 @@ extension DocumentStore {
         // operation on an explicit selection, so re-saving the selection is fine.
         for updated in transform(selected) {
             guard let index = documentIndex(for: updated.id) else { continue }
+            // Trashing loses the space, matching `deleteDocument`. Without this a bulk-trashed
+            // document stayed filed in a space it is no longer part of.
             documents[index] = updated
+            if updated.isTrashed {
+                documents[index].spaceID = nil
+                if documents[index].trashedAt == nil {
+                    documents[index].trashedAt = Date()
+                }
+            }
             saveDocument(id: updated.id)
         }
+
+        // Both of these are done by every single-document path and were missing here. The tag index
+        // is memoised, so a bulk tag did not appear in the tag UI until some unrelated edit cleared
+        // it — and, worse, bulk-trashing the open document left `selectedDocumentID` pointing at it,
+        // so the editor went on displaying *and saving into* a document in the trash.
+        if let selected = selectedDocumentID,
+           documents.first(where: { $0.id == selected })?.isTrashed == true
+        {
+            selectedDocumentID = nil
+        }
+        invalidateCaches()
     }
 }
 
