@@ -224,6 +224,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Called when the app becomes active (Spotlight launch, dock icon click, Finder open).
     /// Shows the main window if none are currently visible, unless a floating panel was intentionally opened.
     func applicationDidBecomeActive(_: Notification) {
+        // Before the window handling below, which returns early in one case: coming back to Logue is
+        // exactly when the documents folder is most likely to have changed behind us, and this also
+        // restarts a folder watcher that could not start earlier — on a drive that was not mounted at
+        // launch, say. Quiet on purpose: it does nothing when nothing changed, and a spinner on every
+        // window focus would be noise.
+        Task { @MainActor in
+            await DocumentStorage.shared.rescan(minimumVisibleDuration: nil, announcing: false)
+        }
+
         if suppressMainWindowRestore {
             suppressMainWindowRestore = false
             return

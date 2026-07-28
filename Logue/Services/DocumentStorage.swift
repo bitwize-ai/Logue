@@ -77,8 +77,17 @@ final class DocumentStorage {
     /// say so rather than leaving the user to notice a folder they were told would go.
     var folderRetirementFailed = false
 
-    /// True while a scan is running, so the button can show it is doing something.
+    /// True while a scan the *user* asked for is running, so the button can spin.
+    ///
+    /// Separate from `isScanInFlight` on purpose: a scan triggered by coming back to the app should
+    /// not flash the button every time the window is focused, but it still must not run alongside
+    /// another one.
     private(set) var isScanning = false
+
+    /// True while any scan is running, announced or not. The reentrancy guard.
+    ///
+    /// Extension-visible: +Rescan
+    @ObservationIgnored var isScanInFlight = false
 
     /// Extension-visible: +Rescan
     func beginScan() {
@@ -88,6 +97,13 @@ final class DocumentStorage {
     /// Extension-visible: +Rescan
     func endScan(summary: String?) {
         isScanning = false
+        recordScanSummary(summary)
+    }
+
+    /// Records what a scan found without claiming one is running.
+    ///
+    /// Extension-visible: +Rescan
+    func recordScanSummary(_ summary: String?) {
         if let summary {
             lastScanSummary = summary
         }

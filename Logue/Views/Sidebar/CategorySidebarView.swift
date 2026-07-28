@@ -223,13 +223,16 @@ struct CategorySidebarView: View {
 
     // MARK: - Rescan
 
-    /// Re-reads `~/Logue`, for changes made while the app was not watching.
+    /// Re-reads `~/Logue` on request.
     ///
-    /// Icon only, and shown only when plain markdown storage is on — with the setting off
-    /// there is no folder to read, so a button would be a promise the app cannot keep.
-    /// Changes are normally picked up on their own; this exists for the case the watcher
-    /// cannot cover, such as edits made while Logue was closed or a folder restored from a
-    /// backup.
+    /// Icon only, and shown only when plain markdown storage is on — with the setting off there is no
+    /// folder to read, so a button would be a promise the app cannot keep.
+    ///
+    /// Changes are picked up on their own three ways: the folder watcher, a scan at launch, and a
+    /// quiet scan whenever the app becomes active. This is the fallback for what none of those cover
+    /// — a watcher that could not start because the folder was on an unmounted drive, or a sync
+    /// client that moves files without producing events the watcher sees. Rarely needed, and the only
+    /// way to ask without quitting.
     @ViewBuilder
     private var rescanButton: some View {
         if documentStorage.mode.isMarkdown {

@@ -59,16 +59,20 @@ extension DocumentStorage {
     /// the eye — which it usually is. It applies to background scans too, and costs them
     /// nothing: the wait happens after the changes have already been applied, and without it
     /// a watcher-driven scan would make the button flicker for a frame or two.
+    /// `announcing` is false for scans the user did not ask for — coming back to the app, say. They
+    /// do the same work and report the same summary, but they leave the button alone, because a
+    /// spinner on every window focus is noise rather than information.
     @discardableResult
     func rescan(
-        minimumVisibleDuration: Duration? = AppConstants.Delays.rescanMinimumVisible
+        minimumVisibleDuration: Duration? = AppConstants.Delays.rescanMinimumVisible,
+        announcing: Bool = true
     ) async -> ExternalChangePlan? {
         guard mode.isMarkdown else { return nil }
 
         // A scan arriving while one is running is remembered rather than dropped. Two at once would
         // fight over the same files, but discarding the second lost the change that prompted it —
         // and the window is wide, because the indicator is deliberately held for a moment.
-        if isScanning {
+        if isScanInFlight {
             hasPendingScan = true
             return nil
         }
@@ -77,7 +81,10 @@ extension DocumentStorage {
         // not start earlier.
         startWatchingIfNeeded()
 
-        beginScan()
+        isScanInFlight = true
+        if announcing {
+            beginScan()
+        }
         invalidateFileIndex()
         let started = ContinuousClock.now
 
@@ -90,7 +97,7 @@ extension DocumentStorage {
         // empty the library.
         guard scan.isRootPresent else {
             Self.scanLogger.error("Skipped a scan: the documents folder is not there")
-            endScan(summary: nil)
+            finishScan(summary: nil, announcing: announcing)
             return nil
         }
 
@@ -110,23 +117,7 @@ extension DocumentStorage {
         let known = documentStore.documents.map(\.content)
         let plan = await Task.detached { scan.plan(spaces: spaces, known: known) }.value
 
-        for folder in scan.duplicatedSpaceFolders(in: spaceStore.spaces) {
-            Self.scanLogger.info(
-                "Two folders claim the same space; ignoring the copy at depth \(folder.count, privacy: .public)"
-            )
-        }
-
-        if !plan.ambiguousIdentifiers.isEmpty {
-            Self.scanLogger.info(
-                "\(plan.ambiguousIdentifiers.count, privacy: .public) document(s) have more than one file and were left untouched"
-            )
-        }
-
-        if !plan.ignoredIdentifiers.isEmpty {
-            Self.scanLogger.info(
-                "\(plan.ignoredIdentifiers.count, privacy: .public) file(s) name a document that does not exist and were left alone"
-            )
-        }
+        report(plan, duplicatedFolders: scan.duplicatedSpaceFolders(in: spaceStore.spaces))
 
         // The plan was diffed against `known`, taken before the folder was read. The user can type
         // during that read, and applying an update built from the older snapshot would replace what
@@ -150,15 +141,48 @@ extension DocumentStorage {
             }
         }
 
-        endScan(summary: settled.summary)
+        finishScan(summary: settled.summary, announcing: announcing)
 
         // Whatever arrived mid-scan gets its own pass now, once, however many times it was asked for.
         if hasPendingScan {
             hasPendingScan = false
-            return await rescan(minimumVisibleDuration: nil)
+            return await rescan(minimumVisibleDuration: nil, announcing: announcing)
         }
 
         return settled
+    }
+
+    /// Everything a scan found that the user cannot see for themselves.
+    ///
+    /// Logged rather than surfaced: each of these is a folder or file in an odd state that the app is
+    /// deliberately leaving alone, and none of them needs an interruption.
+    private func report(_ plan: ExternalChangePlan, duplicatedFolders: [[String]]) {
+        for folder in duplicatedFolders {
+            Self.scanLogger.info(
+                "Two folders claim the same space; keeping the one the space is named after, ignoring \(folder.count, privacy: .public) level(s) deep"
+            )
+        }
+
+        if !plan.ambiguousIdentifiers.isEmpty {
+            Self.scanLogger.info(
+                "\(plan.ambiguousIdentifiers.count, privacy: .public) document(s) have more than one file and were left untouched"
+            )
+        }
+
+        if !plan.ignoredIdentifiers.isEmpty {
+            Self.scanLogger.info(
+                "\(plan.ignoredIdentifiers.count, privacy: .public) file(s) name a document that does not exist and were left alone"
+            )
+        }
+    }
+
+    private func finishScan(summary: String?, announcing: Bool) {
+        isScanInFlight = false
+        if announcing {
+            endScan(summary: summary)
+        } else {
+            recordScanSummary(summary)
+        }
     }
 
     /// Removes spaces whose folder the user deleted.
