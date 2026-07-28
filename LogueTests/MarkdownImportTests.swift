@@ -156,6 +156,29 @@ struct MarkdownImportTests {
         #expect(doc.body.contains("Second paragraph."))
     }
 
+    @Test("A block needs a key an exporter would write, not just a colon")
+    func proseAfterThematicBreakIsKept() throws {
+        // A bare URL used to qualify, because the scheme read as a key.
+        let url = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\nhttps://example.com/spec\n---\n\nRest of note."
+        )
+        #expect(url.body.contains("https://example.com/spec"))
+
+        let prose = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\nSummary: results\n---\n\nRest."
+        )
+        #expect(prose.body.contains("Summary: results"))
+
+        // Real frontmatter is still recognised.
+        let real = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\naliases:\n  - x\ntitle: T\n---\nBody."
+        )
+        #expect(real.title == "T")
+    }
+
     @Test("A later title wins when the first carries no value")
     func laterNonEmptyTitleWins() throws {
         let doc = try MarkdownImport.document(
@@ -213,6 +236,40 @@ struct MarkdownImportTests {
             contents: "---\ntitle: T\ntags: [\"quoted\", 'other']\n---\nBody."
         )
         #expect(quoted.tags == ["quoted", "other"])
+    }
+
+    @Test("Sequence tags are read whether or not they are indented")
+    func flatSequenceTags() throws {
+        let flat = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ntags:\n- work\n- urgent\n---\nBody."
+        )
+        #expect(flat.tags == ["work", "urgent"])
+
+        // A blank line inside a list does not end it.
+        let spaced = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ntags:\n  - one\n\n  - two\n---\nBody."
+        )
+        #expect(spaced.tags == ["one", "two"])
+    }
+
+    @Test("A heading differing only by diacritics is not treated as the title")
+    func diacriticHeadingIsKept() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: Resume\n---\n# Résumé\n\nBody."
+        )
+        #expect(doc.body.contains("# Résumé"))
+    }
+
+    @Test("Bidirectional overrides are stripped from titles, joiners are not")
+    func bidiControlsAreStripped() throws {
+        let spoofed = try MarkdownImport.document(fileName: "n.md", contents: "# Invoice \u{202E}gpj.exe\nB.")
+        #expect(!spoofed.title.unicodeScalars.contains { $0.value == 0x202E })
+
+        let emoji = try MarkdownImport.document(fileName: "n.md", contents: "# 👩‍💻 Notes\nB.")
+        #expect(emoji.title == "👩‍💻 Notes")
     }
 
     @Test("A file with no tags key imports with none")

@@ -109,7 +109,7 @@ enum MarkdownImport {
         else { return nil }
 
         let block = lines[1 ..< closing]
-        guard block.allSatisfy(isYAMLLine) else { return nil }
+        guard looksLikeFrontmatter(block) else { return nil }
 
         var title: String?
         for line in block where line.first?.isWhitespace != true {
@@ -135,7 +135,13 @@ enum MarkdownImport {
         for line in block {
             let indented = line.first?.isWhitespace == true
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if collecting, indented, trimmed.hasPrefix("- ") {
+            // Sequence items are accepted whether or not they are indented — Jekyll and
+            // older Obsidian write them flush left — and a blank line inside a list does
+            // not end it, which used to drop every tag after it.
+            if collecting, trimmed.isEmpty {
+                continue
+            }
+            if collecting, trimmed.hasPrefix("- ") {
                 tags.append(cleanedTag(String(trimmed.dropFirst(2))))
                 continue
             }
@@ -157,16 +163,50 @@ enum MarkdownImport {
         unquoted(raw.trimmingCharacters(in: .whitespaces))
     }
 
-    /// Whether a line inside a fence is plausibly YAML: blank, a comment, a
-    /// `key:` mapping, or a `- ` sequence item. Prose fails all four.
-    private static func isYAMLLine(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("- ") {
-            return true
+    /// Keys that make a `---` block frontmatter rather than prose that happens to
+    /// contain a colon. Deliberately a short list of what exporters actually emit:
+    /// requiring positive evidence is what stops a note opening with a horizontal
+    /// rule from having its first paragraph eaten.
+    private static let frontmatterKeys: Set<String> = [
+        "title", "tags", "created", "updated", "date", "modified", "aliases",
+        "author", "id", "_logue_id", "categories", "category", "description",
+        "draft", "published", "publish", "permalink", "slug", "status", "type",
+        "cssclass", "keywords", "layout",
+    ]
+
+    /// Whether every line in the block is plausibly YAML *and* at least one of them
+    /// is a key an exporter would write.
+    private static func looksLikeFrontmatter(_ block: ArraySlice<String>) -> Bool {
+        var sawKnownKey = false
+        for line in block {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("- ") {
+                continue
+            }
+            guard let key = mappingKey(in: trimmed) else { return false }
+            if frontmatterKeys.contains(key) {
+                sawKnownKey = true
+            }
         }
-        guard let colon = trimmed.firstIndex(of: ":") else { return false }
-        let key = trimmed[trimmed.startIndex ..< colon]
-        return !key.isEmpty && !key.contains(" ")
+        return sawKnownKey
+    }
+
+    /// The key of a `key:` or `key: value` line, lowercased, or `nil` when the line
+    /// is not a mapping. The colon must end the line or be followed by whitespace,
+    /// which is what separates a key from the scheme in `https://example.com`.
+    private static func mappingKey(in trimmed: String) -> String? {
+        guard let colon = trimmed.firstIndex(of: ":") else { return nil }
+        let after = trimmed.index(after: colon)
+        guard after == trimmed.endIndex || trimmed[after].isWhitespace else { return nil }
+
+        let key = String(trimmed[trimmed.startIndex ..< colon])
+        guard let first = key.unicodeScalars.first,
+              CharacterSet.letters.contains(first) || first == "_",
+              key.unicodeScalars.allSatisfy({
+                  CharacterSet.alphanumerics.contains($0) || $0 == "_" || $0 == "-"
+              })
+        else { return nil }
+        return key.lowercased()
     }
 
     /// Strips one matching pair of surrounding quotes. Trimming each end
@@ -178,15 +218,21 @@ enum MarkdownImport {
         return value
     }
 
+    /// Bidirectional overrides and isolates. `Cf` is kept as a class because that is what
+    /// saves the zero-width joiner in emoji, but these particular ones let a title render
+    /// reversed — "Invoice \u{202E}gpj.exe" reads as an image in the sidebar.
+    private static func isBidiControl(_ scalar: Unicode.Scalar) -> Bool {
+        (0x202A ... 0x202E).contains(scalar.value) || (0x2066 ... 0x2069).contains(scalar.value)
+    }
+
     /// Whether a heading says the same thing as the title, ignoring case and
     /// surrounding whitespace — enough to spot a duplicate without discarding a
     /// heading that merely resembles one.
     private static func matchesTitle(_ heading: String, _ title: String?) -> Bool {
         guard let title else { return false }
-        return heading.compare(
-            title,
-            options: [.caseInsensitive, .diacriticInsensitive]
-        ) == .orderedSame
+        // Case and whitespace only. Folding diacritics too made "# Résumé" a duplicate
+        // of the title "Resume" and deleted the heading.
+        return heading.compare(title, options: [.caseInsensitive]) == .orderedSame
     }
 
     /// Uses a `# Heading` as the title when it is the first non-empty line.
@@ -217,7 +263,9 @@ enum MarkdownImport {
     private static func sanitisedTitle(_ raw: String, fallback: String) -> String {
         // `Cc` already covers newlines and tabs; the separators do not fall under it.
         let stripped: Set<Unicode.GeneralCategory> = [.control, .lineSeparator, .paragraphSeparator]
-        let scalars = raw.unicodeScalars.filter { !stripped.contains($0.properties.generalCategory) }
+        let scalars = raw.unicodeScalars.filter {
+            !stripped.contains($0.properties.generalCategory) && !isBidiControl($0)
+        }
         let cleaned = String(String.UnicodeScalarView(scalars))
             .trimmingCharacters(in: .whitespaces)
         if cleaned.isEmpty, raw != fallback {
