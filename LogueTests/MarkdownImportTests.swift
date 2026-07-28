@@ -79,6 +79,19 @@ struct MarkdownImportTests {
         #expect(!doc.title.contains("\u{07}"))
     }
 
+    @Test("Emoji built with a zero-width joiner survive in a title")
+    func zwjEmojiSurvivesInTitle() throws {
+        let engineer = try MarkdownImport.document(fileName: "n.md", contents: "# 👩‍💻 Engineering Notes\nBody.")
+        #expect(engineer.title == "👩‍💻 Engineering Notes")
+
+        // A title made only of a ZWJ sequence used to be emptied, falling back to the filename.
+        let family = try MarkdownImport.document(fileName: "n.md", contents: "# 👨‍👩‍👧‍👦\nBody.")
+        #expect(family.title == "👨‍👩‍👧‍👦")
+
+        let flag = try MarkdownImport.document(fileName: "n.md", contents: "# 🇯🇵 Tokyo Trip\nBody.")
+        #expect(flag.title == "🇯🇵 Tokyo Trip")
+    }
+
     @Test("A heading-only file imports with an empty body")
     func headingOnlyFile() throws {
         let doc = try MarkdownImport.document(fileName: "n.md", contents: "# Just a Title")

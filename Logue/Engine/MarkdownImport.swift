@@ -152,9 +152,16 @@ enum MarkdownImport {
     /// Collapses a candidate title to a single safe line: control characters and
     /// newlines stripped, whitespace trimmed, length capped. Falls back when the
     /// result is empty (e.g. a filename that was all symbols).
+    ///
+    /// Filters scalars rather than characters, and on category `Cc` rather than
+    /// `CharacterSet.controlCharacters`, which also covers `Cf`. Judging a whole
+    /// grapheme by its scalars deleted any emoji built with a zero-width joiner —
+    /// `👩‍💻` vanished, and a title that was only `👨‍👩‍👧‍👦` was lost entirely.
     private static func sanitisedTitle(_ raw: String, fallback: String) -> String {
-        let cleaned = raw
-            .filter { !$0.isNewline && $0.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) } }
+        // `Cc` already covers newlines and tabs; the separators do not fall under it.
+        let stripped: Set<Unicode.GeneralCategory> = [.control, .lineSeparator, .paragraphSeparator]
+        let scalars = raw.unicodeScalars.filter { !stripped.contains($0.properties.generalCategory) }
+        let cleaned = String(String.UnicodeScalarView(scalars))
             .trimmingCharacters(in: .whitespaces)
         if cleaned.isEmpty, raw != fallback {
             return sanitisedTitle(fallback, fallback: fallback)
