@@ -602,11 +602,16 @@ private struct SpaceTreeRow: View {
     /// become documents; nothing is uploaded anywhere.
     private func presentImportPanel() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = MarkdownImport.allowedExtensions
-            .compactMap { UTType(filenameExtension: $0) } + [.plainText]
+        // Filtered by extension rather than `allowedContentTypes`, which matches by
+        // conformance: `.swift`, `.csv`, `.py` and `.sh` all conform to
+        // `public.plain-text`, so the panel would enable files the importer then
+        // rejects. The delegate is retained by the completion closure below.
+        let fileFilter = ImportFileFilter()
+        panel.delegate = fileFilter
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.title = "Import Files into \(space.name)"
+        panel.canChooseFiles = true
+        panel.title = "Import Files into \(String(space.name.prefix(60)))"
         panel.message = "Markdown and plain-text files become documents in this space."
 
         // The panel outlives this call, so read `space.id` now rather than through
@@ -616,36 +621,59 @@ private struct SpaceTreeRow: View {
         let store = documentStore
         let spaces = spaceStore
         panel.begin { @MainActor response in
+            _ = fileFilter // Retain the delegate until the panel is done with it.
             guard response == .OK, !panel.urls.isEmpty else { return }
+
+            // The panel is modeless, so the space can be deleted while it is open.
+            // Importing into a deleted space would file the documents under an ID
+            // with no sidebar row, reachable only through All Documents.
+            guard spaces.space(for: spaceID) != nil else {
+                presentAlert(
+                    title: "Nothing was imported",
+                    message: "The space these files were headed for no longer exists."
+                )
+                return
+            }
+
             let outcome = store.importFiles(at: panel.urls, into: spaceID)
 
+            // Reveal the results without stealing the user's place: reveal the space
+            // in the tree, but only move the selection if they were already looking
+            // at it. `DocumentStore+Import` makes the same promise for documents.
             if outcome.imported > 0 {
-                // Reveal the results: expand the space and select it.
-                if let target = spaces.space(for: spaceID), !target.isExpanded {
-                    spaces.toggleExpanded(id: spaceID)
-                }
-                selection = .space(spaceID)
+                spaces.expandPath(to: spaceID)
             }
+
             // Skipped files are reported rather than dropped quietly — a file the
             // user explicitly picked that produced no document needs to say why.
+            // Deferred so the panel has finished dismissing and SwiftUI has
+            // committed this turn's state before a modal run loop starts.
             if !outcome.skipped.isEmpty {
-                reportSkipped(outcome)
+                let summary = outcome
+                DispatchQueue.main.async { reportSkipped(summary) }
             }
         }
     }
 
     private func reportSkipped(_ outcome: DocumentStore.ImportOutcome) {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = outcome.imported > 0
-            ? "Imported \(outcome.imported), skipped \(outcome.skipped.count)"
-            : "Nothing was imported"
         let listed = 10
         var lines = outcome.skipped.prefix(listed).map { "\($0.file) — \($0.reason)" }
         if outcome.skipped.count > listed {
             lines.append("…and \(outcome.skipped.count - listed) more")
         }
-        alert.informativeText = lines.joined(separator: "\n")
+        presentAlert(
+            title: outcome.imported > 0
+                ? "Imported \(outcome.imported), skipped \(outcome.skipped.count)"
+                : "Nothing was imported",
+            message: lines.joined(separator: "\n")
+        )
+    }
+
+    private func presentAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = title
+        alert.informativeText = message
         alert.runModal()
     }
 
@@ -668,5 +696,20 @@ private struct SpaceTreeRow: View {
             }
         }
         return handled
+    }
+}
+
+/// Restricts an open panel to the extensions the importer accepts.
+///
+/// `NSOpenPanel.allowedContentTypes` matches by UTI conformance, and `.swift`,
+/// `.csv`, `.py` and `.sh` all conform to `public.plain-text` — so a type-based
+/// filter enables files `MarkdownImport` then rejects. Matching the extension
+/// directly keeps the panel and the importer agreeing on what is importable.
+private final class ImportFileFilter: NSObject, NSOpenSavePanelDelegate {
+    func panel(_: Any, shouldEnable url: URL) -> Bool {
+        if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+            return true
+        }
+        return MarkdownImport.allowedExtensions.contains(url.pathExtension.lowercased())
     }
 }
