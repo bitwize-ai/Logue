@@ -1,0 +1,158 @@
+import Foundation
+
+/// Which folders on disk have no space yet.
+///
+/// Pure, because the failure it prevents already happened once: creating a space for a
+/// folder that *did* have one, which then wrote a differently-named folder, which looked
+/// like another new folder, and so on — a library that grew every time it was scanned. The
+/// check that a folder already resolves has to be exactly the check the writer uses, so both
+/// go through `SpaceFolderLayout`.
+enum SpaceFolderAdoption {
+    /// A space that needs creating, named by its folder.
+    struct Creation: Equatable, Sendable {
+        let name: String
+        let parentComponents: [String]
+
+        var components: [String] {
+            parentComponents + [name]
+        }
+    }
+
+    /// What to do about a folder that has no space under its current name.
+    enum Resolution: Equatable, Sendable {
+        /// A space we already have, whose folder was renamed or moved.
+        case rename(id: UUID, to: String, parentComponents: [String])
+        /// A folder with no space. `id` is the one its `_space.md` claims, or `nil` for a
+        /// folder that has never been one.
+        case create(id: UUID?, name: String, parentComponents: [String])
+    }
+
+    /// Decides whether a folder is a new space or a renamed one.
+    ///
+    /// This is what makes renaming a folder in Finder a rename rather than a replacement: the
+    /// `_space.md` inside still names the same space, so the space follows the folder instead
+    /// of being recreated and losing its icon, colour and place in the sidebar.
+    ///
+    /// A claimed identifier that matches nothing — a folder restored from a backup, say — is
+    /// kept rather than replaced, so restoring the folder restores the space it was.
+    static func resolve(_ creation: Creation, claimedID: UUID?, in spaces: [Space]) -> Resolution {
+        if let claimedID, spaces.contains(where: { $0.id == claimedID }) {
+            return .rename(
+                id: claimedID, to: creation.name, parentComponents: creation.parentComponents
+            )
+        }
+        return .create(
+            id: claimedID, name: creation.name, parentComponents: creation.parentComponents
+        )
+    }
+
+    /// A space whose folder has been renamed or moved outside the app.
+    struct FolderRename: Equatable, Sendable {
+        let id: UUID
+        let name: String
+        let parentComponents: [String]
+    }
+
+    /// Spaces whose folder no longer sits where their name and parent say it should.
+    ///
+    /// This used to be inferred: a folder that failed to resolve by name became a `Creation`, and a
+    /// `Creation` whose `_space.md` named an existing space was read as a rename. Resolving folders
+    /// by identity — which fixed three worse defects — removed that signal, because a renamed folder
+    /// now resolves perfectly well. So the comparison is made directly, which is also clearer: the
+    /// folder is where it is, the space says it should be somewhere else, and the folder wins.
+    static func renames(in spaces: [Space], folders: SpaceFolderMap) -> [FolderRename] {
+        var renames: [FolderRename] = []
+
+        for space in spaces where folders.hasFolder(for: space.id) {
+            let claimed = folders.components(forSpace: space.id, in: spaces)
+            guard let name = claimed.last else { continue }
+
+            let parentComponents = Array(claimed.dropLast())
+            let claimedParentID = folders.spaceID(forComponents: parentComponents, in: spaces)
+
+            // A name that differs, or a folder that has moved to a different parent. Compared
+            // case-sensitively on purpose: a folder renamed from `work` to `Work` is a rename the
+            // user made and meant, even though the filesystem treats the two paths as one.
+            guard name != space.name || claimedParentID != space.parentID else { continue }
+
+            renames.append(
+                FolderRename(id: space.id, name: name, parentComponents: parentComponents)
+            )
+        }
+
+        return renames.sorted { $0.parentComponents.count < $1.parentComponents.count }
+    }
+
+    /// Spaces whose folder is gone, so the space should go too.
+    ///
+    /// The app writes a folder the moment a space is created, renames it when the space is
+    /// renamed and moves it when the space moves — so a space with no folder can only mean the
+    /// folder was removed outside the app. That is the whole basis for treating this as a
+    /// deletion, and why those writes are not optional.
+    ///
+    /// Descendants are included even if some child still has a folder, because a child space
+    /// cannot outlive its parent: keeping it would leave a space whose place in the tree no
+    /// longer exists.
+    ///
+    /// The caller must not run this when the root folder itself is missing. An unmounted volume,
+    /// a folder the user moved, or a sync that has not finished all look like "every folder is
+    /// gone", and this would answer "delete everything".
+    static func vanishedSpaceIDs(in spaces: [Space], folders: Set<UUID>) -> Set<UUID> {
+        let missing = spaces.filter { !folders.contains($0.id) }.map(\.id)
+        guard !missing.isEmpty else { return [] }
+
+        var doomed = Set(missing)
+        var queue = missing
+        while let id = queue.popLast() {
+            for child in spaces where child.parentID == id && doomed.insert(child.id).inserted {
+                queue.append(child.id)
+            }
+        }
+        return doomed
+    }
+
+    /// Folders with no space, ordered so every parent is created before its children.
+    ///
+    /// Ancestors are included even when only a leaf was passed: someone can create
+    /// `Work/Projects/Q3` in one drag, and creating `Q3` under nothing would flatten it.
+    /// `folders` resolves a path to a space by the identity inside its `_space.md`. Without it a
+    /// duplicated space folder — same identity, different name — looked like a folder with no space,
+    /// which became a rename of the original, which the next scan reversed: the space's name
+    /// alternated between the two folder names for as long as both existed.
+    static func creations(
+        forDirectoryPaths paths: [[String]],
+        in spaces: [Space],
+        folders: SpaceFolderMap = SpaceFolderMap()
+    ) -> [Creation] {
+        // Every prefix of every path, so ancestors are considered too.
+        var candidates: Set<[String]> = []
+        for path in paths {
+            for depth in 1 ... max(path.count, 1) where depth <= path.count {
+                candidates.insert(Array(path.prefix(depth)))
+            }
+        }
+
+        // Shallowest first so a parent is always created before its children; name-ordered
+        // within a depth so the result does not depend on enumeration order.
+        let ordered = candidates.sorted { lhs, rhs in
+            lhs.count != rhs.count ? lhs.count < rhs.count : lhs.joined(separator: "/") < rhs.joined(separator: "/")
+        }
+
+        var creations: [Creation] = []
+        var planned: Set<[String]> = []
+
+        for components in ordered {
+            guard let name = components.last else { continue }
+            // Already a space, or already about to become one on this pass.
+            if folders.spaceID(forComponents: components, in: spaces) != nil
+                || planned.contains(components)
+            {
+                continue
+            }
+            planned.insert(components)
+            creations.append(Creation(name: name, parentComponents: components.dropLast()))
+        }
+
+        return creations
+    }
+}

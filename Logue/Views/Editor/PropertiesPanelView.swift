@@ -207,6 +207,12 @@ private struct PropertyRow: View {
     /// `.number` was unreachable from the UI entirely, despite `PropertyValue` having the case and
     /// filters being able to compare numerically.
     private func commitDraft() {
+        // Only when the text actually changed. Committing on any focus loss meant tabbing through the
+        // panel rewrote every field as `.text` — which discards the `PreservedJSON` payload that
+        // `.unknown` exists to carry, turning an object into the literal string "—" — and stamped
+        // `modifiedAt`, re-sorting the library, with no user edit at all.
+        guard draft != (value?.displayString ?? "") else { return }
+
         let trimmed = draft.trimmingCharacters(in: .whitespaces)
 
         switch value {

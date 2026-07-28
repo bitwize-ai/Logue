@@ -17,11 +17,20 @@ struct OverviewView: View {
     @State private var isQuickRecording = false
 
     var body: some View {
-        if isEmpty {
+        if !isLoaded {
+            ContentLoadingView()
+        } else if isEmpty {
             welcomeState
         } else {
             mainContent
         }
+    }
+
+    /// Every store this screen summarises. The welcome screen below is the loudest possible
+    /// wrong answer — a returning user should never be greeted as a new one because their
+    /// library was still being read.
+    private var isLoaded: Bool {
+        store.isLoaded && meetingStore.isLoaded && spaceStore.isLoaded
     }
 
     // MARK: - Main Content

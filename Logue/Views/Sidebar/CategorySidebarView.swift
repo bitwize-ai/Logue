@@ -11,6 +11,9 @@ struct CategorySidebarView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var colorScheme
 
+    /// `@State` rather than `@ObservedObject`: `DocumentStorage` is `@Observable`.
+    @State private var documentStorage = DocumentStorage.shared
+
     @State private var isAddingSpace = false
     @State private var newSpaceName = ""
     @State private var renamingSpaceID: UUID?
@@ -191,6 +194,9 @@ struct CategorySidebarView: View {
                 .background(AppThemeConstants.chromeBackground)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
+                        rescanButton
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button {
                             newSpaceName = ""
                             isAddingSpace = true
@@ -213,6 +219,53 @@ struct CategorySidebarView: View {
             // Pinned bottom — Trash & Settings always visible
             pinnedBottomBar
         }
+    }
+
+    // MARK: - Rescan
+
+    /// Re-reads `~/Logue` on request.
+    ///
+    /// Icon only, and shown only when plain markdown storage is on — with the setting off there is no
+    /// folder to read, so a button would be a promise the app cannot keep.
+    ///
+    /// Changes are picked up on their own three ways: the folder watcher, a scan at launch, and a
+    /// quiet scan whenever the app becomes active. This is the fallback for what none of those cover
+    /// — a watcher that could not start because the folder was on an unmounted drive, or a sync
+    /// client that moves files without producing events the watcher sees. Rarely needed, and the only
+    /// way to ask without quitting.
+    @ViewBuilder
+    private var rescanButton: some View {
+        if documentStorage.mode.isMarkdown {
+            Button {
+                Task { await documentStorage.rescan() }
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    // A full turn per repeat, so the arrows land where they started and the
+                    // spin reads as continuous rather than as a rock back and forth.
+                    .rotationEffect(.degrees(documentStorage.isScanning ? 360 : 0))
+                    .animation(rescanSpin, value: documentStorage.isScanning)
+            }
+            .disabled(documentStorage.isScanning)
+            .help(rescanTooltip)
+            .accessibilityLabel("Rescan Documents Folder")
+        }
+    }
+
+    /// Spins while scanning; eases back to rest when it stops.
+    ///
+    /// The animation is chosen by the same flag that drives the angle, so stopping does not
+    /// inherit `repeatForever` and leave the icon turning after the scan is over.
+    private var rescanSpin: Animation {
+        documentStorage.isScanning
+            ? .linear(duration: 0.9).repeatForever(autoreverses: false)
+            : .easeOut(duration: 0.2)
+    }
+
+    private var rescanTooltip: String {
+        guard let summary = documentStorage.lastScanSummary else {
+            return "Check the Logue folder for changes made outside Logue"
+        }
+        return "Check the Logue folder for changes made outside Logue — last check: \(summary.lowercased())"
     }
 
     // MARK: - Action Item Counts

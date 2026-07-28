@@ -2,7 +2,9 @@ import Foundation
 
 // MARK: - RewriteResult
 
-struct RewriteResult: Codable, Sendable {
+/// `Equatable` so the persistence split can be tested: a derived half that round-trips has to be
+/// comparable to the one that went in, and this is the only member that was not already.
+struct RewriteResult: Codable, Equatable, Sendable {
     let style: String
     let originalText: String
     let rewrittenText: String
