@@ -76,10 +76,11 @@ enum MarkdownImport {
         guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
         guard let closing = lines.dropFirst().firstIndex(where: {
             $0.trimmingCharacters(in: .whitespaces) == "---"
-        }) else { return nil }
+        })
+        else { return nil }
 
         var title: String?
-        for line in lines[1..<closing] {
+        for line in lines[1 ..< closing] {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.lowercased().hasPrefix("title:") else { continue }
             let value = trimmed.dropFirst("title:".count)
@@ -99,7 +100,8 @@ enum MarkdownImport {
         let lines = text.components(separatedBy: "\n")
         guard let index = lines.firstIndex(where: {
             !$0.trimmingCharacters(in: .whitespaces).isEmpty
-        }) else { return nil }
+        })
+        else { return nil }
 
         let line = lines[index].trimmingCharacters(in: .whitespaces)
         guard line.hasPrefix("# ") else { return nil }
