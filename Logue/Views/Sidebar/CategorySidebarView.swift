@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Sidebar with unified space tree for the 2-column Notion-style layout.
 /// Shows Overview, Spaces (recursive tree with mixed content), All Documents, All Meetings, Trash, and Settings.
@@ -577,6 +579,11 @@ private struct SpaceTreeRow: View {
         } label: {
             Label("New Sub-Space", systemImage: "folder.badge.plus")
         }
+        Button {
+            presentImportPanel()
+        } label: {
+            Label("Import Files…", systemImage: "square.and.arrow.down")
+        }
 
         Divider()
 
@@ -588,6 +595,58 @@ private struct SpaceTreeRow: View {
         } label: {
             Label("Delete Space", systemImage: "trash")
         }
+    }
+
+    /// Presents an open panel and imports the chosen files into this space.
+    /// Import runs entirely on-device (issue #28) — files are read locally and
+    /// become documents; nothing is uploaded anywhere.
+    private func presentImportPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = MarkdownImport.allowedExtensions
+            .compactMap { UTType(filenameExtension: $0) } + [.plainText]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.title = "Import Files into \(space.name)"
+        panel.message = "Markdown and plain-text files become documents in this space."
+
+        // The panel outlives this call, so read `space.id` now rather than through
+        // `space` later. `selection` is a Binding to state owned further up the
+        // tree, so writing it from the completion handler still lands correctly.
+        let spaceID = space.id
+        let store = documentStore
+        let spaces = spaceStore
+        panel.begin { @MainActor response in
+            guard response == .OK, !panel.urls.isEmpty else { return }
+            let outcome = store.importFiles(at: panel.urls, into: spaceID)
+
+            if outcome.imported > 0 {
+                // Reveal the results: expand the space and select it.
+                if let target = spaces.space(for: spaceID), !target.isExpanded {
+                    spaces.toggleExpanded(id: spaceID)
+                }
+                selection = .space(spaceID)
+            }
+            // Skipped files are reported rather than dropped quietly — a file the
+            // user explicitly picked that produced no document needs to say why.
+            if !outcome.skipped.isEmpty {
+                reportSkipped(outcome)
+            }
+        }
+    }
+
+    private func reportSkipped(_ outcome: DocumentStore.ImportOutcome) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = outcome.imported > 0
+            ? "Imported \(outcome.imported), skipped \(outcome.skipped.count)"
+            : "Nothing was imported"
+        let listed = 10
+        var lines = outcome.skipped.prefix(listed).map { "\($0.file) — \($0.reason)" }
+        if outcome.skipped.count > listed {
+            lines.append("…and \(outcome.skipped.count - listed) more")
+        }
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.runModal()
     }
 
     // MARK: - Drop Handling
