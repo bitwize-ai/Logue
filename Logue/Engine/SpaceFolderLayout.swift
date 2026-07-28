@@ -5,8 +5,8 @@ import Foundation
 /// A space becomes a directory and a sub-space a sub-directory, so the folder on disk
 /// reads the way the sidebar does. Space names are user-controlled and become real
 /// directory names, so every component is sanitised — the same path-safety boundary
-/// `MirrorFilename` guards for files.
-enum MirrorLayout {
+/// `DocumentFilename` guards for files.
+enum SpaceFolderLayout {
     /// Maximum nesting mirrored.
     ///
     /// Bounds both a pathological hierarchy and a corrupted parent chain, and keeps
@@ -20,7 +20,7 @@ enum MirrorLayout {
     /// Directory names for a space, outermost first.
     ///
     /// Returns empty for `nil` or an unknown space, which places the document at the
-    /// mirror root rather than inventing a directory.
+    /// documents folder root rather than inventing a directory.
     static func directoryComponents(forSpace spaceID: UUID?, in spaces: [Space]) -> [String] {
         guard let spaceID else { return [] }
 
@@ -42,17 +42,6 @@ enum MirrorLayout {
         return chain.reversed().map { component(for: $0, in: spaces) }
     }
 
-    /// A document's path relative to the mirror root.
-    static func relativePath(
-        for document: WritingDocument,
-        in spaces: [Space],
-        avoiding taken: Set<String>
-    ) -> String {
-        let directories = directoryComponents(forSpace: document.spaceID, in: spaces)
-        let filename = MirrorFilename.filename(for: document, avoiding: taken)
-        return (directories + [filename]).joined(separator: "/")
-    }
-
     // MARK: - Directories → space
 
     /// The space a directory path refers to, or `nil` when it does not fully resolve.
@@ -69,28 +58,6 @@ enum MirrorLayout {
             parentID = match.id
         }
         return parentID
-    }
-
-    /// The trailing components that do not exist yet, in creation order.
-    ///
-    /// Lets a caller create only what is missing, in the right order, when importing a
-    /// directory tree someone made by hand.
-    static func missingComponents(
-        forDirectoryComponents components: [String],
-        in spaces: [Space]
-    ) -> [String] {
-        var parentID: UUID?
-        var missing: [String] = []
-
-        for component in components {
-            if missing.isEmpty, let match = child(named: component, of: parentID, in: spaces) {
-                parentID = match.id
-            } else {
-                // Once one component is missing, everything below it is too.
-                missing.append(component)
-            }
-        }
-        return missing
     }
 
     // MARK: - Private

@@ -134,20 +134,6 @@ extension DocumentStore {
         return next
     }
 
-    // MARK: - Import
-
-    /// Inserts a fully-formed document, as when importing a markdown file found on
-    /// disk.
-    ///
-    /// Unlike `createDocument` this keeps the title and fields exactly as given, and
-    /// does not select the result — an import should not steal the user's place.
-    func insertDocument(_ document: WritingDocument) {
-        guard documentIndex(for: document.id) == nil else { return }
-        documents.insert(document, at: 0)
-        rebuildIndexMap()
-        saveDocument(id: document.id)
-    }
-
     // MARK: - Changes made outside the app
 
     /// Applies what a scan of the markdown folder found.

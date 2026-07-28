@@ -41,11 +41,11 @@ struct MarkdownFolderScanTests {
                 case let .rename(id, name, parentComponents):
                     guard let index = spaces.firstIndex(where: { $0.id == id }) else { continue }
                     spaces[index].name = name
-                    spaces[index].parentID = MirrorLayout.spaceID(
+                    spaces[index].parentID = SpaceFolderLayout.spaceID(
                         forDirectoryComponents: parentComponents, in: spaces
                     )
                 case let .create(id, name, parentComponents):
-                    let parentID = MirrorLayout.spaceID(
+                    let parentID = SpaceFolderLayout.spaceID(
                         forDirectoryComponents: parentComponents, in: spaces
                     )
                     spaces.append(Space(id: id ?? UUID(), name: name, parentID: parentID))

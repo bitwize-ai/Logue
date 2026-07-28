@@ -93,7 +93,7 @@ struct MarkdownStorageMigrator {
                 if SpaceFile.isSpaceFile(filename: name) {
                     return false
                 }
-                if name.hasSuffix(".\(MirrorFilename.fileExtension)") {
+                if name.hasSuffix(".\(DocumentFilename.fileExtension)") {
                     return false
                 }
                 // A directory could be one of our space folders; allow it.
@@ -135,7 +135,7 @@ struct MarkdownStorageMigrator {
 
         for content in documents where !content.isTrashed {
             let directory = rootURL.appendingPathComponent(
-                MirrorLayout.directoryComponents(forSpace: content.spaceID, in: spaces)
+                SpaceFolderLayout.directoryComponents(forSpace: content.spaceID, in: spaces)
                     .joined(separator: "/")
             )
             let current = existing[content.id]
@@ -280,7 +280,7 @@ struct MarkdownStorageMigrator {
 
         let taken = Set((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
         return directory.appendingPathComponent(
-            MirrorFilename.filename(for: WritingDocument(content: content, derived: nil), avoiding: taken)
+            DocumentFilename.filename(for: WritingDocument(content: content, derived: nil), avoiding: taken)
         )
     }
 
@@ -362,7 +362,7 @@ struct MarkdownStorageMigrator {
 
     func folderURL(forSpace spaceID: UUID?, in spaces: [Space]) -> URL {
         rootURL.appendingPathComponent(
-            MirrorLayout.directoryComponents(forSpace: spaceID, in: spaces).joined(separator: "/")
+            SpaceFolderLayout.directoryComponents(forSpace: spaceID, in: spaces).joined(separator: "/")
         )
     }
 
@@ -454,7 +454,7 @@ struct MarkdownStorageMigrator {
             }
 
             // The folder is the authority on placement.
-            content.spaceID = MirrorLayout.spaceID(
+            content.spaceID = SpaceFolderLayout.spaceID(
                 forDirectoryComponents: directoryComponents(of: url), in: knownSpaces
             )
             result.documents.append(content)
@@ -478,16 +478,16 @@ struct MarkdownStorageMigrator {
     func adopt(fileAt url: URL, knownSpaces: [Space]) -> DocumentContent? {
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
 
-        let plan = MirrorImportPlan.plan(
-            fileContents: contents, filename: url.lastPathComponent, knownDocumentIDs: []
+        guard let fields = DroppedFileImport.fields(
+            fileContents: contents, filename: url.lastPathComponent
         )
-        guard case let .importAsNew(title, body, tags) = plan else { return nil }
+        else { return nil }
 
         var content = WritingDocument().content
-        content.title = title
-        content.body = body
-        content.tags = tags
-        content.spaceID = MirrorLayout.spaceID(
+        content.title = fields.title
+        content.body = fields.body
+        content.tags = fields.tags
+        content.spaceID = SpaceFolderLayout.spaceID(
             forDirectoryComponents: directoryComponents(of: url), in: knownSpaces
         )
 
@@ -513,7 +513,7 @@ struct MarkdownStorageMigrator {
         else { return [] }
 
         return enumerator.compactMap { $0 as? URL }
-            .filter { $0.pathExtension == MirrorFilename.fileExtension }
+            .filter { $0.pathExtension == DocumentFilename.fileExtension }
     }
 
     /// Every directory under the root, as components relative to it.

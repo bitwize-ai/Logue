@@ -6,7 +6,7 @@ import Foundation
 /// folder that *did* have one, which then wrote a differently-named folder, which looked
 /// like another new folder, and so on — a library that grew every time it was scanned. The
 /// check that a folder already resolves has to be exactly the check the writer uses, so both
-/// go through `MirrorLayout`.
+/// go through `SpaceFolderLayout`.
 enum SpaceFolderAdoption {
     /// A space that needs creating, named by its folder.
     struct Creation: Equatable, Sendable {
@@ -99,7 +99,7 @@ enum SpaceFolderAdoption {
         for components in ordered {
             guard let name = components.last else { continue }
             // Already a space, or already about to become one on this pass.
-            if MirrorLayout.spaceID(forDirectoryComponents: components, in: spaces) != nil
+            if SpaceFolderLayout.spaceID(forDirectoryComponents: components, in: spaces) != nil
                 || planned.contains(components)
             {
                 continue

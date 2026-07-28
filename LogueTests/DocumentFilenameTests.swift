@@ -6,8 +6,8 @@ import Testing
 ///
 /// These are written to a user-visible directory from user-controlled titles, so this
 /// is a path-safety boundary as well as a naming concern.
-@Suite("MirrorFilename")
-struct MirrorFilenameTests {
+@Suite("DocumentFilename")
+struct DocumentFilenameTests {
     private func document(_ title: String) -> WritingDocument {
         var doc = WritingDocument()
         doc.title = title
@@ -16,68 +16,68 @@ struct MirrorFilenameTests {
 
     @Test("A simple title becomes a readable filename")
     func simpleTitle() {
-        #expect(MirrorFilename.filename(for: document("Project Alpha")) == "Project Alpha.md")
+        #expect(DocumentFilename.filename(for: document("Project Alpha")) == "Project Alpha.md")
     }
 
     @Test("Path separators are removed so a title cannot escape the directory")
     func rejectsPathSeparators() {
-        let name = MirrorFilename.filename(for: document("../../etc/passwd"))
+        let name = DocumentFilename.filename(for: document("../../etc/passwd"))
         #expect(name.contains("/") == false)
         #expect(name.contains("..") == false)
     }
 
     @Test("A colon is removed, since it is a path separator on some filesystems")
     func removesColon() {
-        #expect(MirrorFilename.filename(for: document("Plan: Q3")).contains(":") == false)
+        #expect(DocumentFilename.filename(for: document("Plan: Q3")).contains(":") == false)
     }
 
     @Test("Leading dots are removed so the file is not hidden")
     func removesLeadingDot() {
-        #expect(MirrorFilename.filename(for: document(".hidden")).hasPrefix(".") == false)
+        #expect(DocumentFilename.filename(for: document(".hidden")).hasPrefix(".") == false)
     }
 
     @Test("Control characters and newlines are removed")
     func removesControlCharacters() {
-        let name = MirrorFilename.filename(for: document("a\nb\tc"))
+        let name = DocumentFilename.filename(for: document("a\nb\tc"))
         #expect(name.contains("\n") == false)
         #expect(name.contains("\t") == false)
     }
 
     @Test("An empty title falls back to a usable name")
     func emptyTitleFallsBack() {
-        let name = MirrorFilename.filename(for: document("   "))
+        let name = DocumentFilename.filename(for: document("   "))
         #expect(name.hasSuffix(".md"))
         #expect(name.count > 3)
     }
 
     @Test("A title of only illegal characters falls back")
     func illegalOnlyTitleFallsBack() {
-        let name = MirrorFilename.filename(for: document("///"))
+        let name = DocumentFilename.filename(for: document("///"))
         #expect(name.hasSuffix(".md"))
         #expect(name.contains("/") == false)
     }
 
     @Test("An over-long title is truncated, leaving room for the extension")
     func truncatesLongTitle() {
-        let name = MirrorFilename.filename(for: document(String(repeating: "a", count: 500)))
-        #expect(name.utf8.count <= MirrorFilename.maxFilenameBytes)
+        let name = DocumentFilename.filename(for: document(String(repeating: "a", count: 500)))
+        #expect(name.utf8.count <= DocumentFilename.maxFilenameBytes)
         #expect(name.hasSuffix(".md"))
     }
 
     @Test("Unicode titles are preserved")
     func preservesUnicode() {
-        #expect(MirrorFilename.filename(for: document("会議メモ")) == "会議メモ.md")
+        #expect(DocumentFilename.filename(for: document("会議メモ")) == "会議メモ.md")
     }
 
     @Test("An emoji title is preserved")
     func preservesEmoji() {
-        #expect(MirrorFilename.filename(for: document("👩‍💻 notes")) == "👩‍💻 notes.md")
+        #expect(DocumentFilename.filename(for: document("👩‍💻 notes")) == "👩‍💻 notes.md")
     }
 
     @Test("The same document always yields the same filename")
     func deterministic() {
         let doc = document("Project Alpha")
-        #expect(MirrorFilename.filename(for: doc) == MirrorFilename.filename(for: doc))
+        #expect(DocumentFilename.filename(for: doc) == DocumentFilename.filename(for: doc))
     }
 
     // MARK: - Collisions
@@ -86,8 +86,8 @@ struct MirrorFilenameTests {
     func disambiguatesCollision() {
         let first = document("Same Title")
         let second = document("Same Title")
-        let taken = [MirrorFilename.filename(for: first)]
-        let name = MirrorFilename.filename(for: second, avoiding: Set(taken))
+        let taken = [DocumentFilename.filename(for: first)]
+        let name = DocumentFilename.filename(for: second, avoiding: Set(taken))
         #expect(name != taken[0])
         #expect(name.hasSuffix(".md"))
     }
@@ -97,14 +97,14 @@ struct MirrorFilenameTests {
         let doc = document("Same Title")
         let taken = Set(["Same Title.md"])
         #expect(
-            MirrorFilename.filename(for: doc, avoiding: taken)
-                == MirrorFilename.filename(for: doc, avoiding: taken)
+            DocumentFilename.filename(for: doc, avoiding: taken)
+                == DocumentFilename.filename(for: doc, avoiding: taken)
         )
     }
 
     @Test("A document keeps its plain name when nothing else has taken it")
     func noSuffixWhenFree() {
-        #expect(MirrorFilename.filename(for: document("Free"), avoiding: []) == "Free.md")
+        #expect(DocumentFilename.filename(for: document("Free"), avoiding: []) == "Free.md")
     }
 
     @Test("Several collisions each resolve to a distinct name")
@@ -112,7 +112,7 @@ struct MirrorFilenameTests {
         var taken: Set<String> = []
         var names: [String] = []
         for _ in 0 ..< 4 {
-            let name = MirrorFilename.filename(for: document("Dup"), avoiding: taken)
+            let name = DocumentFilename.filename(for: document("Dup"), avoiding: taken)
             taken.insert(name)
             names.append(name)
         }

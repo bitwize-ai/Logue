@@ -24,7 +24,7 @@ struct SpaceFolderAdoptionTests {
 
         // Two rounds: whatever the first creates, the second must find nothing to do.
         for creation in SpaceFolderAdoption.creations(forDirectoryPaths: paths, in: spaces) {
-            let parentID = MirrorLayout.spaceID(
+            let parentID = SpaceFolderLayout.spaceID(
                 forDirectoryComponents: creation.parentComponents, in: spaces
             )
             spaces.append(Space(name: creation.name, parentID: parentID))

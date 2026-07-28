@@ -74,7 +74,7 @@ extension SpaceStore {
 
     /// The folder path a space currently occupies, for capturing before a change.
     func folderComponents(for spaceID: UUID) -> [String] {
-        MirrorLayout.directoryComponents(forSpace: spaceID, in: spaces)
+        SpaceFolderLayout.directoryComponents(forSpace: spaceID, in: spaces)
     }
 
     /// Rewrites a space's `_space.md`, for a change to its icon or colour.

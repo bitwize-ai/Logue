@@ -1,14 +1,14 @@
 import Foundation
 
-/// Derives mirror filenames from document titles.
+/// Derives document filenames from document titles.
 ///
 /// Titles are user-controlled and these files land in a user-visible directory, so
 /// this is a path-safety boundary: nothing derived from a title may contain a path
-/// separator or escape the mirror directory.
+/// separator or escape the documents folder.
 ///
 /// Filenames are for humans — the authoritative link back to a document is the
 /// `_logue_id` inside the file, so a file can be renamed freely without breaking.
-enum MirrorFilename {
+enum DocumentFilename {
     static let fileExtension = "md"
 
     /// Byte budget for the whole filename including the extension.

@@ -17,10 +17,6 @@ enum SpaceFile {
     static let identifierKey = "_logue_space_id"
     static let managedKey = "_logue_managed"
 
-    enum ReadError: Error {
-        case missingIdentifier
-    }
-
     /// What a `_space.md` says about its folder.
     struct Identity: Equatable, Sendable {
         let id: UUID
@@ -77,34 +73,6 @@ enum SpaceFile {
         }
 
         return Identity(id: id, icon: icon, color: color, sortOrder: sortOrder)
-    }
-
-    /// Any prose the user added below the managed note.
-    static func description(from markdown: String) -> String? {
-        let body = MarkdownFrontmatter.parse(markdown).body
-        let withoutNote = body.replacingOccurrences(of: note, with: "")
-        let trimmed = withoutNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    /// Applies a file's identity and appearance onto a space.
-    ///
-    /// The **name is not applied**: the folder is the naming authority, so a renamed
-    /// folder renames its space rather than the file overriding it back.
-    static func apply(_ markdown: String, to space: inout Space) throws {
-        guard let identity = identity(from: markdown) else { throw ReadError.missingIdentifier }
-
-        space = Space(
-            id: identity.id,
-            name: space.name,
-            parentID: space.parentID,
-            sortOrder: identity.sortOrder,
-            createdAt: space.createdAt,
-            icon: identity.icon,
-            color: identity.color,
-            isExpanded: space.isExpanded,
-            aiInsights: space.aiInsights
-        )
     }
 
     // MARK: - Recognition

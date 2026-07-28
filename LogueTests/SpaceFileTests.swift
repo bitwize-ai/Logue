@@ -72,16 +72,6 @@ struct SpaceFileTests {
         #expect(restored.sortOrder == 0)
     }
 
-    @Test("Body text below the note is preserved for a future space description")
-    func bodyPreserved() throws {
-        let text = SpaceFile.render(space("Work")) + "\nMy notes about this space.\n"
-        let restored = try #require(SpaceFile.identity(from: text))
-        #expect(restored.id != nil as UUID?)
-        #expect(SpaceFile.description(from: text)?.contains("My notes") == true)
-    }
-
-    // MARK: - Not a document
-
     @Test("The filename is recognised, so it is never imported as a document")
     func filenameRecognised() {
         #expect(SpaceFile.isSpaceFile(filename: SpaceFile.filename))
@@ -96,36 +86,4 @@ struct SpaceFileTests {
     }
 
     // MARK: - Applying back
-
-    @Test("Reading applies identity and appearance onto a space")
-    func appliesToSpace() throws {
-        let original = space("Work")
-        let text = SpaceFile.render(original)
-
-        // A space discovered from a folder, before its file was read.
-        var discovered = Space(name: "Work")
-        try SpaceFile.apply(text, to: &discovered)
-
-        #expect(discovered.id == original.id)
-        #expect(discovered.icon == "briefcase")
-        #expect(discovered.color == "blue")
-        #expect(discovered.sortOrder == 10)
-    }
-
-    @Test("Applying keeps the folder's name, since the folder is the naming authority")
-    func nameNotOverwritten() throws {
-        let text = SpaceFile.render(space("Old Name"))
-        var renamed = Space(name: "New Name")
-        try SpaceFile.apply(text, to: &renamed)
-
-        #expect(renamed.name == "New Name")
-    }
-
-    @Test("Applying a file with no identity throws rather than half-applying")
-    func applyRequiresIdentity() {
-        var subject = Space(name: "Work")
-        #expect(throws: (any Error).self) {
-            try SpaceFile.apply("---\nicon: folder\n---\n", to: &subject)
-        }
-    }
 }

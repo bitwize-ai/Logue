@@ -94,10 +94,6 @@ final class MarkdownFolderWatcher: @unchecked Sendable {
         }
     }
 
-    var isWatching: Bool {
-        queue.sync { stream != nil }
-    }
-
     // MARK: - Events
 
     /// FSEvents' own coalescing window. Deliberately shorter than the debounce below, which

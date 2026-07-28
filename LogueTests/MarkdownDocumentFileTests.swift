@@ -130,7 +130,7 @@ struct MarkdownDocumentFileTests {
 
     @Test("A hand-written body with no frontmatter is refused rather than guessed at")
     func plainProseRefused() {
-        // Importing such a file is `MirrorImportPlan`'s job; reading *content* requires
+        // Importing such a file is `DroppedFileImport`'s job; reading *content* requires
         // an identifier, so this must not silently invent one.
         #expect(MarkdownDocumentFile.content(from: "just prose") == nil)
     }

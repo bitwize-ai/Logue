@@ -92,7 +92,7 @@ struct SpaceFolderWriteTests {
         let migrator = migrator(root)
         try migrator.createFolder(for: work, in: [work])
 
-        let previous = MirrorLayout.directoryComponents(forSpace: work.id, in: [work])
+        let previous = SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work])
         work.name = "Client Work"
         try migrator.moveFolder(from: previous, for: work, in: [work])
 
@@ -112,7 +112,7 @@ struct SpaceFolderWriteTests {
             to: root.appendingPathComponent("Work/plan.md"), atomically: true, encoding: .utf8
         )
 
-        let previous = MirrorLayout.directoryComponents(forSpace: work.id, in: [work])
+        let previous = SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work])
         work.name = "Client Work"
         try migrator.moveFolder(from: previous, for: work, in: [work])
 
@@ -130,7 +130,7 @@ struct SpaceFolderWriteTests {
         let migrator = migrator(root)
         try migrator.createFolder(for: work, in: [work])
 
-        let previous = MirrorLayout.directoryComponents(forSpace: work.id, in: [work])
+        let previous = SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work])
         work.name = "Client Work"
         try migrator.moveFolder(from: previous, for: work, in: [work])
 
@@ -152,7 +152,7 @@ struct SpaceFolderWriteTests {
         try migrator.createFolder(for: work, in: [work, notes])
         try migrator.createFolder(for: notes, in: [work, notes])
 
-        let previous = MirrorLayout.directoryComponents(forSpace: notes.id, in: [work, notes])
+        let previous = SpaceFolderLayout.directoryComponents(forSpace: notes.id, in: [work, notes])
         notes.parentID = work.id
         try migrator.moveFolder(from: previous, for: notes, in: [work, notes])
 
@@ -171,7 +171,7 @@ struct SpaceFolderWriteTests {
         try migrator.createFolder(for: work, in: [work, notes])
         try migrator.createFolder(for: notes, in: [work, notes])
 
-        let previous = MirrorLayout.directoryComponents(forSpace: notes.id, in: [work, notes])
+        let previous = SpaceFolderLayout.directoryComponents(forSpace: notes.id, in: [work, notes])
         notes.parentID = work.id
         try migrator.moveFolder(from: previous, for: notes, in: [work, notes])
 
@@ -191,7 +191,7 @@ struct SpaceFolderWriteTests {
         let migrator = migrator(root)
         try migrator.createFolder(for: work, in: [work])
 
-        try migrator.retireFolder(at: MirrorLayout.directoryComponents(forSpace: work.id, in: [work]))
+        try migrator.retireFolder(at: SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work]))
 
         #expect(exists(root, "Work") == false)
     }
@@ -206,7 +206,7 @@ struct SpaceFolderWriteTests {
         let work = Space(name: "Work")
         let migrator = migrator(root)
         try migrator.createFolder(for: work, in: [work])
-        try migrator.retireFolder(at: MirrorLayout.directoryComponents(forSpace: work.id, in: [work]))
+        try migrator.retireFolder(at: SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work]))
 
         // The space is gone from the store by this point, so the scan sees no spaces at all.
         let scan = MarkdownFolderScan(rootURL: root)

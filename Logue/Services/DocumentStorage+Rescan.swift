@@ -139,7 +139,7 @@ extension DocumentStorage {
     /// Turns folders created outside the app into spaces.
     ///
     /// A folder that already has a space must produce nothing here. The check runs through
-    /// `MirrorLayout` — the same code that decides where a space writes its folder — so the
+    /// `SpaceFolderLayout` — the same code that decides where a space writes its folder — so the
     /// two cannot disagree and invent a space on every pass.
     private func adoptNewFolders(using scan: MarkdownFolderScan, spaceStore: SpaceStore) {
         let creations = scan.spaceCreations(in: spaceStore.spaces)
@@ -156,7 +156,7 @@ extension DocumentStorage {
                 spaceStore.adoptSpaceRename(
                     id: id,
                     name: name,
-                    parentID: MirrorLayout.spaceID(
+                    parentID: SpaceFolderLayout.spaceID(
                         forDirectoryComponents: parentComponents, in: spaceStore.spaces
                     )
                 )
@@ -164,7 +164,7 @@ extension DocumentStorage {
                 spaceStore.adoptSpace(
                     id: id ?? UUID(),
                     name: name,
-                    parentID: MirrorLayout.spaceID(
+                    parentID: SpaceFolderLayout.spaceID(
                         forDirectoryComponents: parentComponents, in: spaceStore.spaces
                     ),
                     icon: identity?.icon,
