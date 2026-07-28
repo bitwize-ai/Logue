@@ -123,14 +123,7 @@ struct MeetingWorkspaceView: View {
                             )
                         },
                         onRenameSpeaker: { oldName, newName in
-                            var updated = meeting
-                            for index in updated.segments.indices where updated.segments[index].speakerLabel == oldName {
-                                updated.segments[index].speakerLabel = newName
-                            }
-                            for index in updated.speakers.indices where updated.speakers[index].name == oldName {
-                                updated.speakers[index].name = newName
-                            }
-                            store.updateMeeting(updated)
+                            store.updateMeeting(meeting.renamingSpeaker(from: oldName, to: newName))
                         },
                         onSeekToTime: { time in
                             audioPlaybackService.seek(to: time)
@@ -139,9 +132,7 @@ struct MeetingWorkspaceView: View {
                             }
                         },
                         activeSegmentID: audioPlaybackService.activeSegmentID,
-                        speakerColors: Dictionary(
-                            uniqueKeysWithValues: meeting.speakers.map { ($0.name, $0.displayColor) }
-                        )
+                        speakerColors: meeting.speakerColorsByName
                     )
                     .frame(maxWidth: .infinity)
 

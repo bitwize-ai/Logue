@@ -110,21 +110,13 @@ struct MeetingSpeakersPanelView: View {
 
     // MARK: - Rename
 
+    /// Renaming to a name another speaker already holds merges the two — see
+    /// `MeetingNote.renamingSpeaker(from:to:)`.
     private func renameSpeaker(from oldName: String, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Skip the persist entirely when the field was committed unchanged.
         guard !trimmed.isEmpty, trimmed != oldName else { return }
-
-        var updated = meeting
-
-        for index in updated.segments.indices where updated.segments[index].speakerLabel == oldName {
-            updated.segments[index].speakerLabel = trimmed
-        }
-
-        for index in updated.speakers.indices where updated.speakers[index].name == oldName {
-            updated.speakers[index].name = trimmed
-        }
-
-        store.updateMeeting(updated)
+        store.updateMeeting(meeting.renamingSpeaker(from: oldName, to: trimmed))
     }
 }
 
