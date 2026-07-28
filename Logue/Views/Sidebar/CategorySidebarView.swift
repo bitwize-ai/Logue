@@ -699,30 +699,47 @@ private struct SpaceTreeRow: View {
                     spaces.expandPath(to: spaceID)
                 }
 
-                // Skipped files are reported rather than dropped quietly — a file
-                // the user explicitly picked that produced no document needs to say
-                // why. Deferred so the panel has finished dismissing and SwiftUI has
+                // Always reported, not only when something was skipped. A clean import
+                // otherwise showed nothing at all beyond a count badge, which reads as
+                // "that did nothing" — and running it again produces a second copy of
+                // every note, with no bulk undo.
+                //
+                // Deferred so the panel has finished dismissing and SwiftUI has
                 // committed this turn's state before a modal run loop starts.
-                if !outcome.skipped.isEmpty {
-                    let summary = outcome
-                    DispatchQueue.main.async { reportSkipped(summary) }
-                }
+                //
+                // The name is resolved after the import, not before, so it names where
+                // the documents actually landed — `importFiles` makes the same re-check
+                // and files at the top level if the space went away mid-read.
+                let summary = outcome
+                let name = spaces.space(for: spaceID).map { String($0.name.prefix(60)) } ?? "Documents"
+                DispatchQueue.main.async { reportOutcome(summary, destination: name) }
             }
         }
     }
 
-    private func reportSkipped(_ outcome: DocumentStore.ImportOutcome) {
-        let listed = 10
-        var lines = outcome.skipped.prefix(listed).map { "\($0.file) — \($0.reason)" }
-        if outcome.skipped.count > listed {
-            lines.append("…and \(outcome.skipped.count - listed) more")
+    /// Reports what an import did, grouped by reason.
+    ///
+    /// Listing the first ten filenames was close to useless at the scale this is for: skip 200
+    /// of 500 and the user gets ten names and a count, in text they cannot select or scroll.
+    /// The causes are almost always systematic — one folder of images, one oversized export —
+    /// so counting them by reason says the useful thing in one line each.
+    private func reportOutcome(_ outcome: DocumentStore.ImportOutcome, destination: String) {
+        let title = outcome.imported > 0
+            ? "Imported \(outcome.imported) \(outcome.imported == 1 ? "document" : "documents") into \(destination)"
+            : "Nothing was imported"
+
+        var lines: [String] = []
+        if !outcome.skipped.isEmpty {
+            lines.append("Skipped \(outcome.skipped.count):")
+            let byReason = Dictionary(grouping: outcome.skipped, by: \.reason)
+            for reason in byReason.keys.sorted() {
+                guard let files = byReason[reason] else { continue }
+                lines.append(files.count == 1
+                    ? "  \(files[0].file) — \(reason)"
+                    : "  \(files.count) files — \(reason)")
+            }
         }
-        presentAlert(
-            title: outcome.imported > 0
-                ? "Imported \(outcome.imported), skipped \(outcome.skipped.count)"
-                : "Nothing was imported",
-            message: lines.joined(separator: "\n")
-        )
+        presentAlert(title: title, message: lines.joined(separator: "\n"))
     }
 
     private func presentAlert(title: String, message: String) {
