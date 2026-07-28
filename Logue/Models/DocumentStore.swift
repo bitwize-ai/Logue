@@ -3,6 +3,14 @@ import os.log
 
 /// Appends " (2)", " (3)" etc. if `proposed` already exists in `existingTitles`.
 func uniqueTitle(_ proposed: String, among existingTitles: [String]) -> String {
+    uniqueTitle(proposed, among: Set(existingTitles))
+}
+
+/// The same rule against a set, for callers naming many documents in a row.
+///
+/// A batch import that re-derived an array of every title per document, then linear-scanned it,
+/// was quadratic before it wrote anything. A set the caller carries across the batch is not.
+func uniqueTitle(_ proposed: String, among existingTitles: Set<String>) -> String {
     guard existingTitles.contains(proposed) else { return proposed }
     var counter = 2
     while counter < 10000, existingTitles.contains("\(proposed) (\(counter))") {
@@ -92,32 +100,6 @@ final class DocumentStore {
     }
 
     // MARK: - CRUD
-
-    /// `tags` are set before the first save rather than added afterwards: `addTag` saves
-    /// each time, and in markdown mode a save walks the whole folder, so a tagged import
-    /// paid that once per tag on top of once per document.
-    @discardableResult
-    func createDocument(
-        title: String = "Untitled Document",
-        body: String = "",
-        tags: [String] = [],
-        inSpace spaceID: UUID? = nil,
-        select: Bool = true
-    ) -> WritingDocument {
-        var doc = WritingDocument()
-        doc.title = uniqueTitle(title, among: activeDocuments.map(\.title))
-        doc.body = body
-        doc.tags = tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        doc.spaceID = spaceID
-        documents.insert(doc, at: 0)
-        rebuildIndexMap()
-        if select {
-            selectedDocumentID = doc.id
-        }
-        saveDocument(id: doc.id)
-        return doc
-    }
 
     func updateDocument(_ document: WritingDocument) {
         guard let index = documentIndex(for: document.id) else { return }
