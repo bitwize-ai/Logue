@@ -95,6 +95,13 @@ enum MarkdownFrontmatter {
                 continue
             }
 
+            // An indented mapping line belongs to the block above it, not to the document.
+            // Without this, `meta:\n  title: Nested` set the document's title to `Nested` — YAML
+            // expresses nesting through indentation and trimming every line discards it.
+            if line.first?.isWhitespace == true {
+                continue
+            }
+
             // `key: value`, splitting only on the first colon so URLs survive.
             guard let separator = trimmed.firstIndex(of: ":") else { continue }
             let key = String(trimmed[trimmed.startIndex ..< separator])
@@ -108,6 +115,9 @@ enum MarkdownFrontmatter {
                 // A bare key opens a list; later duplicates replace it.
                 currentListKey = key
                 fields.removeValue(forKey: key)
+            } else if let items = flowSequence(rawValue) {
+                currentListKey = nil
+                fields[key] = .list(items)
             } else {
                 currentListKey = nil
                 fields[key] = .scalar(unquoted(rawValue))
@@ -134,6 +144,10 @@ enum MarkdownFrontmatter {
                 || value.contains(":")
                 || value.contains("#")
                 || value.contains("\"")
+                // Now that a single-quoted scalar is unquoted on read, a value that merely
+                // starts and ends with one has to be written quoted or it would not survive
+                // the round trip: `'hello'` would come back as `hello`.
+                || value.hasPrefix("'")
                 || value.hasPrefix("[")
                 || value.hasPrefix("-")
                 || value.hasPrefix("&")
@@ -148,10 +162,43 @@ enum MarkdownFrontmatter {
         return "\"\(escaped)\""
     }
 
+    /// A YAML flow sequence — `[a, b]` — or `nil` when the value is not one.
+    ///
+    /// We never write this form; we read it because everyone else does. Obsidian writes
+    /// `tags: [a, b]` by default, and reading it as a scalar meant a vault's tags survived being
+    /// imported through the menu and vanished when the same file was dropped into `~/Logue` — one
+    /// file, two answers, which is worse than either rule on its own.
+    ///
+    /// `[]` is a sequence with nothing in it, not a scalar, so an empty list clears rather than
+    /// storing the literal text `[]`.
+    private static func flowSequence(_ value: String) -> [String]? {
+        guard value.hasPrefix("["), value.hasSuffix("]"), value.count >= 2 else { return nil }
+
+        let inner = value.dropFirst().dropLast().trimmingCharacters(in: .whitespaces)
+        guard !inner.isEmpty else { return [] }
+
+        return inner
+            .split(separator: ",", omittingEmptySubsequences: false)
+            .map { unquoted($0.trimmingCharacters(in: .whitespaces)) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Strips one matching pair of surrounding quotes.
+    ///
+    /// Single quotes as well as double: YAML treats both as quoting, exporters use both, and
+    /// accepting only one meant `title: 'X'` imported with the quotes still attached.
     private static func unquoted(_ value: String) -> String {
-        guard value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") else { return value }
-        return String(value.dropFirst().dropLast())
-            .replacingOccurrences(of: "\\\"", with: "\"")
-            .replacingOccurrences(of: "\\\\", with: "\\")
+        if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
+            return String(value.dropFirst().dropLast())
+                .replacingOccurrences(of: "\\\"", with: "\"")
+                .replacingOccurrences(of: "\\\\", with: "\\")
+        }
+        // A single-quoted scalar has no backslash escapes in YAML — `''` is the only escape, and
+        // it means one quote.
+        if value.count >= 2, value.hasPrefix("'"), value.hasSuffix("'") {
+            return String(value.dropFirst().dropLast())
+                .replacingOccurrences(of: "''", with: "'")
+        }
+        return value
     }
 }

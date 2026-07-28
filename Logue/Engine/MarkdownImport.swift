@@ -23,6 +23,17 @@ enum MarkdownImport {
         /// file dropped straight into the storage folder keeps its tags — the two paths
         /// disagreeing on one file is worse than either rule on its own.
         let tags: [String]
+        /// The note's own creation date, when its frontmatter states one.
+        ///
+        /// Without this every imported note took `Date()`, so a 500-note vault arrived with 500
+        /// timestamps within a second of each other and sorting by date was meaningless for good.
+        let createdAt: Date?
+        /// Frontmatter the format does not own, kept as document properties.
+        ///
+        /// Dropping it was the same mistake in a different place: `status:` and `project:` are not
+        /// decoration on a Dataview note, they are its data. `MarkdownDocumentFile` already says an
+        /// unrecognised key becomes a property rather than being dropped; this now agrees.
+        let properties: [String: PropertyValue]
     }
 
     enum ImportError: Error, Equatable {
@@ -60,12 +71,22 @@ enum MarkdownImport {
 
         var body = contents
         var title: String?
-
         var tags: [String] = []
-        if let frontmatter = parseFrontmatter(body) {
-            body = frontmatter.remainder
-            title = frontmatter.title
-            tags = frontmatter.tags
+        var createdAt: Date?
+        var properties: [String: PropertyValue] = [:]
+
+        // Only when the block is plausibly YAML. `MarkdownFrontmatter.parse` takes any `---` pair
+        // at the top of a file, which for a note opening with a thematic break would discard every
+        // paragraph up to the next one — silent, unrecoverable content loss. That guard is the one
+        // piece of frontmatter handling that stays import-specific.
+        if let fenced = fencedBlock(in: body), looksLikeFrontmatter(fenced.block) {
+            let parsed = MarkdownFrontmatter.parse(body)
+            body = fenced.remainder
+
+            title = scalar(parsed.fields["title"])
+            tags = list(parsed.fields["tags"])
+            createdAt = creationDate(in: parsed.fields)
+            properties = importedProperties(from: parsed.fields)
         }
         // The heading is read whatever the frontmatter said, so a note carrying both
         // — the common Obsidian shape — does not open with its title twice. It only
@@ -87,20 +108,19 @@ enum MarkdownImport {
         return ImportedDocument(
             title: resolved.isEmpty ? "Imported Note" : resolved,
             body: body,
-            tags: tags
+            tags: tags,
+            createdAt: createdAt,
+            properties: properties
         )
     }
 
-    // MARK: - Title Sources
+    // MARK: - Frontmatter
 
-    /// A minimal YAML frontmatter reader: a `---` fence on the first line, a closing
-    /// fence, and the `title:` and `tags:` keys between them. Anything else in the block is
-    /// dropped with it, because keeping the raw block would show YAML to the user as prose.
+    /// The lines between a leading `---` pair, and everything after the closing one.
     ///
-    /// Returns `nil` unless the block actually looks like YAML. A markdown file may
-    /// open with a `---` thematic break, and treating that as a fence would discard
-    /// every paragraph up to the next one — silent, unrecoverable content loss.
-    private static func parseFrontmatter(_ text: String) -> (title: String?, tags: [String], remainder: String)? {
+    /// Finding the fence is separate from parsing it because the plausibility check has to run on
+    /// the block *before* anything consumes it.
+    private static func fencedBlock(in text: String) -> (block: ArraySlice<String>, remainder: String)? {
         let lines = text.components(separatedBy: "\n")
         guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
         guard let closing = lines.dropFirst().firstIndex(where: {
@@ -108,59 +128,134 @@ enum MarkdownImport {
         })
         else { return nil }
 
-        let block = lines[1 ..< closing]
-        guard looksLikeFrontmatter(block) else { return nil }
-
-        var title: String?
-        for line in block where line.first?.isWhitespace != true {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.lowercased().hasPrefix("title:") else { continue }
-            let value = unquoted(String(trimmed.dropFirst("title:".count))
-                .trimmingCharacters(in: .whitespaces))
-            // Keep looking when the key carries no value, so a later `title:` that
-            // does have one still wins.
-            if !value.isEmpty {
-                title = value
-                break
-            }
-        }
-        let remainder = lines[(closing + 1)...].joined(separator: "\n")
-        return (title, parsedTags(in: block), remainder)
+        return (lines[1 ..< closing], lines[(closing + 1)...].joined(separator: "\n"))
     }
 
-    /// Tags written either inline (`tags: [a, b]`) or as a YAML sequence beneath the key.
-    private static func parsedTags(in block: ArraySlice<String>) -> [String] {
-        var collecting = false
-        var tags: [String] = []
-        for line in block {
-            let indented = line.first?.isWhitespace == true
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Sequence items are accepted whether or not they are indented — Jekyll and
-            // older Obsidian write them flush left — and a blank line inside a list does
-            // not end it, which used to drop every tag after it.
-            if collecting, trimmed.isEmpty {
-                continue
-            }
-            if collecting, trimmed.hasPrefix("- ") {
-                tags.append(cleanedTag(String(trimmed.dropFirst(2))))
-                continue
-            }
-            collecting = false
-            guard !indented, trimmed.lowercased().hasPrefix("tags:") else { continue }
-            let inline = String(trimmed.dropFirst("tags:".count)).trimmingCharacters(in: .whitespaces)
-            if inline.hasPrefix("["), inline.hasSuffix("]") {
-                tags += inline.dropFirst().dropLast().split(separator: ",").map { cleanedTag(String($0)) }
-            } else if inline.isEmpty {
-                collecting = true
-            } else {
-                tags.append(cleanedTag(inline))
-            }
-        }
-        return tags.filter { !$0.isEmpty }
+    private static func scalar(_ value: FrontmatterValue?) -> String? {
+        guard case let .scalar(text)? = value else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func cleanedTag(_ raw: String) -> String {
-        unquoted(raw.trimmingCharacters(in: .whitespaces))
+    /// A field as a list, whichever way it was written.
+    ///
+    /// A single tag is legitimately written `tags: work`, which parses as a scalar. Reading only
+    /// `.list` would drop it.
+    private static func list(_ value: FrontmatterValue?) -> [String] {
+        switch value {
+        case let .list(items):
+            items.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        case let .scalar(single):
+            [single.trimmingCharacters(in: .whitespaces)].filter { !$0.isEmpty }
+        case nil:
+            []
+        }
+    }
+
+    /// Keys naming a creation date, in the order exporters are trusted for it.
+    ///
+    /// `date` is last because Jekyll uses it for *publication*, which is not the same thing and is
+    /// often absent from drafts.
+    private static let creationKeys = ["created", "created_at", "date_created", "ctime", "date"]
+
+    private static func creationDate(in fields: [String: FrontmatterValue]) -> Date? {
+        for key in creationKeys {
+            guard let raw = scalar(fields[key]), let date = parsedDate(raw) else { continue }
+            return date
+        }
+        return nil
+    }
+
+    /// Parses the date shapes note apps actually write.
+    ///
+    /// Deliberately a fixed list rather than a lenient `DateFormatter`: guessing wrong is worse
+    /// than not knowing, because a wrong date is indistinguishable from a right one afterwards.
+    /// Anything unrecognised leaves `createdAt` nil and the document takes its own creation time,
+    /// which is the honest answer.
+    static func parsedDate(_ raw: String) -> Date? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let date = isoFormatter.date(from: trimmed) {
+            return date
+        }
+        if let date = isoFormatterWithFractionalSeconds.date(from: trimmed) {
+            return date
+        }
+
+        for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd", "yyyy/MM/dd"] {
+            plainFormatter.dateFormat = format
+            if let date = plainFormatter.date(from: trimmed) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let isoFormatterWithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    /// Local time, because a note written `2024-03-15` means that day where the writer was.
+    /// `en_US_POSIX` so a user's 24-hour or calendar settings cannot change how a file parses.
+    private static let plainFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    /// Frontmatter keys this importer consumes itself, so they do not also become properties.
+    private static var consumedKeys: Set<String> {
+        Set(["title", "tags", MarkdownDocumentFile.identifierKey] + creationKeys)
+    }
+
+    /// Everything else in the block, as document properties.
+    ///
+    /// Keys go through `PropertyKey.sanitisedKey`, which is what refuses underscore-prefixed
+    /// names — so a file cannot claim an app-owned field by writing one in its frontmatter.
+    private static func importedProperties(from fields: [String: FrontmatterValue]) -> [String: PropertyValue] {
+        var properties: [String: PropertyValue] = [:]
+        for (rawKey, value) in fields where !consumedKeys.contains(rawKey.lowercased()) {
+            guard let key = PropertyKey.sanitisedKey(rawKey) else { continue }
+            switch value {
+            case let .list(items):
+                let usable = items.filter { !$0.isEmpty }
+                guard !usable.isEmpty else { continue }
+                properties[key] = .list(usable)
+            case let .scalar(raw):
+                guard let typed = propertyValue(from: raw) else { continue }
+                properties[key] = typed
+            }
+        }
+        return properties
+    }
+
+    /// Types a scalar the way the user would expect to see it, rather than storing everything as
+    /// text. `MarkdownDocumentFile` makes the same judgements when it reads a stored file.
+    private static func propertyValue(from raw: String) -> PropertyValue? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed == "true" || trimmed == "false" {
+            return .boolean(trimmed == "true")
+        }
+        if let date = parsedDate(trimmed) {
+            return .date(date)
+        }
+        if trimmed.allSatisfy({ $0.isNumber || $0 == "-" || $0 == "." || $0 == "+" }),
+           let number = Double(trimmed)
+        {
+            return .number(number)
+        }
+        return .text(trimmed)
     }
 
     /// Keys that make a `---` block frontmatter rather than prose that happens to
@@ -207,15 +302,6 @@ enum MarkdownImport {
               })
         else { return nil }
         return key.lowercased()
-    }
-
-    /// Strips one matching pair of surrounding quotes. Trimming each end
-    /// independently would turn `"Q1" review` into an unbalanced `Q1" review`.
-    private static func unquoted(_ value: String) -> String {
-        for quote in ["\"", "'"] where value.hasPrefix(quote) && value.hasSuffix(quote) && value.count >= 2 {
-            return String(value.dropFirst().dropLast())
-        }
-        return value
     }
 
     /// Bidirectional overrides and isolates. `Cf` is kept as a class because that is what

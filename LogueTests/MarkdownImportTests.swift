@@ -278,6 +278,116 @@ struct MarkdownImportTests {
         #expect(doc.tags.isEmpty)
     }
 
+    // MARK: - Metadata Carried Through
+
+    /// Without this every imported note took `Date()`, so a 500-note vault arrived with 500
+    /// timestamps a second apart and sorting by date was meaningless from then on.
+    @Test("A frontmatter creation date becomes the document's own")
+    func creationDateIsCarried() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ncreated: 2021-04-05T09:30:00Z\n---\nBody."
+        )
+        let expected = try #require(ISO8601DateFormatter().date(from: "2021-04-05T09:30:00Z"))
+        #expect(doc.createdAt == expected)
+    }
+
+    @Test("Plain date shapes exporters write are understood", arguments: [
+        "2021-04-05", "2021-04-05 09:30", "2021-04-05 09:30:00", "2021/04/05",
+    ])
+    func plainDatesParse(raw: String) throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md", contents: "---\ntitle: T\ncreated: \(raw)\n---\nBody."
+        )
+        #expect(doc.createdAt != nil)
+    }
+
+    /// A wrong date is indistinguishable from a right one afterwards, so an unparseable one
+    /// leaves the field alone rather than guessing.
+    @Test("An unparseable date is left alone rather than guessed at")
+    func unparseableDateIsIgnored() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md", contents: "---\ntitle: T\ncreated: last Tuesday\n---\nBody."
+        )
+        #expect(doc.createdAt == nil)
+    }
+
+    /// `status:` and `project:` are not decoration on a Dataview note, they are its data.
+    @Test("Unrecognised frontmatter keys become properties rather than being dropped")
+    func unknownKeysBecomeProperties() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: """
+            ---
+            title: T
+            status: active
+            priority: 3
+            done: false
+            people:
+              - ada
+              - grace
+            ---
+            Body.
+            """
+        )
+        #expect(doc.properties["status"] == .text("active"))
+        #expect(doc.properties["priority"] == .number(3))
+        #expect(doc.properties["done"] == .boolean(false))
+        #expect(doc.properties["people"] == .list(["ada", "grace"]))
+    }
+
+    /// `PropertyKey.sanitisedKey` refuses underscore-prefixed names, which is what stops a file
+    /// claiming an app-owned field by writing one in its frontmatter.
+    @Test("Keys the importer consumes and app-owned keys do not leak into properties")
+    func consumedKeysAreNotProperties() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ntags: [a]\ncreated: 2021-04-05\n_logue_id: x\n---\nBody."
+        )
+        #expect(doc.properties.isEmpty)
+    }
+
+    // MARK: - Agreement With the Folder Path
+
+    /// The failure `ImportedDocument`'s own documentation warns about: one file, two answers,
+    /// depending on whether it arrived through the menu or was dropped into `~/Logue`.
+    @Test("Inline tags, quoted titles and leading headings agree with the dropped-file path")
+    func bothImportPathsAgree() throws {
+        let contents = "---\ntitle: 'Quarterly Plan'\ntags: [project, q3]\n---\n# Quarterly Plan\n\nBody."
+
+        let imported = try MarkdownImport.document(fileName: "note.md", contents: contents)
+        let dropped = try #require(DroppedFileImport.fields(fileContents: contents, filename: "note.md"))
+
+        #expect(imported.title == "Quarterly Plan")
+        #expect(dropped.title == "Quarterly Plan")
+        #expect(imported.tags == ["project", "q3"])
+        #expect(dropped.tags == ["project", "q3"])
+        #expect(imported.body == "Body.")
+        #expect(dropped.body.trimmingCharacters(in: .whitespacesAndNewlines) == "Body.")
+    }
+
+    @Test("A file with only a heading gets the same title either way")
+    func headingOnlyAgrees() throws {
+        let contents = "# Meeting Notes\n\nWhat we said."
+
+        let imported = try MarkdownImport.document(fileName: "export-0042.md", contents: contents)
+        let dropped = try #require(
+            DroppedFileImport.fields(fileContents: contents, filename: "export-0042.md")
+        )
+        #expect(imported.title == "Meeting Notes")
+        #expect(dropped.title == "Meeting Notes")
+    }
+
+    @Test("A single tag written as a scalar is read as one tag on both paths")
+    func singleScalarTagAgrees() throws {
+        let contents = "---\ntitle: T\ntags: work\n---\nBody."
+
+        let imported = try MarkdownImport.document(fileName: "n.md", contents: contents)
+        let dropped = try #require(DroppedFileImport.fields(fileContents: contents, filename: "n.md"))
+        #expect(imported.tags == ["work"])
+        #expect(dropped.tags == ["work"])
+    }
+
     // MARK: - Line Endings
 
     @Test("Frontmatter in a Windows-authored file is parsed, not shown as prose")
