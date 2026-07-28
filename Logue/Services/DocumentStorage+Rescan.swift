@@ -101,6 +101,12 @@ extension DocumentStorage {
             return nil
         }
 
+        // Which documents the walk could possibly have seen, recorded before it starts. A document
+        // created afterwards — an import, a new note — is absent from the walk for the only reason
+        // that is not a deletion, and trashing it takes its file with it. Reading this after the
+        // walk instead made every document created during it a deletion.
+        let documentsPredatingWalk = Set(documentStore.documents.map(\.id))
+
         // One traversal, read off the main actor, handed to every step below. Each of those steps
         // used to start its own — seven per scan, three of them opening every document in the
         // library, and all of it on the main actor on every app activation.
@@ -139,9 +145,23 @@ extension DocumentStorage {
         // during that read, and applying an update built from the older snapshot would replace what
         // they just typed with what the file said beforehand. Anything that moved on is dropped and
         // left for the next scan, which diffs against the newer text.
-        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+        var settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
             plan, comparedTo: known, current: documentStore.documents.map(\.content)
         )
+
+        // The same reasoning for deletions, which that guard does not cover. A document created
+        // while the folder was being read cannot be absent from the walk for any reason other than
+        // not existing when it started. Importing a batch mid-scan trashed every document in it,
+        // and the files with them.
+        let createdDuringWalk = settled.trashed.filter { !documentsPredatingWalk.contains($0) }
+        if !createdDuringWalk.isEmpty {
+            settled.trashed.removeAll { !documentsPredatingWalk.contains($0) }
+            Self.scanLogger.info(
+                "Kept \(createdDuringWalk.count, privacy: .public) document(s) created while the folder was being read"
+            )
+            hasPendingScan = true
+        }
+
         if settled.updated.count != plan.updated.count {
             Self.scanLogger.info(
                 "Held back \(plan.updated.count - settled.updated.count, privacy: .public) update(s) for a document edited during the scan"

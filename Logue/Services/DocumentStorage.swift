@@ -427,9 +427,6 @@ final class DocumentStorage {
             // `_space.md` on every save was N writes per keystroke batch for no gain.
             identitiesFor: spaces.filter { $0.id == document.spaceID }
         )
-        if !result.isSuccess {
-            logger.error("Could not write a document to the markdown folder")
-        }
         // Kept current rather than dropped: the file this document now occupies is exactly what the
         // export just told us, so the next save does not have to read the folder again.
         if let written = result.writtenFiles[document.id] {
@@ -439,6 +436,15 @@ final class DocumentStorage {
             invalidateFileIndex()
         }
         saveDerived(document.derived)
+
+        // Reporting a failed write as handled left the document in memory with no file *and* no
+        // encrypted copy, because the caller takes this as "stored, nothing more to do". The next
+        // scan then found it absent from the folder and trashed it. Saying so lets the caller fall
+        // back to encrypted storage, which is the whole point of returning a Bool.
+        guard result.isSuccess else {
+            logger.error("Could not write a document to the markdown folder — falling back to encrypted storage")
+            return false
+        }
         return true
     }
 
