@@ -635,22 +635,25 @@ private struct SpaceTreeRow: View {
                 return
             }
 
-            let outcome = store.importFiles(at: panel.urls, into: spaceID)
+            let urls = panel.urls
+            Task { @MainActor in
+                let outcome = await store.importFiles(at: urls, into: spaceID)
 
-            // Reveal the results without stealing the user's place: reveal the space
-            // in the tree, but only move the selection if they were already looking
-            // at it. `DocumentStore+Import` makes the same promise for documents.
-            if outcome.imported > 0 {
-                spaces.expandPath(to: spaceID)
-            }
+                // Reveal the results without stealing the user's place: reveal the
+                // space in the tree, but leave the selection where it is.
+                // `DocumentStore+Import` makes the same promise for documents.
+                if outcome.imported > 0 {
+                    spaces.expandPath(to: spaceID)
+                }
 
-            // Skipped files are reported rather than dropped quietly — a file the
-            // user explicitly picked that produced no document needs to say why.
-            // Deferred so the panel has finished dismissing and SwiftUI has
-            // committed this turn's state before a modal run loop starts.
-            if !outcome.skipped.isEmpty {
-                let summary = outcome
-                DispatchQueue.main.async { reportSkipped(summary) }
+                // Skipped files are reported rather than dropped quietly — a file
+                // the user explicitly picked that produced no document needs to say
+                // why. Deferred so the panel has finished dismissing and SwiftUI has
+                // committed this turn's state before a modal run loop starts.
+                if !outcome.skipped.isEmpty {
+                    let summary = outcome
+                    DispatchQueue.main.async { reportSkipped(summary) }
+                }
             }
         }
     }

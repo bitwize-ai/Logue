@@ -23,39 +23,50 @@ extension DocumentStore {
     /// reported in the outcome and never aborts the rest. Nothing is selected
     /// automatically — a bulk import jumping the editor to an arbitrary file
     /// would be disorienting.
+    ///
+    /// Reading and parsing happen off the main actor. A vault's worth of files on
+    /// a slow or network volume would otherwise block the main thread for as long
+    /// as the reads took, with no way to tell the app was still alive.
     @discardableResult
-    func importFiles(at urls: [URL], into spaceID: UUID?) -> ImportOutcome {
+    func importFiles(at urls: [URL], into spaceID: UUID?) async -> ImportOutcome {
         let logger = Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
-        var outcome = ImportOutcome()
+        let parsed = await Task.detached(priority: .userInitiated) {
+            urls.map { url in (name: url.lastPathComponent, result: Self.read(url)) }
+        }.value
 
-        for url in urls {
-            let name = url.lastPathComponent
-            do {
-                let contents = try readText(at: url)
-                let imported = try MarkdownImport.document(fileName: name, contents: contents)
+        var outcome = ImportOutcome()
+        for file in parsed {
+            switch file.result {
+            case let .success(document):
                 createDocument(
-                    title: imported.title,
-                    body: imported.body,
+                    title: document.title,
+                    body: document.body,
                     inSpace: spaceID,
                     select: false
                 )
                 outcome.imported += 1
-            } catch let error as MarkdownImport.ImportError {
-                let reason = description(for: error)
-                outcome.skipped.append(ImportOutcome.Skipped(file: name, reason: reason))
-                logger.warning("Import skipped \(name, privacy: .private): \(reason, privacy: .public)")
-            } catch {
-                outcome.skipped.append(
-                    ImportOutcome.Skipped(file: name, reason: "could not be read")
-                )
-                logger.error(
-                    "Import failed to read \(name, privacy: .private): \(error.localizedDescription, privacy: .public)"
+            case let .failure(error):
+                let reason = (error as? MarkdownImport.ImportError).map(Self.description) ?? "could not be read"
+                outcome.skipped.append(ImportOutcome.Skipped(file: file.name, reason: reason))
+                logger.warning(
+                    "Import skipped \(file.name, privacy: .private): \(reason, privacy: .public)"
                 )
             }
         }
 
         logger.info("Imported \(outcome.imported) of \(urls.count) file(s)")
         return outcome
+    }
+
+    /// Reads and parses one file. `nonisolated` so a batch can run off the main
+    /// actor; it touches no store state.
+    nonisolated private static func read(_ url: URL) -> Result<MarkdownImport.ImportedDocument, Error> {
+        do {
+            let contents = try readText(at: url)
+            return try .success(MarkdownImport.document(fileName: url.lastPathComponent, contents: contents))
+        } catch {
+            return .failure(error)
+        }
     }
 
     /// Reads a text file, tolerating the encodings exported notes actually use.
@@ -69,7 +80,7 @@ extension DocumentStore {
     /// decode to plausible-looking CJK rather than falling through — `Café résumé`
     /// came back as `䍡曩⁲畭湡整潫`. Windows-1252 is the better guess for what UTF-8
     /// rejects, and Latin-1 is the backstop that cannot fail.
-    private func readText(at url: URL) throws -> String {
+    nonisolated private static func readText(at url: URL) throws -> String {
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= MarkdownImport.maxFileBytes else {
             throw MarkdownImport.ImportError.fileTooLarge(bytes: size)
@@ -90,14 +101,14 @@ extension DocumentStore {
         throw CocoaError(.fileReadInapplicableStringEncoding)
     }
 
-    private func hasUTF16ByteOrderMark(_ data: Data) -> Bool {
+    nonisolated private static func hasUTF16ByteOrderMark(_ data: Data) -> Bool {
         guard data.count >= 2 else { return false }
         let first = data[data.startIndex]
         let second = data[data.index(after: data.startIndex)]
         return (first == 0xFF && second == 0xFE) || (first == 0xFE && second == 0xFF)
     }
 
-    private func description(for error: MarkdownImport.ImportError) -> String {
+    nonisolated private static func description(for error: MarkdownImport.ImportError) -> String {
         switch error {
         case .emptyFile:
             "file is empty"
