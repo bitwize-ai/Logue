@@ -118,7 +118,17 @@ enum MarkdownFrontmatter {
     }
 
     /// Quotes only when the value would otherwise be misread.
+    ///
+    /// A newline is escaped rather than quoted, because no amount of quoting saves it: a value
+    /// spanning two lines is two YAML lines, and the second one is read as a stray key. A title
+    /// containing one — pasted from somewhere — made the document unwritable, and its verification
+    /// failure was only ever a log line.
     private static func quotedIfNeeded(_ value: String) -> String {
+        let value = value
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+
         let needsQuoting =
             value != value.trimmingCharacters(in: .whitespaces)
                 || value.contains(":")

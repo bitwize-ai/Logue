@@ -33,6 +33,28 @@ enum SpaceFile {
 
     // MARK: - Writing
 
+    /// Renders a space file, keeping any prose the user added below the managed note.
+    ///
+    /// The file says "The rest of this file is yours" and the design promised the body would be
+    /// preserved. It was not: every save rewrote the file from scratch, so anything written there was
+    /// destroyed by the next keystroke in that space.
+    static func render(_ space: Space, keepingBodyOf existing: String?) -> String {
+        let rendered = render(space)
+        guard let existing, let kept = userBody(of: existing) else { return rendered }
+        return rendered + "\n" + kept + "\n"
+    }
+
+    /// Whatever follows the managed note, if it is not just whitespace.
+    private static func userBody(of markdown: String) -> String? {
+        let body = MarkdownFrontmatter.parse(markdown).body
+        guard let noteEnd = body.range(of: note)?.upperBound else {
+            let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        let trimmed = body[noteEnd...].trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     static func render(_ space: Space) -> String {
         var fields: [(key: String, value: FrontmatterValue)] = [
             (identifierKey, .scalar(space.id.uuidString)),

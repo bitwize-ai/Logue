@@ -41,6 +41,35 @@ final class DocumentStorage {
     /// Extension-visible: +Rescan
     @ObservationIgnored var watcher: MarkdownFolderWatcher?
 
+    /// A scan asked for while one was already running.
+    ///
+    /// Extension-visible: +Rescan
+    @ObservationIgnored var hasPendingScan = false
+
+    /// Which file each document occupies, remembered between saves.
+    ///
+    /// Building it means reading every `.md` file in the library to pull out its identifier. Doing
+    /// that per save — which is per debounced keystroke batch — made typing cost O(library size) on
+    /// the main actor. Dropped whenever the folder might have changed underneath it: a scan, a
+    /// deletion, a mode switch.
+    ///
+    /// Extension-visible: +Rescan
+    @ObservationIgnored var cachedFileIndex: [UUID: URL]?
+
+    /// Extension-visible: +Rescan
+    func invalidateFileIndex() {
+        cachedFileIndex = nil
+    }
+
+    private func fileIndex(using migrator: MarkdownStorageMigrator) -> [UUID: URL] {
+        if let cachedFileIndex {
+            return cachedFileIndex
+        }
+        let index = migrator.fileIndex()
+        cachedFileIndex = index
+        return index
+    }
+
     /// What the last scan of the folder found, for the rescan button's tooltip.
     private(set) var lastScanSummary: String?
 
@@ -203,6 +232,7 @@ final class DocumentStorage {
         }
 
         mode = .markdown
+        invalidateFileIndex()
         startWatchingIfNeeded()
         logger.info("Switched document storage to plain markdown")
     }
@@ -257,6 +287,7 @@ final class DocumentStorage {
         }
 
         mode = .encrypted
+        invalidateFileIndex()
 
         // Last, and only once the documents are in hand: if reading the folder went wrong, the
         // folder is the only place that text exists.
@@ -274,6 +305,19 @@ final class DocumentStorage {
 
         logger.info("Switched document storage back to encrypted")
         return documents
+    }
+
+    /// Removes the plain-markdown folder and returns to encrypted storage, for "erase all data".
+    ///
+    /// The folder goes to the Trash rather than being deleted outright — the same rule as everywhere
+    /// else, and here the user asked for erasure, so it is the one case where leaving nothing behind
+    /// would also be defensible. The Trash still wins: "erase" is a button people press by mistake.
+    func eraseMarkdownFolder() throws {
+        stopWatching()
+        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        mode = .encrypted
+        invalidateFileIndex()
+        logger.info("Erased the plain markdown folder and returned to encrypted storage")
     }
 
     // MARK: - Reading
@@ -327,11 +371,25 @@ final class DocumentStorage {
         }
 
         let migrator = liveMigrator
+        var index = fileIndex(using: migrator)
         let result = migrator.export(
-            documents: [document.content], spaces: spaces, reusing: migrator.fileIndex()
+            documents: [document.content],
+            spaces: spaces,
+            reusing: index,
+            // Only this document's space needs its identity rewritten. Rewriting every space's
+            // `_space.md` on every save was N writes per keystroke batch for no gain.
+            identitiesFor: spaces.filter { $0.id == document.spaceID }
         )
         if !result.isSuccess {
             logger.error("Could not write a document to the markdown folder")
+        }
+        // Kept current rather than dropped: the file this document now occupies is exactly what the
+        // export just told us, so the next save does not have to read the folder again.
+        if let written = result.writtenFiles[document.id] {
+            index[document.id] = written
+            cachedFileIndex = index
+        } else {
+            invalidateFileIndex()
         }
         saveDerived(document.derived)
         return true
@@ -347,7 +405,8 @@ final class DocumentStorage {
         guard mode.isMarkdown else { return }
 
         let migrator = liveMigrator
-        guard let url = migrator.fileIndex()[id] else { return }
+        guard let url = fileIndex(using: migrator)[id] else { return }
+        invalidateFileIndex()
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         } catch {
@@ -382,7 +441,18 @@ final class DocumentStorage {
         let url = directory.appendingPathComponent("\(derived.id.uuidString).json")
 
         guard !derived.isEmpty else {
-            try? FileManager.default.removeItem(at: url)
+            // Detached like the write below it: this runs on the main actor, from a save, and a
+            // filesystem call there is a stall however small.
+            Task.detached(priority: .utility) { [logger] in
+                guard FileManager.default.fileExists(atPath: url.path) else { return }
+                do {
+                    try FileManager.default.removeItem(at: url)
+                } catch {
+                    logger.error(
+                        "Could not remove empty derived state: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
             return
         }
 

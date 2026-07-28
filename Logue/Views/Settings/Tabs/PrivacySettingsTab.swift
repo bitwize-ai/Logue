@@ -145,8 +145,6 @@ struct PrivacySettingsTab: View {
 
     // MARK: - Encryption
 
-    // MARK: - Encryption
-
     private var encryptionSection: some View {
         sectionCard(title: "Encryption") {
             HStack(spacing: 10) {
@@ -299,6 +297,14 @@ struct PrivacySettingsTab: View {
             if fm.fileExists(atPath: dataDirectory.path) {
                 try fm.removeItem(at: dataDirectory)
             }
+
+            // The unencrypted folder too, or "All data erased" is a false claim: with plain markdown
+            // storage on, every document is a readable file outside this directory, and the setting
+            // itself is in UserDefaults so the next launch would read them straight back in.
+            if storage.mode.isMarkdown {
+                try storage.eraseMarkdownFolder()
+            }
+
             ToastCenter.shared.show("All data erased — restart Logue", kind: .warning)
         } catch {
             ToastCenter.shared.show("Couldn't erase data", kind: .warning)

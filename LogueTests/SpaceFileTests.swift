@@ -87,3 +87,51 @@ struct SpaceFileTests {
 
     // MARK: - Applying back
 }
+
+/// Keeping what the user wrote in a space file.
+@Suite("Space file body")
+struct SpaceFileBodyTests {
+    @Test("Prose added below the managed note survives a rewrite")
+    func keepsUserProse() {
+        let space = Space(name: "Work")
+        let edited = SpaceFile.render(space) + "\nEverything client-facing lives here.\n"
+
+        let rewritten = SpaceFile.render(space, keepingBodyOf: edited)
+
+        #expect(rewritten.contains("Everything client-facing lives here."))
+        #expect(SpaceFile.identity(from: rewritten)?.id == space.id)
+    }
+
+    @Test("A rewrite does not accumulate copies of the note or the prose")
+    func doesNotAccumulate() {
+        let space = Space(name: "Work")
+        var file = SpaceFile.render(space) + "\nMine.\n"
+
+        for _ in 0 ..< 3 {
+            file = SpaceFile.render(space, keepingBodyOf: file)
+        }
+
+        #expect(file.components(separatedBy: "Mine.").count - 1 == 1)
+        #expect(file.components(separatedBy: "Managed by Logue").count - 1 == 1)
+    }
+
+    @Test("A file with no prose stays as it was")
+    func unchangedWithoutProse() {
+        let space = Space(name: "Work")
+        let plain = SpaceFile.render(space)
+
+        #expect(SpaceFile.render(space, keepingBodyOf: plain) == plain)
+    }
+
+    @Test("A changed icon reaches the file while the prose stays")
+    func updatesIdentityKeepingProse() {
+        var space = Space(name: "Work")
+        let edited = SpaceFile.render(space) + "\nMine.\n"
+        space.icon = "hammer"
+
+        let rewritten = SpaceFile.render(space, keepingBodyOf: edited)
+
+        #expect(SpaceFile.identity(from: rewritten)?.icon == "hammer")
+        #expect(rewritten.contains("Mine."))
+    }
+}

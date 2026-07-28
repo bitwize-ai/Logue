@@ -14,6 +14,8 @@ struct ExternalChangePlan: Sendable {
     var trashed: [UUID] = []
     /// Identifiers found in files that match no document. Reported, never applied.
     var ignoredIdentifiers: [UUID] = []
+    /// Identifiers carried by more than one file, so nothing about them can be applied safely.
+    var ambiguousIdentifiers: Set<UUID> = []
 
     var isEmpty: Bool {
         updated.isEmpty && inserted.isEmpty && trashed.isEmpty
@@ -46,13 +48,15 @@ enum ExternalChangePlanner {
     static func plan(
         scanned: [DocumentContent],
         adopted: [DocumentContent] = [],
-        known: [DocumentContent]
+        known: [DocumentContent],
+        ambiguous: Set<UUID> = []
     ) -> ExternalChangePlan {
         var plan = ExternalChangePlan()
+        plan.ambiguousIdentifiers = ambiguous
         let knownByID = Dictionary(known.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var seen: Set<UUID> = []
-        for content in scanned {
+        for content in scanned where !ambiguous.contains(content.id) {
             // A duplicated file carries a duplicated identifier. The first one wins rather
             // than the two fighting over the document on every scan.
             guard seen.insert(content.id).inserted else { continue }
@@ -81,7 +85,12 @@ enum ExternalChangePlanner {
         // A document with no file is a deletion — but only if the app thinks it should
         // have one. Trashed documents are deliberately absent from the folder, so treating
         // their absence as a deletion would empty the trash on every scan.
-        for document in known where !document.isTrashed && !seen.contains(document.id) {
+        // Ambiguous documents are skipped here as well as above. Their files exist — there are two
+        // of them — so trashing them for having none would be the worst possible reading.
+        for document in known
+            where !document.isTrashed && !seen.contains(document.id)
+            && !ambiguous.contains(document.id)
+        {
             plan.trashed.append(document.id)
         }
 

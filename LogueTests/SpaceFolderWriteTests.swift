@@ -281,7 +281,7 @@ struct SpaceFolderWriteTests {
             at: root.appendingPathComponent("Work"), to: root.appendingPathComponent("Renamed")
         )
 
-        #expect(migrator.spaceFolderIndex()[work.id] == ["Renamed"])
+        #expect(migrator.spaceFolderMap().components(forSpace: work.id, in: []) == ["Renamed"])
     }
 
     @Test("A folder with no space file is not in the index")
@@ -293,6 +293,6 @@ struct SpaceFolderWriteTests {
             at: root.appendingPathComponent("Handmade"), withIntermediateDirectories: true
         )
 
-        #expect(migrator(root).spaceFolderIndex().isEmpty)
+        #expect(migrator(root).spaceFolderMap().claimedSpaceIDs.isEmpty)
     }
 }

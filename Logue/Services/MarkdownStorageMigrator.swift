@@ -62,6 +62,10 @@ struct MarkdownStorageMigrator {
 
     struct ImportResult {
         var documents: [DocumentContent] = []
+        /// Identifiers carried by more than one file. Nothing is applied for these: with two files
+        /// claiming one document there is no way to know which the user means, and picking wrongly
+        /// replaces their current text with an older copy.
+        var ambiguousIdentifiers: Set<UUID> = []
         /// Markdown files carrying no identifier. Surfaced rather than dropped, so the
         /// caller can decide whether to adopt them as new documents.
         var unidentifiedFiles: [URL] = []
@@ -119,18 +123,22 @@ struct MarkdownStorageMigrator {
     /// folder is the live store rather than a fresh export: a document must keep the file
     /// it already has, or renaming a title — or renaming the *file*, which the user is
     /// invited to do — would leave the old file behind next to the new one.
+    /// `identitiesFor` limits which spaces get their `_space.md` rewritten. Defaults to all of them,
+    /// which is right for a migration and wasteful for a single save.
     func export(
         documents: [DocumentContent],
         spaces: [Space],
-        reusing existing: [UUID: URL] = [:]
+        reusing existing: [UUID: URL] = [:],
+        folders: SpaceFolderMap? = nil,
+        identitiesFor identities: [Space]? = nil
     ) -> ExportResult {
         var result = ExportResult()
+        // One walk, reused for every document: a space's folder is wherever the folder claiming it
+        // actually is, which is not always where its name says it should be.
+        let folders = folders ?? spaceFolderMap(in: spaces)
 
         for content in documents where !content.isTrashed {
-            let directory = rootURL.appendingPathComponent(
-                SpaceFolderLayout.directoryComponents(forSpace: content.spaceID, in: spaces)
-                    .joined(separator: "/")
-            )
+            let directory = folderURL(forSpace: content.spaceID, in: spaces, folders: folders)
             let current = existing[content.id]
             let url = destination(for: content, in: directory, current: current)
 
@@ -159,7 +167,12 @@ struct MarkdownStorageMigrator {
         // exist, and the folder a document belongs in is created by the loop above. Writing them
         // first left a space whose only folder came from a document with no `_space.md` in it —
         // which the next scan read as a space with no folder, and deleted.
-        writeSpaceFiles(spaces: spaces, into: &result)
+        writeSpaceFiles(
+            spaces: identities ?? spaces,
+            allSpaces: spaces,
+            folders: spaceFolderMap(in: spaces),
+            into: &result
+        )
 
         return result
     }
@@ -285,18 +298,29 @@ struct MarkdownStorageMigrator {
     /// One pass over the folder rather than a search per document: the naive version is
     /// quadratic and this runs on every save.
     func fileIndex() -> [UUID: URL] {
+        documentFiles().byID
+    }
+
+    /// The file each document occupies, plus the copies that lost.
+    ///
+    /// Duplicates are returned rather than dropped: a second file carrying a document's identifier
+    /// is invisible to the user and never written to again, so something has to be able to say so.
+    func documentFiles() -> (byID: [UUID: URL], duplicates: [URL]) {
         var index: [UUID: URL] = [:]
+        var duplicates: [URL] = []
         for url in markdownFiles() {
             guard let contents = try? String(contentsOf: url, encoding: .utf8),
                   let id = MarkdownDocumentFile.identifier(in: contents)
             else { continue }
-            // First writer wins, so a duplicated file cannot steal an identifier from the
-            // original on an arbitrary enumeration order.
+            // First in sorted order wins, so a duplicated file cannot take an identifier from the
+            // file the rest of the app is using: every pass makes the same choice.
             if index[id] == nil {
                 index[id] = url
+            } else {
+                duplicates.append(url)
             }
         }
-        return index
+        return (index, duplicates)
     }
 
     /// Reads a written file back and confirms it says what the document says.
@@ -333,13 +357,24 @@ struct MarkdownStorageMigrator {
     private func writeSpaceFiles(
         spaces: [Space],
         allSpaces: [Space]? = nil,
+        folders: SpaceFolderMap? = nil,
         into _: inout ExportResult
     ) {
+        let all = allSpaces ?? spaces
+        let folders = folders ?? spaceFolderMap(in: all)
+
         for space in spaces {
-            let directory = folderURL(forSpace: space.id, in: allSpaces ?? spaces)
+            let directory = folderURL(forSpace: space.id, in: all, folders: folders)
             guard FileManager.default.fileExists(atPath: directory.path) else { continue }
-            write(SpaceFile.render(space), toSpaceFileIn: directory)
+            writeIdentity(of: space, in: directory)
         }
+    }
+
+    /// Writes a space's identity, keeping any prose already in the file.
+    private func writeIdentity(of space: Space, in directory: URL) {
+        let url = directory.appendingPathComponent(SpaceFile.filename)
+        let existing = try? String(contentsOf: url, encoding: .utf8)
+        write(SpaceFile.render(space, keepingBodyOf: existing), toSpaceFileIn: directory)
     }
 
     private func write(_ rendered: String, toSpaceFileIn directory: URL) {
@@ -355,9 +390,11 @@ struct MarkdownStorageMigrator {
 
     // MARK: - Space folders
 
-    func folderURL(forSpace spaceID: UUID?, in spaces: [Space]) -> URL {
-        rootURL.appendingPathComponent(
-            SpaceFolderLayout.directoryComponents(forSpace: spaceID, in: spaces).joined(separator: "/")
+    /// Where a space's folder is, asking the folders before the names.
+    func folderURL(forSpace spaceID: UUID?, in spaces: [Space], folders: SpaceFolderMap? = nil) -> URL {
+        let folders = folders ?? spaceFolderMap(in: spaces)
+        return rootURL.appendingPathComponent(
+            folders.components(forSpace: spaceID, in: spaces).joined(separator: "/")
         )
     }
 
@@ -366,17 +403,51 @@ struct MarkdownStorageMigrator {
     /// By identifier rather than by name, because a name can be changed on either side and the
     /// identifier cannot. It is also how a space with no folder at all is recognised — which is
     /// how a folder deleted outside the app is noticed.
-    func spaceFolderIndex() -> [UUID: [String]] {
-        var index: [UUID: [String]] = [:]
+    /// `spaces` only breaks ties between folders claiming the same identity — see
+    /// `SpaceFolderMap.preferred`. The map is otherwise built entirely from what is on disk.
+    func spaceFolderMap(in spaces: [Space] = []) -> SpaceFolderMap {
+        var candidates: [UUID: [[String]]] = [:]
+
         for url in markdownFiles() where SpaceFile.isSpaceFile(filename: url.lastPathComponent) {
             guard let contents = try? String(contentsOf: url, encoding: .utf8),
                   let identity = SpaceFile.identity(from: contents)
             else { continue }
             let components = relativeComponents(ofDirectory: url.deletingLastPathComponent())
-            guard !components.isEmpty, index[identity.id] == nil else { continue }
-            index[identity.id] = components
+            guard !components.isEmpty else { continue }
+            candidates[identity.id, default: []].append(components)
         }
-        return index
+
+        var index: [UUID: [String]] = [:]
+        var duplicates: [[String]] = []
+        var duplicateOwners: [[String]: UUID] = [:]
+
+        for (id, paths) in candidates {
+            let ordered = paths.sorted { $0.joined(separator: "/") < $1.joined(separator: "/") }
+            guard let winner = SpaceFolderMap.preferred(ordered, for: id, in: spaces) else { continue }
+            index[id] = winner
+            for loser in ordered where loser != winner {
+                duplicates.append(loser)
+                duplicateOwners[loser] = id
+            }
+        }
+
+        return SpaceFolderMap(
+            componentsByID: index,
+            duplicatedFolders: duplicates.sorted { $0.joined() < $1.joined() },
+            duplicateOwners: duplicateOwners
+        )
+    }
+
+    /// Writes a space's identity into a folder we already know the path of.
+    ///
+    /// Needed when adopting a folder made outside the app: its path cannot be derived from the space
+    /// name, because the name came *from* the path and may be spelled differently — `-Work` derives
+    /// to `Work`. Without this the identity was never written at all, so the next scan saw a space
+    /// with no folder and deleted it.
+    func writeSpaceIdentity(for space: Space, atComponents components: [String]) {
+        let directory = rootURL.appendingPathComponent(components.joined(separator: "/"))
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        writeIdentity(of: space, in: directory)
     }
 
     /// Creates a folder for every space, for the migration that turns the setting on.
@@ -393,10 +464,10 @@ struct MarkdownStorageMigrator {
     }
 
     /// Creates a space's folder and writes its identity, for a space made in the app.
-    func createFolder(for space: Space, in spaces: [Space]) throws {
-        let directory = folderURL(forSpace: space.id, in: spaces)
+    func createFolder(for space: Space, in spaces: [Space], folders: SpaceFolderMap? = nil) throws {
+        let directory = folderURL(forSpace: space.id, in: spaces, folders: folders)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        write(SpaceFile.render(space), toSpaceFileIn: directory)
+        writeIdentity(of: space, in: directory)
     }
 
     /// Moves a space's folder, for a space renamed or re-parented in the app.
@@ -404,7 +475,12 @@ struct MarkdownStorageMigrator {
     /// The identity is rewritten afterwards so the moved folder still names its space.
     func moveFolder(from components: [String], for space: Space, in spaces: [Space]) throws {
         let source = rootURL.appendingPathComponent(components.joined(separator: "/"))
-        let destination = folderURL(forSpace: space.id, in: spaces)
+        // The destination is name-derived on purpose: renaming a space is precisely the act of
+        // asking for a folder named after the new name, so the folder map must not answer with
+        // where the folder currently is.
+        let destination = rootURL.appendingPathComponent(
+            SpaceFolderLayout.directoryComponents(forSpace: space.id, in: spaces).joined(separator: "/")
+        )
         guard source.standardizedFileURL != destination.standardizedFileURL,
               FileManager.default.fileExists(atPath: source.path)
         else { return }
@@ -413,7 +489,7 @@ struct MarkdownStorageMigrator {
             at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
         )
         try FileManager.default.moveItem(at: source, to: destination)
-        write(SpaceFile.render(space), toSpaceFileIn: destination)
+        writeIdentity(of: space, in: destination)
     }
 
     /// Moves a space's folder to the Trash, for a space deleted in the app.
@@ -430,8 +506,10 @@ struct MarkdownStorageMigrator {
     // MARK: - Import
 
     /// Reads every document from the folder.
-    func importAll(knownSpaces: [Space]) -> ImportResult {
+    func importAll(knownSpaces: [Space], folders: SpaceFolderMap? = nil) -> ImportResult {
         var result = ImportResult()
+        let folders = folders ?? spaceFolderMap(in: knownSpaces)
+        var seenIdentifiers: Set<UUID> = []
 
         for url in markdownFiles() {
             guard let contents = try? String(contentsOf: url, encoding: .utf8) else { continue }
@@ -448,9 +526,25 @@ struct MarkdownStorageMigrator {
                 continue
             }
 
-            // The folder is the authority on placement.
-            content.spaceID = SpaceFolderLayout.spaceID(
-                forDirectoryComponents: directoryComponents(of: url), in: knownSpaces
+            // The file's own timestamp, because nothing in the markdown records one an outside editor
+            // would update. Without this every import stamped the whole library with the launch time,
+            // so "Recent" was in an arbitrary order and switching the setting off wrote those
+            // invented dates into encrypted storage for good.
+            if let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate
+            {
+                content.modifiedAt = modified
+            }
+
+            guard seenIdentifiers.insert(content.id).inserted else {
+                result.ambiguousIdentifiers.insert(content.id)
+                continue
+            }
+
+            // The folder is the authority on placement, and which space a folder *is* comes from
+            // the identity inside it rather than from its name.
+            content.spaceID = folders.spaceID(
+                forComponents: directoryComponents(of: url), in: knownSpaces
             )
             result.documents.append(content)
         }
@@ -482,8 +576,8 @@ struct MarkdownStorageMigrator {
         content.title = fields.title
         content.body = fields.body
         content.tags = fields.tags
-        content.spaceID = SpaceFolderLayout.spaceID(
-            forDirectoryComponents: directoryComponents(of: url), in: knownSpaces
+        content.spaceID = spaceFolderMap(in: knownSpaces).spaceID(
+            forComponents: directoryComponents(of: url), in: knownSpaces
         )
 
         do {
@@ -506,8 +600,13 @@ struct MarkdownStorageMigrator {
         )
         else { return [] }
 
+        // Sorted, because two independent passes pick "the first file with this identifier" and a
+        // duplicated file makes that a real choice. Enumeration order is unspecified, so without
+        // this a save and a scan could each pick a different copy — and the losing copy then reads
+        // as an outside edit and overwrites the user's current text.
         return enumerator.compactMap { $0 as? URL }
             .filter { $0.pathExtension == DocumentFilename.fileExtension }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
     /// Every directory under the root, as components relative to it.

@@ -185,3 +185,43 @@ struct MarkdownFrontmatterTests {
         #expect(MarkdownFrontmatter.render(fields) == MarkdownFrontmatter.render(fields))
     }
 }
+
+/// Values that would break the frontmatter if written literally.
+@Suite("Frontmatter hostile values")
+struct MarkdownFrontmatterHostileValueTests {
+    @Test("A newline in a value does not produce a second line")
+    func newlineIsFlattened() {
+        let rendered = MarkdownFrontmatter.render([("title", .scalar("Hello\nWorld"))])
+
+        // Fence, one key line, fence.
+        #expect(rendered.components(separatedBy: "\n").filter { !$0.isEmpty }.count == 3)
+        #expect(MarkdownFrontmatter.parse(rendered).fields["title"] == .scalar("Hello World"))
+    }
+
+    @Test("A carriage return is flattened too")
+    func carriageReturnIsFlattened() {
+        let rendered = MarkdownFrontmatter.render([("title", .scalar("Hello\r\nWorld"))])
+
+        #expect(MarkdownFrontmatter.parse(rendered).fields["title"] == .scalar("Hello World"))
+    }
+
+    @Test("A newline in a list item does not break the list")
+    func newlineInListIsFlattened() {
+        let rendered = MarkdownFrontmatter.render([("tags", .list(["one\ntwo", "three"]))])
+
+        #expect(MarkdownFrontmatter.parse(rendered).fields["tags"] == .list(["one two", "three"]))
+    }
+
+    @Test("A document whose title holds a newline still round-trips through a file")
+    func documentWithNewlineTitleRoundTrips() throws {
+        var doc = WritingDocument()
+        doc.title = "Pasted\nTitle"
+        doc.body = "body"
+
+        let rendered = MarkdownDocumentFile.render(doc.content)
+        let readBack = try #require(MarkdownDocumentFile.content(from: rendered))
+
+        #expect(readBack.title == "Pasted Title")
+        #expect(readBack.body == "body")
+    }
+}

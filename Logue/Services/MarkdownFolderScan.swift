@@ -38,9 +38,10 @@ struct MarkdownFolderScan: Sendable {
         // permissions error, an iCloud placeholder, a write that failed earlier — was read as "the
         // folder is gone", and the answer to that is to delete the space and trash everything in
         // it. A folder sitting right there in Finder must never be read that way.
-        var present = Set(migrator.spaceFolderIndex().keys)
+        let folders = migrator.spaceFolderMap(in: spaces)
+        var present = folders.claimedSpaceIDs
         for space in spaces where !present.contains(space.id) {
-            let directory = migrator.folderURL(forSpace: space.id, in: spaces)
+            let directory = migrator.folderURL(forSpace: space.id, in: spaces, folders: folders)
             if FileManager.default.fileExists(atPath: directory.path) {
                 present.insert(space.id)
             }
@@ -56,12 +57,35 @@ struct MarkdownFolderScan: Sendable {
     /// Separate from the plan because it has to happen first: a document in a folder that has
     /// no space would otherwise resolve to no space and be filed at the top level.
     func spaceCreations(in spaces: [Space]) -> [SpaceFolderAdoption.Creation] {
-        SpaceFolderAdoption.creations(forDirectoryPaths: migrator.directories(), in: spaces)
+        SpaceFolderAdoption.creations(
+            forDirectoryPaths: migrator.directories(), in: spaces, folders: migrator.spaceFolderMap(in: spaces)
+        )
+    }
+
+    /// Spaces whose folder was renamed or moved outside the app.
+    func folderRenames(in spaces: [Space]) -> [SpaceFolderAdoption.FolderRename] {
+        guard isRootPresent else { return [] }
+        return SpaceFolderAdoption.renames(in: spaces, folders: migrator.spaceFolderMap(in: spaces))
+    }
+
+    /// Folders duplicated in Finder, each claiming a space another folder already claims.
+    func duplicatedSpaceFolders(in spaces: [Space] = []) -> [[String]] {
+        migrator.spaceFolderMap(in: spaces).duplicatedFolders
+    }
+
+    /// Files carrying an identifier another file already claims.
+    func duplicatedDocumentFiles() -> [URL] {
+        migrator.documentFiles().duplicates
     }
 
     /// The identity a folder claims for itself, so a rename stays the same space.
     func identity(forDirectoryComponents components: [String]) -> SpaceFile.Identity? {
         migrator.spaceIdentity(atDirectoryComponents: components)
+    }
+
+    /// Writes one space's identity into the folder it was adopted from.
+    func writeSpaceIdentity(for space: Space, atComponents components: [String]) {
+        migrator.writeSpaceIdentity(for: space, atComponents: components)
     }
 
     /// Gives every space a `_space.md`, so folders made outside the app gain an identity.
@@ -88,7 +112,10 @@ struct MarkdownFolderScan: Sendable {
         }
 
         return ExternalChangePlanner.plan(
-            scanned: imported.documents, adopted: adopted, known: known
+            scanned: imported.documents,
+            adopted: adopted,
+            known: known,
+            ambiguous: imported.ambiguousIdentifiers
         )
     }
 }

@@ -39,11 +39,21 @@ final class MarkdownFolderWatcher: @unchecked Sendable {
 
     // MARK: - Lifecycle
 
+    /// Whether the stream is running.
+    ///
+    /// Checked before a scan so a watcher that could not start — the folder was briefly missing at
+    /// launch, say — gets another chance. It used to be assigned before `start()` and guarded on
+    /// being nil, so one failed attempt meant the session never watched again and the user was never
+    /// told.
+    var isRunning: Bool {
+        queue.sync { stream != nil }
+    }
+
     func start() {
         queue.async { [self] in
             guard stream == nil else { return }
             guard FileManager.default.fileExists(atPath: url.path) else {
-                logger.info("Not watching: the folder does not exist yet")
+                logger.info("Not watching yet: the folder is not there")
                 return
             }
 

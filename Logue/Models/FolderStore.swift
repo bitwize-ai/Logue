@@ -114,7 +114,8 @@ final class SpaceStore {
         name: String,
         parentID: UUID?,
         icon: String? = nil,
-        color: String? = nil
+        color: String? = nil,
+        sortOrder: Int? = nil
     ) -> Space? {
         if let existing = spaces.first(where: { $0.id == id }) {
             return existing
@@ -123,12 +124,14 @@ final class SpaceStore {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
+        // A folder restored from a backup carries the order it had in `_space.md`; otherwise it goes
+        // last, where a newly noticed folder belongs.
         let maxOrder = spaces.filter { $0.parentID == parentID }.map(\.sortOrder).max() ?? -1
         let space = Space(
             id: id,
             name: trimmed,
             parentID: parentID,
-            sortOrder: maxOrder + 1,
+            sortOrder: sortOrder ?? (maxOrder + 1),
             icon: icon,
             color: color
         )

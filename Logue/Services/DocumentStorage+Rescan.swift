@@ -14,11 +14,19 @@ extension DocumentStorage {
 
     // MARK: - Watching
 
-    /// Starts watching the folder, if markdown storage is on.
+    /// Starts watching the folder, if markdown storage is on and it is not already running.
+    ///
+    /// Safe to call repeatedly, and called on every scan, because starting can fail: the folder may
+    /// be on a drive that is not mounted yet, or the user may have moved it. Guarding on "have we
+    /// made a watcher" instead of "is one running" meant a single failure at launch cost the whole
+    /// session's live updates, silently.
     func startWatchingIfNeeded() {
-        guard mode.isMarkdown, watcher == nil else { return }
+        guard mode.isMarkdown else { return }
+        if let watcher, watcher.isRunning {
+            return
+        }
 
-        let created = MarkdownFolderWatcher(url: Self.markdownRootURL) {
+        let created = watcher ?? MarkdownFolderWatcher(url: Self.markdownRootURL) {
             // The watcher fires on its own queue; everything a scan touches is main-actor
             // state.
             Task { @MainActor in
@@ -56,10 +64,21 @@ extension DocumentStorage {
         minimumVisibleDuration: Duration? = AppConstants.Delays.rescanMinimumVisible
     ) async -> ExternalChangePlan? {
         guard mode.isMarkdown else { return nil }
-        // A second press while one is running would fight the first over the same files.
-        guard !isScanning else { return nil }
+
+        // A scan arriving while one is running is remembered rather than dropped. Two at once would
+        // fight over the same files, but discarding the second lost the change that prompted it —
+        // and the window is wide, because the indicator is deliberately held for a moment.
+        if isScanning {
+            hasPendingScan = true
+            return nil
+        }
+
+        // Cheap when it is already running, and the only thing that recovers a watcher that could
+        // not start earlier.
+        startWatchingIfNeeded()
 
         beginScan()
+        invalidateFileIndex()
         let started = ContinuousClock.now
 
         let spaceStore = SpaceStore.shared
@@ -79,6 +98,10 @@ extension DocumentStorage {
         // to `adoptNewFolders` as a folder to recreate.
         deleteVanishedSpaces(using: scan, spaceStore: spaceStore)
 
+        // Renames before creations: a folder that moved is the same space, and reading it as a new
+        // one would leave the old space behind with no folder — which the next scan deletes.
+        applyFolderRenames(using: scan, spaceStore: spaceStore)
+
         // Folders next, and on the main actor because it mutates the space store: the
         // spaces have to exist before a document can be filed into one.
         adoptNewFolders(using: scan, spaceStore: spaceStore)
@@ -86,6 +109,18 @@ extension DocumentStorage {
         let spaces = spaceStore.spaces
         let known = documentStore.documents.map(\.content)
         let plan = await Task.detached { scan.plan(spaces: spaces, known: known) }.value
+
+        for folder in scan.duplicatedSpaceFolders(in: spaceStore.spaces) {
+            Self.scanLogger.info(
+                "Two folders claim the same space; ignoring the copy at depth \(folder.count, privacy: .public)"
+            )
+        }
+
+        if !plan.ambiguousIdentifiers.isEmpty {
+            Self.scanLogger.info(
+                "\(plan.ambiguousIdentifiers.count, privacy: .public) document(s) have more than one file and were left untouched"
+            )
+        }
 
         if !plan.ignoredIdentifiers.isEmpty {
             Self.scanLogger.info(
@@ -116,6 +151,13 @@ extension DocumentStorage {
         }
 
         endScan(summary: settled.summary)
+
+        // Whatever arrived mid-scan gets its own pass now, once, however many times it was asked for.
+        if hasPendingScan {
+            hasPendingScan = false
+            return await rescan(minimumVisibleDuration: nil)
+        }
+
         return settled
     }
 
@@ -148,6 +190,23 @@ extension DocumentStorage {
         )
     }
 
+    /// Follows folders that were renamed or moved in Finder.
+    private func applyFolderRenames(using scan: MarkdownFolderScan, spaceStore: SpaceStore) {
+        let renames = scan.folderRenames(in: spaceStore.spaces)
+        guard !renames.isEmpty else { return }
+
+        for rename in renames {
+            spaceStore.adoptSpaceRename(
+                id: rename.id,
+                name: rename.name,
+                parentID: SpaceFolderLayout.spaceID(
+                    forDirectoryComponents: rename.parentComponents, in: spaceStore.spaces
+                )
+            )
+        }
+        Self.scanLogger.info("Followed \(renames.count, privacy: .public) folder rename(s)")
+    }
+
     /// Turns folders created outside the app into spaces.
     ///
     /// A folder that already has a space must produce nothing here. The check runs through
@@ -158,36 +217,29 @@ extension DocumentStorage {
         guard !creations.isEmpty else { return }
 
         for creation in creations {
+            // A folder that already claims an existing space is not a creation — `folderRenames`
+            // handled it. What reaches here claims nothing, or claims a space that no longer
+            // exists: a folder restored from a backup, which keeps the identity it had.
             let identity = scan.identity(forDirectoryComponents: creation.components)
-            let resolution = SpaceFolderAdoption.resolve(
-                creation, claimedID: identity?.id, in: spaceStore.spaces
+            let adopted = spaceStore.adoptSpace(
+                id: identity?.id ?? UUID(),
+                name: creation.name,
+                parentID: SpaceFolderLayout.spaceID(
+                    forDirectoryComponents: creation.parentComponents, in: spaceStore.spaces
+                ),
+                icon: identity?.icon,
+                color: identity?.color,
+                sortOrder: identity?.sortOrder
             )
 
-            switch resolution {
-            case let .rename(id, name, parentComponents):
-                spaceStore.adoptSpaceRename(
-                    id: id,
-                    name: name,
-                    parentID: SpaceFolderLayout.spaceID(
-                        forDirectoryComponents: parentComponents, in: spaceStore.spaces
-                    )
-                )
-            case let .create(id, name, parentComponents):
-                spaceStore.adoptSpace(
-                    id: id ?? UUID(),
-                    name: name,
-                    parentID: SpaceFolderLayout.spaceID(
-                        forDirectoryComponents: parentComponents, in: spaceStore.spaces
-                    ),
-                    icon: identity?.icon,
-                    color: identity?.color
-                )
+            // Written at the folder's *known* path rather than one derived from the name. A folder
+            // called `-Work` gives a space called `-Work`, whose derived path is `Work` — a folder
+            // that does not exist. The identity therefore never got written, and the next scan read
+            // the space as having no folder and deleted it.
+            if let adopted {
+                scan.writeSpaceIdentity(for: adopted, atComponents: creation.components)
             }
         }
-
-        // Give the new folders their `_space.md`, so renaming one later reads as a rename
-        // rather than as a delete plus a create.
-        scan.writeSpaceIdentities(spaces: spaceStore.spaces)
         Self.scanLogger.info("Adopted \(creations.count, privacy: .public) folder(s) as spaces")
     }
 }

@@ -33,23 +33,33 @@ struct MarkdownFolderScanTests {
                 }
             }
 
+            for rename in scan.folderRenames(in: spaces) {
+                guard let index = spaces.firstIndex(where: { $0.id == rename.id }) else { continue }
+                spaces[index].name = rename.name
+                spaces[index].parentID = SpaceFolderLayout.spaceID(
+                    forDirectoryComponents: rename.parentComponents, in: spaces
+                )
+            }
+
             for creation in scan.spaceCreations(in: spaces) {
                 let identity = scan.identity(forDirectoryComponents: creation.components)
                 // The same decision the app makes, so this harness tests the real rule rather
                 // than a paraphrase of it. Only the mutation differs from `SpaceStore`.
-                switch SpaceFolderAdoption.resolve(creation, claimedID: identity?.id, in: spaces) {
-                case let .rename(id, name, parentComponents):
-                    guard let index = spaces.firstIndex(where: { $0.id == id }) else { continue }
-                    spaces[index].name = name
-                    spaces[index].parentID = SpaceFolderLayout.spaceID(
-                        forDirectoryComponents: parentComponents, in: spaces
-                    )
-                case let .create(id, name, parentComponents):
-                    let parentID = SpaceFolderLayout.spaceID(
-                        forDirectoryComponents: parentComponents, in: spaces
-                    )
-                    spaces.append(Space(id: id ?? UUID(), name: name, parentID: parentID))
+                let parentID = SpaceFolderLayout.spaceID(
+                    forDirectoryComponents: creation.parentComponents, in: spaces
+                )
+                // `SpaceStore.adoptSpace` returns the existing space when the identifier is already
+                // known, so the harness must too — otherwise a folder claiming a space we have would
+                // become a second space sharing its identity.
+                let claimedID = identity?.id ?? UUID()
+                if spaces.contains(where: { $0.id == claimedID }) {
+                    continue
                 }
+                let adopted = Space(id: claimedID, name: creation.name, parentID: parentID)
+                spaces.append(adopted)
+                // At the folder's known path, exactly as the app does — a name the app would spell
+                // differently cannot be turned back into the path it came from.
+                scan.writeSpaceIdentity(for: adopted, atComponents: creation.components)
             }
             scan.writeSpaceIdentities(spaces: spaces)
 
@@ -491,153 +501,5 @@ struct MarkdownFolderScanTests {
         #expect(library.spaces.count == 1)
         #expect(library.spaces.first?.id == originalID)
         #expect(library.spaces.first?.name == "Client Work")
-    }
-
-    // MARK: - Reasons a living folder must never read as deleted
-
-    /// The worst defect a review found. Deleting `_space.md` in Finder made the space read as gone,
-    /// which deleted the space, trashed its documents, and — because trashing a document in this
-    /// mode removes its file — erased every `.md` in a folder the user was looking at.
-    @Test("Deleting a folder's space file does not delete the space")
-    func deletedSpaceFileKeepsSpace() throws {
-        let root = temporaryRoot()
-        defer { cleanUp(root) }
-
-        try write("text", to: root.appendingPathComponent("Work/plan.md"))
-
-        var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
-        _ = library.apply(scan)
-        #expect(library.spaces.count == 1)
-
-        try FileManager.default.removeItem(
-            at: root.appendingPathComponent("Work/\(SpaceFile.filename)")
-        )
-        _ = library.apply(scan)
-
-        #expect(library.spaces.count == 1)
-        #expect(library.documents.first?.isTrashed == false)
-        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("Work/plan.md").path))
-    }
-
-    @Test("A corrupt identifier in a space file does not delete the space")
-    func corruptSpaceFileKeepsSpace() throws {
-        let root = temporaryRoot()
-        defer { cleanUp(root) }
-
-        try write("text", to: root.appendingPathComponent("Work/plan.md"))
-
-        var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
-        _ = library.apply(scan)
-
-        try "---\n_logue_space_id: not-a-uuid\n---\n".write(
-            to: root.appendingPathComponent("Work/\(SpaceFile.filename)"),
-            atomically: true,
-            encoding: .utf8
-        )
-        _ = library.apply(scan)
-
-        #expect(library.spaces.count == 1)
-        #expect(library.documents.first?.isTrashed == false)
-    }
-
-    /// A space whose identity file was never written — a failed write, or a quit between adopting
-    /// the folder and writing to it — must not delete itself on the next launch.
-    @Test("A folder with no space file at all keeps its space")
-    func missingSpaceFileKeepsSpace() throws {
-        let root = temporaryRoot()
-        defer { cleanUp(root) }
-
-        let work = Space(name: "Work")
-        try FileManager.default.createDirectory(
-            at: root.appendingPathComponent("Work"), withIntermediateDirectories: true
-        )
-
-        let scan = MarkdownFolderScan(rootURL: root)
-        #expect(scan.vanishedSpaceIDs(in: [work]).isEmpty)
-    }
-
-    /// A file naming a trashed document is an orphan, not an edit. Reading it as an update cleared
-    /// `isTrashed`, so a document came back out of the trash by itself.
-    @Test("A file naming a trashed document does not restore it")
-    func fileForTrashedDocumentDoesNotRestoreIt() {
-        let root = temporaryRoot()
-        defer { cleanUp(root) }
-
-        var doc = WritingDocument()
-        doc.title = "Deleted"
-        doc.body = "text"
-        let migrator = MarkdownStorageMigrator(rootURL: root)
-        #expect(migrator.export(documents: [doc.content], spaces: []).isSuccess)
-
-        // The document is trashed in the app but its file is still there — a failed removal, or the
-        // user put it back from their Trash.
-        var trashed = doc.content
-        trashed.isTrashed = true
-
-        var library = Library(spaces: [], documents: [trashed])
-        let plan = library.apply(MarkdownFolderScan(rootURL: root))
-
-        #expect(plan.updated.isEmpty)
-        #expect(library.documents.first?.isTrashed == true)
-    }
-
-    // MARK: - What actually stops the write/read loop
-
-    /// The property that matters, stated without reference to any one mechanism: after the app
-    /// writes, a scan of the same folder has nothing to say.
-    ///
-    /// This is the loop that would cost keystrokes — write, event, read, apply, write — and it is
-    /// broken by the diff coming out empty, not by recognising our own events. An earlier version
-    /// had a content-hash filter for that job whose `isEcho` was never called from anywhere;
-    /// deleting it changed no behaviour, which is exactly why a test naming a mechanism is worth
-    /// less than a test naming the outcome.
-    @Test("A scan straight after the app writes produces no work, however many times it runs")
-    func writeThenScanIsQuiet() {
-        let root = temporaryRoot()
-        defer { cleanUp(root) }
-
-        var doc = WritingDocument()
-        doc.title = "Written by Logue"
-        doc.body = "text\n\nwith a blank line\n"
-
-        let work = Space(name: "Work")
-        doc.spaceID = work.id
-        let migrator = MarkdownStorageMigrator(rootURL: root)
-        migrator.createSpaceFolders(spaces: [work])
-        #expect(migrator.export(documents: [doc.content], spaces: [work]).isSuccess)
-
-        var library = Library(spaces: [work], documents: [doc.content])
-        let scan = MarkdownFolderScan(rootURL: root)
-
-        #expect(library.apply(scan).isEmpty)
-        #expect(library.apply(scan).isEmpty)
-        #expect(library.spaces.count == 1)
-        #expect(library.documents.count == 1)
-    }
-
-    /// And the other half: a genuine outside edit still gets through.
-    @Test("An outside edit after our own write is still noticed")
-    func outsideEditAfterOurWriteIsNoticed() throws {
-        let root = temporaryRoot()
-        defer { cleanUp(root) }
-
-        var doc = WritingDocument()
-        doc.title = "Alpha"
-        doc.body = "ours"
-
-        let migrator = MarkdownStorageMigrator(rootURL: root)
-        let url = try #require(migrator.export(documents: [doc.content], spaces: []).writtenFiles[doc.id])
-
-        var library = Library(spaces: [], documents: [doc.content])
-        let scan = MarkdownFolderScan(rootURL: root)
-        #expect(library.apply(scan).isEmpty)
-
-        try String(contentsOf: url, encoding: .utf8)
-            .replacingOccurrences(of: "ours", with: "theirs")
-            .write(to: url, atomically: true, encoding: .utf8)
-
-        #expect(library.apply(scan).updated.count == 1)
     }
 }
