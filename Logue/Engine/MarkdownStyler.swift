@@ -203,6 +203,11 @@ final class MarkdownStyler {
         delimiterRanges = visitor.collectedDelimiterRanges
         markerRanges = []
 
+        // `[[wikilinks]]` are not CommonMark, so the visitor never sees them. Style
+        // them here: the target reads as a link and the brackets join the delimiter
+        // set, so they hide like any other markup and reveal on the caret line.
+        delimiterRanges += Self.styleWikiLinks(in: textStorage, config: config)
+
         for range in delimiterRanges where NSMaxRange(range) <= textStorage.length {
             textStorage.addAttributes([
                 .foregroundColor: NSColor.clear,
@@ -211,6 +216,81 @@ final class MarkdownStyler {
         }
 
         textStorage.endEditing()
+    }
+
+    /// Attribute carrying a wikilink's target, so a click can resolve it without
+    /// re-parsing the text.
+    static let wikiLinkTargetAttribute = NSAttributedString.Key("logueWikiLinkTarget")
+
+    /// Styles every wikilink and returns the bracket ranges to hide.
+    static func styleWikiLinks(
+        in textStorage: NSTextStorage,
+        config: StyleConfig
+    ) -> [NSRange] {
+        let links = WikiLinkParser.links(in: textStorage.string)
+        guard !links.isEmpty else { return [] }
+
+        var bracketRanges: [NSRange] = []
+        let delimiterLength = 2
+
+        for link in links where NSMaxRange(link.range) <= textStorage.length {
+            // Inner span is the whole reference minus the two bracket pairs.
+            let innerLocation = link.range.location + delimiterLength
+            let innerLength = link.range.length - (delimiterLength * 2)
+            guard innerLength > 0 else { continue }
+            let innerRange = NSRange(location: innerLocation, length: innerLength)
+
+            var attributes: [NSAttributedString.Key: Any] = [
+                .foregroundColor: config.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                wikiLinkTargetAttribute: link.target,
+            ]
+            // A `.link` attribute makes AppKit own the interaction: hand cursor on
+            // hover, plain click when the view is not editable, Command-click when it
+            // is, and delivery through `clickedOnLink(_:at:)`. Hand-rolling this in
+            // `mouseDown` did not receive the click at all.
+            if let url = WikiLinkURL.url(for: link.target) {
+                attributes[.link] = url
+            }
+            textStorage.addAttributes(attributes, range: innerRange)
+
+            // Exactly two ranges per link, opening then closing. `pairedDelimiter` pairs by
+            // `idx % 2`, so a third range for one link flips the parity of every delimiter after
+            // it — and `deleteBackward` trusts the pairing, so one Backspace rewrote a *different*
+            // link and `didChangeText()` persisted it. When there is an alias, the hidden
+            // `Target|` is folded into the opening delimiter instead of appended separately.
+            bracketRanges.append(
+                NSRange(location: link.range.location, length: delimiterLength + aliasHiddenLength(
+                    of: link, innerRange: innerRange, in: textStorage
+                ))
+            )
+            bracketRanges.append(
+                NSRange(location: NSMaxRange(link.range) - delimiterLength, length: delimiterLength)
+            )
+        }
+
+        return bracketRanges
+    }
+
+    /// How much of `Target|` to hide at the front of an aliased link, in UTF-16 units.
+    ///
+    /// Measured with `NSString.range(of:)` rather than `String.distance(from:to:)`. The latter
+    /// counts `Character`s while the result is used as an `NSRange.length`, so anything
+    /// multi-unit before the pipe — an emoji, a ZWJ sequence, a flag, an NFD accent — produced a
+    /// length short of the pipe. That left the raw target visible and handed `addAttributes` a
+    /// range ending inside a surrogate pair. Existing tests put emoji *before* the link, where
+    /// the arithmetic is already right, which is why it shipped green.
+    private static func aliasHiddenLength(
+        of link: WikiLink,
+        innerRange: NSRange,
+        in textStorage: NSTextStorage
+    ) -> Int {
+        guard link.displayText != nil else { return 0 }
+
+        let pipe = (textStorage.string as NSString).range(of: "|", range: innerRange)
+        guard pipe.location != NSNotFound else { return 0 }
+
+        return NSMaxRange(pipe) - innerRange.location
     }
 
     /// Force a re-restyle on next call (used when block text is updated externally).

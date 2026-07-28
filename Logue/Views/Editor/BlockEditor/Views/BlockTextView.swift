@@ -517,6 +517,9 @@ class MarkdownNSTextView: NSTextView {
 
     /// Whether inline markdown styling (bold, italic, etc.) is active.
     var markdownStyleEnabled: Bool = false
+    /// Retains the `[[` completion menu's target for as long as the menu is up.
+    /// Here rather than on `BlockNSTextView` because the completion menu lives on this class.
+    var wikiLinkMenuTarget: WikiLinkMenuTarget?
     /// The MarkdownStyler instance for WYSIWYG rendering.
     let markdownStyler = MarkdownStyler()
     /// Base font for restyling.
@@ -927,6 +930,8 @@ final class BlockNSTextView: MarkdownNSTextView {
     var onShiftArrowDownAtBottom: (() -> Void)?
     /// Auto-capitalize the first letter when the user starts typing in an empty block.
     var autoCapitalize: Bool = true
+    /// Retains the `[[` completion menu's ObjC target while the menu is open.
+    /// Extension-visible: +WikiLink
     /// When set, this NSTextView exposes itself as `AXHeading` with the given level (1-6)
     /// so VoiceOver rotor-by-heading navigation finds it. Paragraph / list blocks leave this nil.
     var headingLevel: Int? {
@@ -1287,6 +1292,22 @@ final class BlockNSTextView: MarkdownNSTextView {
             return
         }
         super.insertText(string, replacementRange: replacementRange)
+
+        // Typing the second `[` completes a `[[` trigger — offer link targets.
+        // Fired once here rather than on every keystroke because NSMenu is modal
+        // and would otherwise block typing; the menu's own type-select narrows it.
+        if let str = string as? String, str == "[", justTypedSecondOpeningBracket() {
+            presentWikiLinkCompletionIfNeeded()
+        }
+    }
+
+    /// Whether the two characters ending at the caret are `[[`.
+    private func justTypedSecondOpeningBracket() -> Bool {
+        let caret = selectedRange().location
+        guard caret >= 2 else { return false }
+        let nsString = string as NSString
+        guard caret <= nsString.length else { return false }
+        return nsString.substring(with: NSRange(location: caret - 2, length: 2)) == "[["
     }
 
     // MARK: - Cmd+A → Select All Blocks
@@ -1330,6 +1351,11 @@ final class BlockNSTextView: MarkdownNSTextView {
     // MARK: - Suggestion Click
 
     override func mouseDown(with event: NSEvent) {
+        // Command-click follows a wikilink instead of moving the caret.
+        if followWikiLinkIfCommandClicked(event) {
+            return
+        }
+
         goalColumnX = nil
         let point = convert(event.locationInWindow, from: nil)
         if let suggestion = suggestionAtPoint(point) {

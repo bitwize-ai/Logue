@@ -223,6 +223,10 @@ struct DocumentWorkspaceView: View {
                 onScrollToText: { scrollToText = $0 },
                 onSuggestionsSave: { store.setVocabSuggestions($0, for: doc.id) }
             )
+        case .links:
+            LinksPanelView(documentID: doc.id, documentBody: doc.body)
+        case .properties:
+            PropertiesPanelView(document: doc) { store.updateDocument($0) }
         }
     }
 

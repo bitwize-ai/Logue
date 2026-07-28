@@ -36,31 +36,37 @@ enum ContentListItem: Hashable {
 struct MainWindowView: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(\.colorScheme) private var colorScheme
-    @State private var store = DocumentStore.shared
-    @State private var meetingStore = MeetingStore.shared
+    // Extension-visible: +Navigation
+    @State var store = DocumentStore.shared
+    // Extension-visible: +Navigation
+    @State var meetingStore = MeetingStore.shared
     @State private var spaceStore = SpaceStore.shared
     @State private var insightsProvider = InsightsStatsProvider(meetingStore: .shared, documentStore: .shared)
     @State private var templateStore = TemplateStore.shared
 
+    // Extension-visible: +Navigation
     /// Default landing surface is Ask Logue (Phase A IA shift). Persists the
     /// last-selected non-document surface so a user who navigated to a meeting
     /// detail and quit returns to the meeting on relaunch — but a fresh
     /// install or one without a stored value lands on chat, not Overview.
-    @State private var sidebarSelection: SidebarItem? = Self.loadLastSidebarSelection() ?? .agentChat
+    @State var sidebarSelection: SidebarItem? = Self.loadLastSidebarSelection() ?? .agentChat
+    // Extension-visible: +Navigation
     /// When true, the content area shows the editor/workspace instead of the list.
-    @State private var isEditing = false
+    @State var isEditing = false
 
     /// U10: Version-counter suppression to prevent onChange feedback loops.
     /// When sidebar drives a store change, store onChange should ignore it (and vice versa).
     /// Uses monotonic counters instead of booleans to avoid race conditions from rapid selections.
     @State private var sidebarChangeVersion: Int = 0
-    @State private var storeChangeVersion: Int = 0
+    // Extension-visible: +Navigation
+    @State var storeChangeVersion: Int = 0
     @State private var lastSeenSidebarVersion: Int = 0
     @State private var lastSeenStoreVersion: Int = 0
 
     @State private var showCommandPalette = false
+    // Extension-visible: +Navigation
     /// Remembers the sidebar context when entering editing mode (since sidebarSelection is nilled out).
-    @State private var editingSourceSelection: SidebarItem?
+    @State var editingSourceSelection: SidebarItem?
 
     var body: some View {
         NavigationSplitView {
@@ -322,8 +328,9 @@ struct MainWindowView: View {
         .background(AppThemeConstants.surfaceBackground)
     }
 
+    // Extension-visible: +Navigation
     /// A single segment in the breadcrumb trail.
-    private struct BreadcrumbSegment: Identifiable {
+    struct BreadcrumbSegment: Identifiable {
         var id: String {
             if let item = sidebarItem {
                 return "\(item)"
@@ -397,31 +404,6 @@ struct MainWindowView: View {
         case .trash: return "Trash"
         case .document, .meeting: return "Back"
         }
-    }
-
-    private func handleBreadcrumbClick(_ segment: BreadcrumbSegment) {
-        guard let item = segment.sidebarItem else { return }
-        storeChangeVersion += 1
-        withAnimation(.easeOut(duration: 0.08)) {
-            isEditing = false
-            store.selectedDocumentID = nil
-            meetingStore.selectedMeetingID = nil
-        }
-        sidebarSelection = item
-    }
-
-    // MARK: - Navigation
-
-    private func goBack() {
-        let destination = editingSourceSelection ?? .overview
-        // Mark as store-driven so sidebar onChange doesn't re-process
-        storeChangeVersion += 1
-        withAnimation(.easeOut(duration: 0.08)) {
-            isEditing = false
-            store.selectedDocumentID = nil
-            meetingStore.selectedMeetingID = nil
-        }
-        sidebarSelection = destination
     }
 
     // MARK: - Command Palette Commands

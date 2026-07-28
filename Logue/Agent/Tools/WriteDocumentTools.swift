@@ -120,10 +120,13 @@ struct UpdateDocumentTool: AgentTool {
                 throw AgentToolError.documentNotFound(idString)
             }
             doc.body = trimmedBody
-            if let newTitle, !newTitle.isEmpty {
-                doc.title = newTitle
-            }
             store.updateDocument(doc)
+
+            // After the body write and through `applyTitle`, so the agent renaming a document
+            // repairs inbound links and deduplicates the title exactly as a user rename does.
+            if let newTitle, !newTitle.isEmpty {
+                store.applyTitle(newTitle, to: documentID)
+            }
         }
 
         return "Updated document \(documentID.uuidString) (\(trimmedBody.count) chars)."

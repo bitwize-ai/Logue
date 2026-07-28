@@ -57,6 +57,10 @@ final class BackupManager {
         let meetings: [MeetingNote]
         let documents: [WritingDocument]
         let spaces: [Space]
+        /// Saved views and document types. Optional so a v1 backup — written before they existed —
+        /// still decodes; a non-optional field would make every existing backup unreadable.
+        let savedViews: [SavedView]?
+        let documentTypes: [DocumentType]?
 
         static let currentVersion = 1
     }
@@ -78,7 +82,12 @@ final class BackupManager {
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
             meetings: meetingStore.meetings,
             documents: documentStore.documents,
-            spaces: spaceStore.spaces
+            spaces: spaceStore.spaces,
+            // Included because a document's properties are meaningless without the views that
+            // filter on them: a backup that restored documents but not their saved views would
+            // look like the views had been lost.
+            savedViews: documentStore.savedViews,
+            documentTypes: documentStore.documentTypes
         )
 
         do {
@@ -192,6 +201,9 @@ final class BackupManager {
             meetingStore.meetings = envelope.meetings
             documentStore.documents = envelope.documents
             spaceStore.spaces = envelope.spaces
+            documentStore.replaceOrganisation(
+                savedViews: envelope.savedViews, documentTypes: envelope.documentTypes
+            )
             // B-N7: Rebuild index maps and invalidate caches after replace-import
             meetingStore.rebuildIndexMap()
             meetingStore.invalidateCaches()
@@ -249,7 +261,9 @@ final class BackupManager {
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
             meetings: meetingStore.meetings,
             documents: documentStore.documents,
-            spaces: spaceStore.spaces
+            spaces: spaceStore.spaces,
+            savedViews: documentStore.savedViews,
+            documentTypes: documentStore.documentTypes
         )
         let filename = backupFilename()
 

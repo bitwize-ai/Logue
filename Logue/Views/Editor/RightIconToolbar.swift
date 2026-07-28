@@ -12,6 +12,9 @@ enum EditorTool: String, CaseIterable, Identifiable, ToolbarTool {
     case rewrite = "Rewrite"
     case vocabularyEnhancement = "Vocabulary"
     case verify = "Verify"
+    // Connect group
+    case links = "Links"
+    case properties = "Properties"
 
     var id: String {
         rawValue
@@ -25,6 +28,8 @@ enum EditorTool: String, CaseIterable, Identifiable, ToolbarTool {
         case .rewrite: "arrow.clockwise.circle"
         case .vocabularyEnhancement: "textformat.alt"
         case .verify: "shield.lefthalf.filled"
+        case .links: "link"
+        case .properties: "list.bullet.rectangle"
         }
     }
 
@@ -34,11 +39,13 @@ enum EditorTool: String, CaseIterable, Identifiable, ToolbarTool {
             "Write"
         case .rewrite, .vocabularyEnhancement, .verify:
             "Refine"
+        case .links, .properties:
+            "Connect"
         }
     }
 
     static var groupOrder: [String] {
-        ["Write", "Refine"]
+        ["Write", "Refine", "Connect"]
     }
 
     var preferredPanelWidth: CGFloat {
@@ -47,6 +54,8 @@ enum EditorTool: String, CaseIterable, Identifiable, ToolbarTool {
         case .review: 340
         case .rewrite, .proofreader, .verify: 320
         case .vocabularyEnhancement: 300
+        case .links: 300
+        case .properties: 300
         }
     }
 }
