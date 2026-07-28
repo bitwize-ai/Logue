@@ -27,25 +27,22 @@ extension DocumentStore {
     /// Reading and parsing happen off the main actor. A vault's worth of files on
     /// a slow or network volume would otherwise block the main thread for as long
     /// as the reads took, with no way to tell the app was still alive.
+    /// A vault is a tree, so a chosen directory is walked and its subfolders become sub-spaces.
+    /// A chosen file lands directly in `spaceID`.
     @discardableResult
     func importFiles(at urls: [URL], into spaceID: UUID?) async -> ImportOutcome {
         let logger = Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
 
-        // Partitioned before the read, not after: a file the folder already stores is discarded
-        // either way, and reading one only to drop it costs the whole file.
-        var outcome = ImportOutcome()
-        var readable: [URL] = []
-        for url in urls {
-            if let reason = Self.alreadyStoredReason(for: url) {
-                outcome.skipped.append(ImportOutcome.Skipped(file: url.lastPathComponent, reason: reason))
-            } else {
-                readable.append(url)
-            }
-        }
-
-        let parsed = await Task.detached(priority: .userInitiated) {
-            readable.map { url in (name: url.lastPathComponent, result: Self.read(url)) }
+        // Expanding directories, partitioning already-stored files, and reading are all one
+        // detached pass. Every step of it touches the filesystem, and a vault on a network volume
+        // makes that a wait the main actor must not be holding.
+        let storedRoot = Self.storedRootPath
+        let scanned = await Task.detached(priority: .userInitiated) {
+            Self.collect(from: urls, storedRoot: storedRoot)
         }.value
+
+        var outcome = ImportOutcome()
+        outcome.skipped = scanned.skipped
 
         // Re-checked after the await, not only by the caller before it. Reading a batch off a
         // network volume takes long enough for the user to delete the space in the meantime, and
@@ -56,42 +53,180 @@ extension DocumentStore {
             destination = nil
         }
 
-        for file in parsed {
-            // Creating a document is synchronous, and this whole method is main-actor, so without
-            // this the batch ran as one uninterrupted turn — SwiftUI could not draw a frame until
-            // the last file was done, which is a beachball with no spinner and no way to cancel.
-            // Yielding costs a batch nothing measurable and lets the window stay alive.
+        // Grouped by the folder each file came from, so one pass creates one space and the
+        // documents under it. The empty path is the top level of the selection.
+        for path in scanned.files.keys.sorted(by: { $0.joined(separator: "/") < $1.joined(separator: "/") }) {
+            // Creating documents is synchronous and this method is main-actor, so without a yield
+            // the batch ran as one uninterrupted turn: SwiftUI could not draw a frame until the
+            // last file was done, which is a beachball with no spinner and nothing to cancel.
             await Task.yield()
 
-            switch file.result {
-            case let .success(document):
-                createDocument(
-                    title: document.title,
-                    body: document.body,
-                    tags: document.tags,
-                    inSpace: destination,
-                    select: false
-                )
-                outcome.imported += 1
-            case let .failure(error):
-                let reason = (error as? MarkdownImport.ImportError).map(Self.description) ?? "could not be read"
-                outcome.skipped.append(ImportOutcome.Skipped(file: file.name, reason: reason))
-                // The underlying error too: everything that is not an ImportError collapses to
-                // one reason, and without this a report of "it skipped 40 files" cannot be
-                // diagnosed at all.
-                logger.warning(
-                    """
-                    Import skipped \(file.name, privacy: .private): \(reason, privacy: .public)                     (\(
-                        error.localizedDescription,
-                        privacy: .public
+            guard let group = scanned.files[path] else { continue }
+            let target = path.isEmpty ? destination : spaceFor(path: path, under: destination)
+
+            var drafts: [DocumentDraft] = []
+            for file in group {
+                switch file.result {
+                case let .success(document):
+                    drafts.append(DocumentDraft(
+                        title: document.title,
+                        body: document.body,
+                        tags: document.tags,
+                        createdAt: document.createdAt,
+                        properties: document.properties
                     ))
-                    """
-                )
+                case let .failure(error):
+                    outcome.skipped.append(ImportOutcome.Skipped(
+                        file: file.name, reason: Self.reason(for: error)
+                    ))
+                    // The underlying error too: everything that is not an ImportError collapses to
+                    // one reason, and without this a report of "it skipped 40 files" cannot be
+                    // diagnosed at all.
+                    logger.warning(
+                        """
+                        Import skipped \(file.name, privacy: .private): \
+                        \(Self.reason(for: error), privacy: .public) \
+                        (\(error.localizedDescription, privacy: .public))
+                        """
+                    )
+                }
             }
+
+            createDocuments(drafts, inSpace: target)
+            outcome.imported += drafts.count
         }
 
-        logger.info("Imported \(outcome.imported) of \(urls.count) file(s)")
+        logger.info("Imported \(outcome.imported) document(s) from \(urls.count) selected item(s)")
         return outcome
+    }
+
+    private static func reason(for error: Error) -> String {
+        (error as? MarkdownImport.ImportError).map(description) ?? "could not be read"
+    }
+
+    /// Finds or creates the space a folder path maps to, creating each level as it goes.
+    ///
+    /// Matched by name among siblings rather than created blindly, so importing the same vault
+    /// twice does not produce `Projects` and `Projects (2)` side by side.
+    private func spaceFor(path: [String], under root: UUID?) -> UUID? {
+        let spaces = SpaceStore.shared
+        var parent = root
+        for component in path {
+            let existing = spaces.spaces.first {
+                $0.parentID == parent && $0.name.compare(component, options: [.caseInsensitive]) == .orderedSame
+            }
+            guard let next = existing ?? spaces.createSpace(name: component, parentID: parent) else {
+                // Nothing more can be nested under a level that could not be made. Filing the rest
+                // at the parent keeps the documents rather than dropping them on the floor.
+                return parent
+            }
+            parent = next.id
+        }
+        return parent
+    }
+
+    /// One file read, with the folder path it should be filed under.
+    struct ScannedFile {
+        let name: String
+        let result: Result<MarkdownImport.ImportedDocument, Error>
+    }
+
+    /// What a selection turned out to contain: files grouped by their folder path relative to the
+    /// selection, plus everything refused before it was read.
+    struct ScannedSelection {
+        var files: [[String]: [ScannedFile]] = [:]
+        var skipped: [ImportOutcome.Skipped] = []
+    }
+
+    /// How deep a vault is walked.
+    ///
+    /// Not a guess at what is reasonable so much as a stop: a symlink loop or a pathological tree
+    /// would otherwise walk forever on a background thread with nothing watching it.
+    private static let maxImportDepth = 12
+
+    /// Expands the selection into readable files, walking directories.
+    ///
+    /// `nonisolated` and pure filesystem work, so a vault on a slow volume is read off the main
+    /// actor. Directories are walked rather than refused because a vault *is* a tree — importing
+    /// one folder at a time, flattened into a single space, was the whole shape of the problem.
+    nonisolated static func collect(from urls: [URL], storedRoot: String?) -> ScannedSelection {
+        var scanned = ScannedSelection()
+        for url in urls {
+            if isDirectory(url) {
+                walk(url, relativeTo: [], depth: 0, storedRoot: storedRoot, into: &scanned)
+            } else {
+                add(url, at: [], storedRoot: storedRoot, into: &scanned)
+            }
+        }
+        return scanned
+    }
+
+    nonisolated private static func walk(
+        _ directory: URL,
+        relativeTo path: [String],
+        depth: Int,
+        storedRoot: String?,
+        into scanned: inout ScannedSelection
+    ) {
+        guard depth <= maxImportDepth else {
+            scanned.skipped.append(ImportOutcome.Skipped(
+                file: directory.lastPathComponent, reason: "nested too deeply"
+            ))
+            return
+        }
+
+        let contents: [URL]
+        do {
+            contents = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
+                // `.obsidian`, `.trash` and `.git` are configuration and history, not notes.
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            scanned.skipped.append(ImportOutcome.Skipped(
+                file: directory.lastPathComponent, reason: "could not be read"
+            ))
+            return
+        }
+
+        for url in contents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            if isDirectory(url) {
+                walk(
+                    url, relativeTo: path + [url.lastPathComponent],
+                    depth: depth + 1, storedRoot: storedRoot, into: &scanned
+                )
+            } else {
+                add(url, at: path, storedRoot: storedRoot, into: &scanned)
+            }
+        }
+    }
+
+    /// Reads one file into the selection, unless it is already ours or not a note at all.
+    ///
+    /// Files with an extension we do not import are passed over in silence when they were found by
+    /// walking a folder — a vault is full of images and PDFs, and listing every one of them as
+    /// "skipped" would bury the failures that matter. A file the user picked by hand is still
+    /// reported, because they meant that one.
+    nonisolated private static func add(
+        _ url: URL, at path: [String], storedRoot: String?, into scanned: inout ScannedSelection
+    ) {
+        let name = url.lastPathComponent
+        guard MarkdownImport.allowedExtensions.contains(url.pathExtension.lowercased()) else {
+            if path.isEmpty {
+                scanned.skipped.append(ImportOutcome.Skipped(file: name, reason: "not a markdown or text file"))
+            }
+            return
+        }
+        if let reason = alreadyStoredReason(for: url, storedRoot: storedRoot) {
+            scanned.skipped.append(ImportOutcome.Skipped(file: name, reason: reason))
+            return
+        }
+        scanned.files[path, default: []].append(ScannedFile(name: name, result: read(url)))
+    }
+
+    nonisolated private static func isDirectory(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
 
     /// Reads and parses one file. `nonisolated` so a batch can run off the main
@@ -190,18 +325,27 @@ extension DocumentStore {
     /// or is about to be adopted as one by the next scan. Importing it would make a second
     /// document from the same text and leave the original to be adopted separately. Symlinks are
     /// resolved on both sides so an aliased path cannot slip past.
-    private static func alreadyStoredReason(for url: URL) -> String? {
+    /// The folder documents already live in, when markdown storage is on.
+    ///
+    /// Resolved on the main actor and handed to the walk, which is `nonisolated` so a vault on a
+    /// slow volume is read off the main thread. Reading `DocumentStorage.shared` from inside the
+    /// walk would put main-actor state on a background thread.
+    static var storedRootPath: String? {
         guard DocumentStorage.shared.mode.isMarkdown else { return nil }
+        return DocumentStorage.markdownRootURL.resolvingSymlinksInPath()
+            .standardizedFileURL.path.lowercased()
+    }
+
+    nonisolated private static func alreadyStoredReason(for url: URL, storedRoot: String?) -> String? {
+        guard let storedRoot else { return nil }
         // Only `.md`, because that is all a scan adopts. Refusing a `.txt` sitting in the folder
         // would leave it importable by no route at all, under a message that is not even true.
         guard url.pathExtension.lowercased() == "md" else { return nil }
 
         // Compared case-insensitively: the default APFS volume is, so a path reached through a
         // differently-cased component would otherwise slip past and be imported twice.
-        let root = DocumentStorage.markdownRootURL.resolvingSymlinksInPath()
-            .standardizedFileURL.path.lowercased()
         let file = url.resolvingSymlinksInPath().standardizedFileURL.path.lowercased()
-        guard file.hasPrefix(root + "/") else { return nil }
+        guard file.hasPrefix(storedRoot + "/") else { return nil }
         return "already in the Logue folder"
     }
 

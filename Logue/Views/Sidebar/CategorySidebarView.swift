@@ -662,10 +662,17 @@ private struct SpaceTreeRow: View {
         let fileFilter = ImportFileFilter()
         panel.delegate = fileFilter
         panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
+        // A vault is a tree. With this off you could navigate into a folder but never choose one,
+        // and `NSOpenPanel` will not multi-select across directories — so migrating a 40-folder
+        // vault was 40 rounds of this panel, each landing flat in one space with the hierarchy
+        // gone. Choosing the vault itself now imports it whole, subfolders becoming sub-spaces.
+        panel.canChooseDirectories = true
         panel.canChooseFiles = true
-        panel.title = "Import Files into \(String(space.name.prefix(60)))"
-        panel.message = "Markdown and plain-text files become documents in this space."
+        panel.title = "Import into \(String(space.name.prefix(60)))"
+        panel.message = """
+        Choose markdown or text files, or a folder to import a whole vault — \
+        its subfolders become spaces.
+        """
 
         // The panel outlives this call, so read `space.id` now rather than through
         // `space` later. `selection` is a Binding to state owned further up the

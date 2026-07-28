@@ -98,6 +98,74 @@ struct ImportFileReadingTests {
         }
     }
 
+    // MARK: - Walking a vault
+
+    private func vault() throws -> URL {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let files: [String: String] = [
+            "Inbox.md": "# Inbox\n\nTop level.",
+            "Projects/Apollo.md": "# Apollo\n\nOne.",
+            "Projects/Notes/Deep.md": "# Deep\n\nTwo.",
+            "Attachments/diagram.png": "not a note",
+            ".obsidian/workspace.json": "{}",
+        ]
+        for (path, contents) in files {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try Data(contents.utf8).write(to: url)
+        }
+        return root
+    }
+
+    /// A vault is a tree, and importing it one folder at a time — flattened into one space — was
+    /// the whole shape of the problem this walk exists for.
+    @Test("A chosen folder is walked, and subfolders keep their place in the tree")
+    func directoryIsWalkedIntoPaths() throws {
+        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil)
+
+        #expect(scanned.files[[]]?.map(\.name) == ["Inbox.md"])
+        #expect(scanned.files[["Projects"]]?.map(\.name) == ["Apollo.md"])
+        #expect(scanned.files[["Projects", "Notes"]]?.map(\.name) == ["Deep.md"])
+    }
+
+    /// A vault is full of images and PDFs. Reporting every one as "skipped" would bury the
+    /// failures that actually need the user's attention.
+    @Test("Attachments and hidden config are passed over without being reported")
+    func attachmentsAreNotReportedAsSkipped() throws {
+        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil)
+
+        #expect(scanned.skipped.isEmpty)
+        #expect(scanned.files[["Attachments"]] == nil)
+        #expect(scanned.files.keys.contains { $0.contains(".obsidian") } == false)
+    }
+
+    /// A file the user picked by hand is different: they meant that one, so silence would read
+    /// as the import having worked.
+    @Test("A hand-picked file of the wrong type is reported")
+    func handPickedWrongTypeIsReported() throws {
+        let url = try temporaryFile(named: "photo.png", containing: Data("x".utf8))
+        let scanned = DocumentStore.collect(from: [url], storedRoot: nil)
+
+        #expect(scanned.files.isEmpty)
+        #expect(scanned.skipped.map(\.file) == ["photo.png"])
+    }
+
+    @Test("Files already in the Logue folder are refused before being read")
+    func alreadyStoredIsRefused() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("note.md")
+        try Data("# Note".utf8).write(to: url)
+
+        let storedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path.lowercased()
+        let scanned = DocumentStore.collect(from: [url], storedRoot: storedRoot)
+
+        #expect(scanned.files.isEmpty)
+        #expect(scanned.skipped.first?.reason == "already in the Logue folder")
+    }
+
     // MARK: - End to end
 
     @Test("A frontmatter file on disk becomes a document")
