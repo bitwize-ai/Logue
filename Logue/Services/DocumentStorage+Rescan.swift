@@ -101,11 +101,14 @@ extension DocumentStorage {
             return nil
         }
 
-        // Which documents the walk could possibly have seen, recorded before it starts. A document
-        // created afterwards — an import, a new note — is absent from the walk for the only reason
-        // that is not a deletion, and trashing it takes its file with it. Reading this after the
-        // walk instead made every document created during it a deletion.
-        let documentsPredatingWalk = Set(documentStore.documents.map(\.id))
+        // What the library held before the walk began — the contents, not only the identifiers.
+        //
+        // Everything downstream that asks "did this move on during the scan?" has to ask it against
+        // *this*, because the walk is the long wait and it is where the user types. Reading the
+        // baseline afterwards made the question almost meaningless: it only ever caught mutations
+        // landing during the short plan step, so an edit made while the folder was being read was
+        // compared against itself, looked settled, and the file's older text was written over it.
+        let baseline = documentStore.documents.map(\.content)
 
         // One traversal, read off the main actor, handed to every step below. Each of those steps
         // used to start its own — seven per scan, three of them opening every document in the
@@ -139,14 +142,20 @@ extension DocumentStorage {
             duplicatedFolders: scan.duplicatedSpaceFolders(in: spaceStore.spaces, using: snapshot)
         )
 
-        // The plan was diffed against `known`, taken before the folder was read. The user can type
-        // during that read, and applying an update built from the older snapshot would replace what
-        // they just typed with what the file said beforehand. Anything that moved on is dropped and
-        // left for the next scan, which diffs against the newer text.
+        // Compared against the pre-walk baseline, not `known`. `known` is read after the walk, so
+        // using it asked whether anything changed during the *plan* — a few milliseconds — rather
+        // than during the read, which is the whole window. Three ordinary things happening while
+        // the folder is read went wrong that way: an edit was overwritten with the file's older
+        // text, a restore was undone and its file binned, and a document dragged to another space
+        // jumped back.
+        //
+        // `known` still feeds the plan itself. It has to: `deleteVanishedSpaces` above legitimately
+        // trashes documents, and diffing against a baseline that predates that would resurrect them.
+        let current = documentStore.documents.map(\.content)
         var settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
-            plan, comparedTo: known, current: documentStore.documents.map(\.content)
+            plan, comparedTo: baseline, current: current
         )
-        keepDocumentsCreatedDuringWalk(in: &settled, predatingWalk: documentsPredatingWalk)
+        keepDeletionsThatMovedOn(in: &settled, baseline: baseline, current: current)
 
         if settled.updated.count != plan.updated.count {
             Self.scanLogger.info(
@@ -340,22 +349,22 @@ extension DocumentStorage {
         }.value
     }
 
-    /// Applies `ExternalChangePlanner.keepingDocumentsCreatedDuringWalk` and reports what it saved.
+    /// Applies `ExternalChangePlanner.keepingDeletionsThatMovedOn` and reports what it saved.
     ///
     /// The rule itself lives next to `discardingUpdatesThatMovedOn`, where it is pure and tested;
     /// what stays here is the part that needs the store — logging, and asking for another scan so
     /// the rescued documents get diffed against a walk that could have seen them.
-    private func keepDocumentsCreatedDuringWalk(
-        in plan: inout ExternalChangePlan, predatingWalk: Set<UUID>
+    private func keepDeletionsThatMovedOn(
+        in plan: inout ExternalChangePlan, baseline: [DocumentContent], current: [DocumentContent]
     ) {
-        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
-            plan, predatingWalk: predatingWalk
+        let (settled, kept) = ExternalChangePlanner.keepingDeletionsThatMovedOn(
+            plan, baseline: baseline, current: current
         )
         guard !kept.isEmpty else { return }
 
         plan = settled
         Self.scanLogger.info(
-            "Kept \(kept.count, privacy: .public) document(s) created while the folder was being read"
+            "Kept \(kept.count, privacy: .public) document(s) whose file appeared during the scan"
         )
         hasPendingScan = true
     }

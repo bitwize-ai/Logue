@@ -217,10 +217,11 @@ struct ExternalChangePlanTests {
 /// the one failure this feature cannot have.
 @Suite("Concurrent edit protection")
 struct ConcurrentEditProtectionTests {
-    private func document(_ title: String, body: String) -> DocumentContent {
+    private func document(_ title: String, body: String = "body", trashed: Bool = false) -> DocumentContent {
         var doc = WritingDocument()
         doc.title = title
         doc.body = body
+        doc.isTrashed = trashed
         return doc.content
     }
 
@@ -289,29 +290,62 @@ struct ConcurrentEditProtectionTests {
     /// from that walk for the one reason that is not a deletion.
     @Test("A document created during the walk is not trashed for being absent from it")
     func createdDuringWalkSurvives() {
-        let existed = UUID()
-        let createdSince = UUID()
+        let existed = document("Existed")
+        let createdSince = document("Created since")
 
         var plan = ExternalChangePlan()
-        plan.trashed = [createdSince]
+        plan.trashed = [createdSince.id]
 
-        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
-            plan, predatingWalk: [existed]
+        let (settled, kept) = ExternalChangePlanner.keepingDeletionsThatMovedOn(
+            plan, baseline: [existed], current: [existed, createdSince]
         )
         #expect(settled.trashed.isEmpty)
-        #expect(kept == [createdSince])
+        #expect(kept == [createdSince.id])
+    }
+
+    /// Restoring writes the file, but the walk has already been and the existence cross-check
+    /// reads the same snapshot — so nothing else notices. Trashing it again ran `removeFile` over
+    /// the file the restore had just written.
+    @Test("A document restored during the walk is not trashed again")
+    func restoredDuringWalkSurvives() {
+        let trashed = document("Restored", trashed: true)
+        var restored = trashed
+        restored.isTrashed = false
+
+        var plan = ExternalChangePlan()
+        plan.trashed = [trashed.id]
+
+        let (settled, kept) = ExternalChangePlanner.keepingDeletionsThatMovedOn(
+            plan, baseline: [trashed], current: [restored]
+        )
+        #expect(settled.trashed.isEmpty)
+        #expect(kept == [trashed.id])
+    }
+
+    /// The exemption is for a document that *came back*, not for one that is still in the trash.
+    @Test("A document still trashed at the end of the walk is not rescued")
+    func stillTrashedIsNotRescued() {
+        let trashed = document("Trashed", trashed: true)
+        var plan = ExternalChangePlan()
+        plan.trashed = [trashed.id]
+
+        let (settled, kept) = ExternalChangePlanner.keepingDeletionsThatMovedOn(
+            plan, baseline: [trashed], current: [trashed]
+        )
+        #expect(settled.trashed == [trashed.id])
+        #expect(kept.isEmpty)
     }
 
     @Test("A document that existed before the walk and has no file is still trashed")
     func predatingDeletionStillApplies() {
-        let gone = UUID()
+        let gone = document("Gone")
         var plan = ExternalChangePlan()
-        plan.trashed = [gone]
+        plan.trashed = [gone.id]
 
-        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
-            plan, predatingWalk: [gone]
+        let (settled, kept) = ExternalChangePlanner.keepingDeletionsThatMovedOn(
+            plan, baseline: [gone], current: [gone]
         )
-        #expect(settled.trashed == [gone])
+        #expect(settled.trashed == [gone.id])
         #expect(kept.isEmpty)
     }
 
@@ -319,16 +353,54 @@ struct ConcurrentEditProtectionTests {
     /// external deletions for the whole library.
     @Test("Rescuing a new document still lets a real deletion through")
     func rescueIsScoped() {
-        let gone = UUID()
-        let createdSince = UUID()
+        let gone = document("Gone")
+        let createdSince = document("Created since")
         var plan = ExternalChangePlan()
-        plan.trashed = [gone, createdSince]
+        plan.trashed = [gone.id, createdSince.id]
 
-        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
-            plan, predatingWalk: [gone]
+        let (settled, kept) = ExternalChangePlanner.keepingDeletionsThatMovedOn(
+            plan, baseline: [gone], current: [gone, createdSince]
         )
-        #expect(settled.trashed == [gone])
-        #expect(kept == [createdSince])
+        #expect(settled.trashed == [gone.id])
+        #expect(kept == [createdSince.id])
+    }
+
+    /// The finding that started this: an edit landing during the *walk* was compared against a
+    /// baseline read after it, so it looked settled and the file's older text won.
+    @Test("An edit made during the walk is not overwritten by the file")
+    func editDuringWalkIsHeldBack() {
+        let beforeWalk = document("Note", body: "A")
+        var typedSince = beforeWalk
+        typedSince.body = "B"
+
+        var fromFile = beforeWalk
+        fromFile.body = "A"
+
+        var plan = ExternalChangePlan()
+        plan.updated = [fromFile]
+
+        // Compared against the pre-walk baseline, the document moved on, so the update is dropped.
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: [beforeWalk], current: [typedSince]
+        )
+        #expect(settled.updated.isEmpty)
+    }
+
+    /// The same document dragged to another space during the walk. `differs` fires on `spaceID`,
+    /// so without the pre-walk baseline the move was undone.
+    @Test("A space move made during the walk is not undone")
+    func spaceMoveDuringWalkIsHeldBack() {
+        let beforeWalk = document("Note")
+        var movedSince = beforeWalk
+        movedSince.spaceID = UUID()
+
+        var plan = ExternalChangePlan()
+        plan.updated = [beforeWalk]
+
+        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: [beforeWalk], current: [movedSince]
+        )
+        #expect(settled.updated.isEmpty)
     }
 
     @Test("A document that vanished from memory during the scan is left for the next one")

@@ -149,24 +149,44 @@ enum ExternalChangePlanner {
         return settled
     }
 
-    /// Drops deletions for documents that did not exist when the walk began.
+    /// Drops deletions for documents whose file appeared while the folder was being read.
     ///
-    /// The other half of `discardingUpdatesThatMovedOn`, and the more dangerous one: a document
-    /// created while the folder was being read is absent from the walk for the one reason that is
-    /// not a deletion, and trashing it takes its file with it. Importing a batch mid-scan trashed
-    /// every document in it.
+    /// The other half of `discardingUpdatesThatMovedOn`, and the more dangerous one: trashing a
+    /// document takes its file with it, so a wrong answer here is not recoverable by scanning again.
+    /// Two ways a document ends up with a file the walk could not have seen:
+    ///
+    /// - **Created during the walk.** An import, or a new note. Absent from the walk for the one
+    ///   reason that is not a deletion — importing a batch mid-scan trashed every document in it.
+    /// - **Restored during the walk.** Restoring writes the `.md`, but the walk had already been
+    ///   and `lastKnownFiles` comes from the same snapshot, so the existence cross-check misses it
+    ///   too. The document predates the walk, so treating creation alone as the exemption left this
+    ///   one exposed: it was trashed again, and `removeFile` binned the file the restore had just
+    ///   written.
     ///
     /// Returns the identifiers it rescued, so the caller can log them and ask for another scan —
     /// they still need to be diffed, just against a walk that could have seen them.
-    static func keepingDocumentsCreatedDuringWalk(
+    static func keepingDeletionsThatMovedOn(
         _ plan: ExternalChangePlan,
-        predatingWalk: Set<UUID>
+        baseline: [DocumentContent],
+        current: [DocumentContent]
     ) -> (plan: ExternalChangePlan, kept: [UUID]) {
-        let kept = plan.trashed.filter { !predatingWalk.contains($0) }
+        guard !plan.trashed.isEmpty else { return (plan, []) }
+
+        let trashedBefore = Set(baseline.filter(\.isTrashed).map(\.id))
+        let existedBefore = Set(baseline.map(\.id))
+        let trashedNow = Set(current.filter(\.isTrashed).map(\.id))
+
+        let rescued: (UUID) -> Bool = { id in
+            // Created during the walk, or brought back out of the trash during it. A document
+            // still in the trash now is not a restore, whatever it was in between.
+            !existedBefore.contains(id) || (trashedBefore.contains(id) && !trashedNow.contains(id))
+        }
+
+        let kept = plan.trashed.filter(rescued)
         guard !kept.isEmpty else { return (plan, []) }
 
         var settled = plan
-        settled.trashed.removeAll { !predatingWalk.contains($0) }
+        settled.trashed.removeAll(where: rescued)
         return (settled, kept)
     }
 
