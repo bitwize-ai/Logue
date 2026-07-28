@@ -191,7 +191,10 @@ struct SpaceFolderWriteTests {
         let migrator = migrator(root)
         try migrator.createFolder(for: work, in: [work])
 
-        try migrator.retireFolder(at: SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work]))
+        try migrator.retireFolder(
+            at: SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work]),
+            claimedBy: work.id
+        )
 
         #expect(exists(root, "Work") == false)
     }
@@ -206,7 +209,10 @@ struct SpaceFolderWriteTests {
         let work = Space(name: "Work")
         let migrator = migrator(root)
         try migrator.createFolder(for: work, in: [work])
-        try migrator.retireFolder(at: SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work]))
+        try migrator.retireFolder(
+            at: SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work]),
+            claimedBy: work.id
+        )
 
         // The space is gone from the store by this point, so the scan sees no spaces at all.
         let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
@@ -218,7 +224,7 @@ struct SpaceFolderWriteTests {
         let root = temporaryRoot()
         defer { cleanUp(root) }
 
-        try migrator(root).retireFolder(at: ["Never Existed"])
+        try migrator(root).retireFolder(at: ["Never Existed"], claimedBy: UUID())
     }
 
     /// Guards the path that would take the whole library with it.
@@ -228,7 +234,7 @@ struct SpaceFolderWriteTests {
         defer { cleanUp(root) }
         try "x".write(to: root.appendingPathComponent("keep.md"), atomically: true, encoding: .utf8)
 
-        try migrator(root).retireFolder(at: [])
+        try migrator(root).retireFolder(at: [], claimedBy: UUID())
 
         #expect(exists(root, "keep.md"))
     }
@@ -294,5 +300,128 @@ struct SpaceFolderWriteTests {
         )
 
         #expect(migrator(root).spaceFolderMap().claimedSpaceIDs.isEmpty)
+    }
+}
+
+/// Which folder a space deletion is allowed to move to the Trash.
+///
+/// This is the destructive branch of `deleteSpace`, and the path it acts on is recomputed from the
+/// space's *name* — so it is a guess about which directory belongs to which space. Review pointed out
+/// that whether the guess was safe depended on a caller two files away passing the right flag, and
+/// that no test would fail if it stopped: both scan harnesses reimplement `deleteSpace` rather than
+/// driving `SpaceStore`, so production's destructive branch went unexercised.
+///
+/// Rather than pin the call site, the folder now has to agree that it belongs to the space being
+/// deleted. These tests cover that agreement, which makes the branch safe however it is reached.
+@Suite("Space folder retirement")
+struct SpaceFolderRetirementTests {
+    private func temporaryRoot() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logue-retire-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func cleanUp(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Deletes rather than trashing, so a test run does not fill the user's Trash.
+    private func migrator(_ root: URL) -> MarkdownStorageMigrator {
+        MarkdownStorageMigrator(
+            rootURL: root,
+            retireFile: { try FileManager.default.removeItem(at: $0) }
+        )
+    }
+
+    private func exists(_ root: URL, _ path: String) -> Bool {
+        FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path)
+    }
+
+    @Test("A folder that claims the space being deleted is retired")
+    func retiresItsOwnFolder() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let work = Space(name: "Work")
+        let migrator = migrator(root)
+        try migrator.createFolder(for: work, in: [work])
+
+        try migrator.retireFolder(at: ["Work"], claimedBy: work.id)
+
+        #expect(exists(root, "Work") == false)
+    }
+
+    /// The case that made this dangerous: delete a folder in Finder, immediately make a new one with
+    /// the same name. The path still resolves, but it now points at the user's new folder.
+    @Test("A folder recreated by the user is not retired")
+    func refusesToTrashARecreatedFolder() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let work = Space(name: "Work")
+        // The user's new folder: same name, no space file, nothing to do with the old space.
+        let recreated = root.appendingPathComponent("Work")
+        try FileManager.default.createDirectory(at: recreated, withIntermediateDirectories: true)
+        try "my notes".write(
+            to: recreated.appendingPathComponent("note.md"), atomically: true, encoding: .utf8
+        )
+
+        try migrator(root).retireFolder(at: ["Work"], claimedBy: work.id)
+
+        #expect(exists(root, "Work"))
+        #expect(exists(root, "Work/note.md"))
+    }
+
+    @Test("A folder belonging to a different space is not retired")
+    func refusesToTrashAnotherSpacesFolder() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let personal = Space(name: "Work")
+        let deleted = Space(name: "Work")
+        let migrator = migrator(root)
+        try migrator.createFolder(for: personal, in: [personal])
+
+        // The path is the same; the identity is not.
+        try migrator.retireFolder(at: ["Work"], claimedBy: deleted.id)
+
+        #expect(exists(root, "Work"))
+        #expect(exists(root, "Work/\(SpaceFile.filename)"))
+    }
+
+    @Test("A folder that claims nothing is not retired")
+    func refusesToTrashAnUnclaimedFolder() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Work"), withIntermediateDirectories: true
+        )
+
+        try migrator(root).retireFolder(at: ["Work"], claimedBy: UUID())
+
+        #expect(exists(root, "Work"))
+    }
+
+    /// The scan path: the folder is already gone, which is why the space is being deleted.
+    @Test("A folder that is already gone is not an error")
+    func toleratesAMissingFolder() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        try migrator(root).retireFolder(at: ["Gone"], claimedBy: UUID())
+    }
+
+    /// Guards the path that would take the whole library with it.
+    @Test("An empty path retires nothing")
+    func refusesAnEmptyPath() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+        try "keep".write(to: root.appendingPathComponent("keep.md"), atomically: true, encoding: .utf8)
+
+        try migrator(root).retireFolder(at: [], claimedBy: UUID())
+
+        #expect(exists(root, "keep.md"))
     }
 }

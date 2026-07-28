@@ -265,7 +265,7 @@ final class SpaceStore {
         // Without this the folder stays behind with its `_space.md` still naming the space, and
         // the next scan reads it as a folder the user made and creates the space all over again.
         if retiringFolder {
-            retireFolders(at: [folderToRetire])
+            retireFolder(for: id, at: [folderToRetire])
         }
     }
 

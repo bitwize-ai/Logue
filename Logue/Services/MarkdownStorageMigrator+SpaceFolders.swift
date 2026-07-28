@@ -118,10 +118,35 @@ extension MarkdownStorageMigrator {
     ///
     /// A folder that is already gone is not an error — that is the case where the deletion came
     /// *from* the folder being removed in the first place.
-    func retireFolder(at components: [String]) throws {
+    /// `claimedBy` is the space whose folder this is supposed to be, and the folder must agree.
+    ///
+    /// The path here is recomputed from a space's *name*, so it is a guess about which directory
+    /// belongs to which space — and this method moves that directory to the Trash. The guess is wrong
+    /// in ordinary use: delete a folder in Finder and immediately make a new one with the same name,
+    /// and the path now points at the new folder. Before this check, whether that folder survived
+    /// depended on a caller two files away passing the right flag, and nothing failed if it did not.
+    ///
+    /// So the folder is asked whether it is the one being deleted. Its `_space.md` has to name the
+    /// space. A folder that claims nothing, or claims a different space, is left alone and logged —
+    /// which makes the destructive branch safe regardless of how it is reached.
+    func retireFolder(at components: [String], claimedBy spaceID: UUID?) throws {
         guard !components.isEmpty else { return }
         let directory = rootURL.appendingPathComponent(components.joined(separator: "/"))
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
+
+        if let spaceID {
+            let spaceFile = directory.appendingPathComponent(SpaceFile.filename)
+            let claimed = (try? String(contentsOf: spaceFile, encoding: .utf8))
+                .flatMap(SpaceFile.identity(from:))?.id
+
+            guard claimed == spaceID else {
+                logger.error(
+                    "Refused to trash a folder that does not claim the space being deleted"
+                )
+                return
+            }
+        }
+
         try retireFile(directory)
     }
 }

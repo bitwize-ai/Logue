@@ -57,13 +57,15 @@ extension SpaceStore {
     ///
     /// Takes paths rather than identifiers because by the time this is useful the spaces are gone
     /// from the store and their paths can no longer be derived.
-    func retireFolders(at paths: [[String]]) {
+    func retireFolder(for spaceID: UUID, at paths: [[String]]) {
         guard storage.mode.isMarkdown else { return }
         let migrator = storage.liveMigrator
 
         for components in paths {
             do {
-                try migrator.retireFolder(at: components)
+                // The identifier goes with it: the folder has to agree that it belongs to this space
+                // before anything moves it to the Trash. See `retireFolder(at:claimedBy:)`.
+                try migrator.retireFolder(at: components, claimedBy: spaceID)
             } catch {
                 Self.folderLogger.error(
                     "Could not move a space folder to the Trash: \(error.localizedDescription, privacy: .public)"
