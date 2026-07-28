@@ -200,3 +200,117 @@ struct ScanSafetyTests {
         #expect(name.lowercased() != "notes.md")
     }
 }
+
+/// One traversal per scan, and every step seeing the same folder.
+///
+/// Each question a scan asks used to start its own walk — seven per scan, three of them opening every
+/// document in the library, nearly all on the main actor and now on every app activation. These tests
+/// pin the reads rather than the timing, because a wall-clock assertion would be flaky and would not
+/// say what actually went wrong.
+@Suite("Folder snapshot")
+struct FolderSnapshotTests {
+    private func temporaryRoot() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logue-snapshot-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func cleanUp(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func populate(_ root: URL, documents: Int, spaces: [String] = []) throws {
+        for name in spaces {
+            let directory = root.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try SpaceFile.render(Space(name: name))
+                .write(to: directory.appendingPathComponent(SpaceFile.filename), atomically: true, encoding: .utf8)
+        }
+        for index in 0 ..< documents {
+            var doc = WritingDocument()
+            doc.title = "Document \(index)"
+            doc.body = "body \(index)"
+            _ = MarkdownStorageMigrator(rootURL: root).export(documents: [doc.content], spaces: [])
+        }
+    }
+
+    @Test("One snapshot holds the files, the directories and their contents")
+    func snapshotHoldsEverything() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+        try populate(root, documents: 3, spaces: ["Work"])
+
+        let snapshot = MarkdownStorageMigrator(rootURL: root).snapshot()
+
+        #expect(snapshot.documentFiles.count == 3)
+        #expect(snapshot.spaceFiles.count == 1)
+        #expect(snapshot.directories == [["Work"]])
+        #expect(snapshot.contents.count == snapshot.files.count)
+        #expect(snapshot.isComplete)
+    }
+
+    /// The point of the exercise: every consumer answers from the same read.
+    @Test("Every consumer answers from a snapshot without touching the folder again")
+    func consumersUseTheSnapshot() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+        try populate(root, documents: 2, spaces: ["Work"])
+
+        let migrator = MarkdownStorageMigrator(rootURL: root)
+        let snapshot = migrator.snapshot()
+
+        // Delete the folder outright. Anything that still answers correctly did not re-read it.
+        try FileManager.default.removeItem(at: root)
+
+        #expect(migrator.markdownFiles(using: snapshot).count == 3)
+        #expect(migrator.directories(using: snapshot) == [["Work"]])
+        #expect(migrator.fileIndex(using: snapshot).count == 2)
+        #expect(migrator.documentFiles(using: snapshot).byID.count == 2)
+        #expect(migrator.spaceFolderMap(using: snapshot).claimedSpaceIDs.count == 1)
+        #expect(migrator.importAll(knownSpaces: [], using: snapshot).documents.count == 2)
+    }
+
+    @Test("A scan plans from a snapshot rather than re-reading")
+    func planUsesTheSnapshot() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+        try populate(root, documents: 1)
+
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
+        let snapshot = scan.snapshot()
+        let known = MarkdownStorageMigrator(rootURL: root).importAll(knownSpaces: []).documents
+
+        try FileManager.default.removeItem(at: root)
+
+        // Nothing to do, and — crucially — nothing trashed, even though the folder is now gone: the
+        // plan is answering from what it read, not from what is there now.
+        let plan = scan.plan(spaces: [], known: known, using: snapshot)
+        #expect(plan.isEmpty)
+    }
+
+    @Test("An unreadable corner marks the snapshot incomplete")
+    func unreadableSubdirectoryIsReported() throws {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+        try populate(root, documents: 1)
+
+        let blocked = root.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
+        try "text".write(to: blocked.appendingPathComponent("hidden.md"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: blocked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: blocked.path) }
+
+        #expect(MarkdownStorageMigrator(rootURL: root).snapshot().isComplete == false)
+    }
+
+    @Test("An empty folder snapshots as empty and complete")
+    func emptyFolderIsComplete() {
+        let root = temporaryRoot()
+        defer { cleanUp(root) }
+
+        let snapshot = MarkdownStorageMigrator(rootURL: root).snapshot()
+        #expect(snapshot.files.isEmpty)
+        #expect(snapshot.isComplete)
+    }
+}

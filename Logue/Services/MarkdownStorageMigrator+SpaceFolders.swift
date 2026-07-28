@@ -26,14 +26,15 @@ extension MarkdownStorageMigrator {
     /// how a folder deleted outside the app is noticed.
     /// `spaces` only breaks ties between folders claiming the same identity — see
     /// `SpaceFolderMap.preferred`. The map is otherwise built entirely from what is on disk.
-    func spaceFolderMap(in spaces: [Space] = []) -> SpaceFolderMap {
+    func spaceFolderMap(in spaces: [Space] = [], using snapshot: FolderSnapshot? = nil) -> SpaceFolderMap {
+        let snapshot = snapshot ?? self.snapshot()
         var candidates: [UUID: [[String]]] = [:]
 
-        for url in markdownFiles() where SpaceFile.isSpaceFile(filename: url.lastPathComponent) {
-            guard let contents = try? String(contentsOf: url, encoding: .utf8),
+        for url in snapshot.spaceFiles {
+            guard let contents = snapshot.contents[url],
                   let identity = SpaceFile.identity(from: contents)
             else { continue }
-            let components = relativeComponents(ofDirectory: url.deletingLastPathComponent())
+            let components = directoryComponents(of: url, using: snapshot)
             guard !components.isEmpty else { continue }
             candidates[identity.id, default: []].append(components)
         }

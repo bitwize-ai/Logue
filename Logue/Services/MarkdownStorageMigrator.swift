@@ -330,19 +330,20 @@ struct MarkdownStorageMigrator {
     ///
     /// One pass over the folder rather than a search per document: the naive version is
     /// quadratic and this runs on every save.
-    func fileIndex() -> [UUID: URL] {
-        documentFiles().byID
+    func fileIndex(using snapshot: FolderSnapshot? = nil) -> [UUID: URL] {
+        documentFiles(using: snapshot).byID
     }
 
     /// The file each document occupies, plus the copies that lost.
     ///
     /// Duplicates are returned rather than dropped: a second file carrying a document's identifier
     /// is invisible to the user and never written to again, so something has to be able to say so.
-    func documentFiles() -> (byID: [UUID: URL], duplicates: [URL]) {
+    func documentFiles(using snapshot: FolderSnapshot? = nil) -> (byID: [UUID: URL], duplicates: [URL]) {
+        let snapshot = snapshot ?? self.snapshot()
         var index: [UUID: URL] = [:]
         var duplicates: [URL] = []
-        for url in markdownFiles() {
-            guard let contents = try? String(contentsOf: url, encoding: .utf8),
+        for url in snapshot.files {
+            guard let contents = snapshot.contents[url],
                   let id = MarkdownDocumentFile.identifier(in: contents)
             else { continue }
             // First in sorted order wins, so a duplicated file cannot take an identifier from the
@@ -463,21 +464,26 @@ struct MarkdownStorageMigrator {
     // MARK: - Import
 
     /// Reads every document from the folder.
-    func importAll(knownSpaces: [Space], folders: SpaceFolderMap? = nil) -> ImportResult {
+    func importAll(
+        knownSpaces: [Space],
+        folders: SpaceFolderMap? = nil,
+        using snapshot: FolderSnapshot? = nil
+    ) -> ImportResult {
         var result = ImportResult()
-        let folders = folders ?? spaceFolderMap(in: knownSpaces)
+        let snapshot = snapshot ?? self.snapshot()
+        let folders = folders ?? spaceFolderMap(in: knownSpaces, using: snapshot)
         var seenIdentifiers: Set<UUID> = []
 
-        let walked = walk()
-        result.isComplete = walked.isComplete
+        result.isComplete = snapshot.isComplete
 
-        for url in walked.files {
-            guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-                // Unreadable is not absent. Recording it keeps the document out of the deletion set.
+        for url in snapshot.files {
+            guard let contents = snapshot.contents[url] else {
+                // Unreadable is not absent. Recording it keeps the document out of the deletion set,
+                // and one more read here is worth it: the snapshot could not get the contents, but the
+                // identifier is what decides whether a document is about to be trashed.
                 if let id = identifierIfReadable(at: url) {
                     result.unreadableIdentifiers.insert(id)
                 }
-                result.isComplete = false
                 continue
             }
 
@@ -511,7 +517,7 @@ struct MarkdownStorageMigrator {
             // The folder is the authority on placement, and which space a folder *is* comes from
             // the identity inside it rather than from its name.
             content.spaceID = folders.spaceID(
-                forComponents: directoryComponents(of: url), in: knownSpaces
+                forComponents: directoryComponents(of: url, using: snapshot), in: knownSpaces
             )
             result.documents.append(content)
         }
@@ -577,17 +583,29 @@ struct MarkdownStorageMigrator {
 
     /// Every `.md` file under the root, skipping hidden directories so a `.git` folder is
     /// never walked.
-    func markdownFiles() -> [URL] {
-        walk().files
+    func markdownFiles(using snapshot: FolderSnapshot? = nil) -> [URL] {
+        (snapshot ?? self.snapshot()).files
     }
 
-    /// The walk, and whether it completed.
-    ///
-    /// `enumerator(at:)` without an error handler skips what it cannot read and returns a *short
-    /// list*, which is indistinguishable from an empty folder — so an unreadable root or subdirectory
-    /// read as "every document was deleted". A caller that is about to act on absence has to know
-    /// the difference.
+    /// The walk, and whether it completed. A view over `snapshot()`.
     func walk() -> (files: [URL], isComplete: Bool) {
+        let snapshot = snapshot()
+        return (snapshot.files, snapshot.isComplete)
+    }
+
+    /// Every directory under the root, as components relative to it.
+    ///
+    /// Includes empty ones: a folder someone made in Finder and has not put anything in yet
+    /// is still a space they created.
+    func directories(using snapshot: FolderSnapshot? = nil) -> [[String]] {
+        (snapshot ?? self.snapshot()).directories
+    }
+
+    /// Reads the folder once, for every question a scan needs to ask of it.
+    ///
+    /// Files and directories come from the same enumeration, and each file's contents are read here
+    /// rather than again by whoever asks next. See `FolderSnapshot` for why this exists.
+    func snapshot() -> FolderSnapshot {
         var failures = 0
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
@@ -596,55 +614,68 @@ struct MarkdownStorageMigrator {
             errorHandler: { url, error in
                 failures += 1
                 Logger(subsystem: AppConstants.bundleID, category: "MarkdownStorageMigrator").error(
-                    """
-                    Could not read \(url.lastPathComponent, privacy: .public) while walking                     the folder: \(
-                        error.localizedDescription,
-                        privacy: .public
-                    )
-                    """
+                    "Could not read \(url.lastPathComponent, privacy: .public) while walking: \(error.localizedDescription, privacy: .public)"
                 )
                 // Keep going, so one unreadable corner does not hide the rest — but the caller is
                 // told the walk was partial.
                 return true
             }
         )
-        else { return ([], false) }
+        else { return FolderSnapshot(isComplete: false) }
 
-        // Sorted, because two independent passes pick "the first file with this identifier" and a
-        // duplicated file makes that a real choice. Enumeration order is unspecified, so without
-        // this a save and a scan could each pick a different copy — and the losing copy then reads
-        // as an outside edit and overwrites the user's current text.
-        let files = enumerator.compactMap { $0 as? URL }
-            .filter { $0.pathExtension == DocumentFilename.fileExtension }
-            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        var files: [URL] = []
+        var directories: [[String]] = []
 
-        return (files, failures == 0)
-    }
+        for case let url as URL in enumerator {
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                let components = relativeComponents(ofDirectory: url)
+                if !components.isEmpty {
+                    directories.append(components)
+                }
+                continue
+            }
+            if url.pathExtension == DocumentFilename.fileExtension {
+                files.append(url)
+            }
+        }
 
-    /// Every directory under the root, as components relative to it.
-    ///
-    /// Includes empty ones: a folder someone made in Finder and has not put anything in yet
-    /// is still a space they created.
-    func directories() -> [[String]] {
-        guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        files.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+
+        var contents: [URL: String] = [:]
+        var componentsByFile: [URL: [String]] = [:]
+        var unreadable = 0
+        for url in files {
+            componentsByFile[url] = relativeComponents(ofDirectory: url.deletingLastPathComponent())
+            if let text = try? String(contentsOf: url, encoding: .utf8) {
+                contents[url] = text
+            } else {
+                // A file that is there but unreadable is not an absent file, and the difference
+                // decides whether its document gets trashed.
+                unreadable += 1
+            }
+        }
+
+        return FolderSnapshot(
+            files: files,
+            directories: directories,
+            contents: contents,
+            componentsByFile: componentsByFile,
+            isComplete: failures == 0 && unreadable == 0
         )
-        else { return [] }
-
-        return enumerator.compactMap { $0 as? URL }
-            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-            .map { relativeComponents(ofDirectory: $0) }
-            .filter { !$0.isEmpty }
     }
 
     /// The identity a folder's `_space.md` claims, if it has one.
-    func spaceIdentity(atDirectoryComponents components: [String]) -> SpaceFile.Identity? {
+    func spaceIdentity(
+        atDirectoryComponents components: [String],
+        using snapshot: FolderSnapshot? = nil
+    ) -> SpaceFile.Identity? {
         let url = rootURL
             .appendingPathComponent(components.joined(separator: "/"))
             .appendingPathComponent(SpaceFile.filename)
-        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+
+        guard let contents = snapshot?.contents[url]
+            ?? (try? String(contentsOf: url, encoding: .utf8))
+        else { return nil }
         return SpaceFile.identity(from: contents)
     }
 
@@ -669,8 +700,11 @@ struct MarkdownStorageMigrator {
     ///
     /// A file that is not under the root at all yields no components rather than a
     /// nonsensical path.
-    func directoryComponents(of file: URL) -> [String] {
-        relativeComponents(ofDirectory: file.deletingLastPathComponent())
+    func directoryComponents(of file: URL, using snapshot: FolderSnapshot? = nil) -> [String] {
+        if let frozen = snapshot?.componentsByFile[file] {
+            return frozen
+        }
+        return relativeComponents(ofDirectory: file.deletingLastPathComponent())
     }
 
     /// Components of a directory relative to the root.

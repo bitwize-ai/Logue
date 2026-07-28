@@ -101,28 +101,39 @@ extension DocumentStorage {
             return nil
         }
 
+        // One traversal, read off the main actor, handed to every step below. Each of those steps
+        // used to start its own — seven per scan, three of them opening every document in the
+        // library, and all of it on the main actor on every app activation.
+        let snapshot = await Task.detached { scan.snapshot() }.value
+
         // Deletions before adoption, or a space whose folder is gone would be handed straight back
         // to `adoptNewFolders` as a folder to recreate.
-        deleteVanishedSpaces(using: scan, spaceStore: spaceStore)
+        deleteVanishedSpaces(using: scan, spaceStore: spaceStore, snapshot: snapshot)
 
         // Renames before creations: a folder that moved is the same space, and reading it as a new
         // one would leave the old space behind with no folder — which the next scan deletes.
-        applyFolderRenames(using: scan, spaceStore: spaceStore)
+        applyFolderRenames(using: scan, spaceStore: spaceStore, snapshot: snapshot)
 
         // Folders next, and on the main actor because it mutates the space store: the
         // spaces have to exist before a document can be filed into one.
-        adoptNewFolders(using: scan, spaceStore: spaceStore)
+        adoptNewFolders(using: scan, spaceStore: spaceStore, snapshot: snapshot)
 
         let spaces = spaceStore.spaces
         let known = documentStore.documents.map(\.content)
         // The index the cross-check needs: where each document's file was last seen, so absence from
-        // the walk can be tested against the filesystem rather than believed.
-        let lastKnownFiles = liveMigrator.fileIndex()
+        // the walk can be tested against the filesystem rather than believed. From the snapshot, so
+        // it costs nothing extra.
+        let lastKnownFiles = liveMigrator.fileIndex(using: snapshot)
         let plan = await Task.detached {
-            scan.plan(spaces: spaces, known: known, lastKnownFiles: lastKnownFiles)
+            scan.plan(
+                spaces: spaces, known: known, lastKnownFiles: lastKnownFiles, using: snapshot
+            )
         }.value
 
-        report(plan, duplicatedFolders: scan.duplicatedSpaceFolders(in: spaceStore.spaces))
+        report(
+            plan,
+            duplicatedFolders: scan.duplicatedSpaceFolders(in: spaceStore.spaces, using: snapshot)
+        )
 
         // The plan was diffed against `known`, taken before the folder was read. The user can type
         // during that read, and applying an update built from the older snapshot would replace what
@@ -209,8 +220,12 @@ extension DocumentStorage {
     /// Deleting a folder is a real instruction, but a whole tree of notes is a lot to lose to a
     /// misread, so nothing here destroys anything: the documents go to Logue's trash and the
     /// folder is already in the user's.
-    private func deleteVanishedSpaces(using scan: MarkdownFolderScan, spaceStore: SpaceStore) {
-        let vanished = scan.vanishedSpaceIDs(in: spaceStore.spaces)
+    private func deleteVanishedSpaces(
+        using scan: MarkdownFolderScan,
+        spaceStore: SpaceStore,
+        snapshot: FolderSnapshot
+    ) {
+        let vanished = scan.vanishedSpaceIDs(in: spaceStore.spaces, using: snapshot)
         guard !vanished.isEmpty else { return }
 
         // Top of each deleted subtree only — `deleteSpace` cascades, and asking it to delete a
@@ -233,8 +248,12 @@ extension DocumentStorage {
     }
 
     /// Follows folders that were renamed or moved in Finder.
-    private func applyFolderRenames(using scan: MarkdownFolderScan, spaceStore: SpaceStore) {
-        let renames = scan.folderRenames(in: spaceStore.spaces)
+    private func applyFolderRenames(
+        using scan: MarkdownFolderScan,
+        spaceStore: SpaceStore,
+        snapshot: FolderSnapshot
+    ) {
+        let renames = scan.folderRenames(in: spaceStore.spaces, using: snapshot)
         guard !renames.isEmpty else { return }
 
         for rename in renames {
@@ -254,15 +273,21 @@ extension DocumentStorage {
     /// A folder that already has a space must produce nothing here. The check runs through
     /// `SpaceFolderLayout` — the same code that decides where a space writes its folder — so the
     /// two cannot disagree and invent a space on every pass.
-    private func adoptNewFolders(using scan: MarkdownFolderScan, spaceStore: SpaceStore) {
-        let creations = scan.spaceCreations(in: spaceStore.spaces)
+    private func adoptNewFolders(
+        using scan: MarkdownFolderScan,
+        spaceStore: SpaceStore,
+        snapshot: FolderSnapshot
+    ) {
+        let creations = scan.spaceCreations(in: spaceStore.spaces, using: snapshot)
         guard !creations.isEmpty else { return }
 
         for creation in creations {
             // A folder that already claims an existing space is not a creation — `folderRenames`
             // handled it. What reaches here claims nothing, or claims a space that no longer
             // exists: a folder restored from a backup, which keeps the identity it had.
-            let identity = scan.identity(forDirectoryComponents: creation.components)
+            let identity = scan.identity(
+                forDirectoryComponents: creation.components, using: snapshot
+            )
             let adopted = spaceStore.adoptSpace(
                 id: identity?.id ?? UUID(),
                 name: creation.name,

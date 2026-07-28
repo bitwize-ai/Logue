@@ -27,6 +27,15 @@ struct MarkdownFolderScan: Sendable {
         MarkdownStorageMigrator(rootURL: rootURL)
     }
 
+    /// Reads the folder once, to be handed to every step of a scan.
+    ///
+    /// Building this on a background task and passing it around is what turned seven traversals per
+    /// scan into one. It also means every step sees the same folder rather than a slightly newer one,
+    /// which was a race in its own right.
+    func snapshot() -> FolderSnapshot {
+        migrator.snapshot()
+    }
+
     /// Whether the folder is there at all.
     ///
     /// Checked before anything else. An unmounted volume, a folder the user moved, or a sync that
@@ -60,7 +69,7 @@ struct MarkdownFolderScan: Sendable {
     /// Only meaningful because the app writes a folder as soon as a space is created and moves it
     /// whenever the space is renamed — so a space with no folder can only be one the user removed
     /// from Finder.
-    func vanishedSpaceIDs(in spaces: [Space]) -> Set<UUID> {
+    func vanishedSpaceIDs(in spaces: [Space], using snapshot: FolderSnapshot? = nil) -> Set<UUID> {
         guard isRootPresent else { return [] }
 
         // Two independent ways of finding a space's folder, and either one counts. The identity
@@ -69,7 +78,7 @@ struct MarkdownFolderScan: Sendable {
         // permissions error, an iCloud placeholder, a write that failed earlier — was read as "the
         // folder is gone", and the answer to that is to delete the space and trash everything in
         // it. A folder sitting right there in Finder must never be read that way.
-        let folders = migrator.spaceFolderMap(in: spaces)
+        let folders = migrator.spaceFolderMap(in: spaces, using: snapshot)
         var present = folders.claimedSpaceIDs
         for space in spaces where !present.contains(space.id) {
             let directory = migrator.folderURL(forSpace: space.id, in: spaces, folders: folders)
@@ -87,31 +96,48 @@ struct MarkdownFolderScan: Sendable {
     ///
     /// Separate from the plan because it has to happen first: a document in a folder that has
     /// no space would otherwise resolve to no space and be filed at the top level.
-    func spaceCreations(in spaces: [Space]) -> [SpaceFolderAdoption.Creation] {
-        SpaceFolderAdoption.creations(
-            forDirectoryPaths: migrator.directories(), in: spaces, folders: migrator.spaceFolderMap(in: spaces)
+    func spaceCreations(
+        in spaces: [Space],
+        using snapshot: FolderSnapshot? = nil
+    ) -> [SpaceFolderAdoption.Creation] {
+        let snapshot = snapshot ?? migrator.snapshot()
+        return SpaceFolderAdoption.creations(
+            forDirectoryPaths: migrator.directories(using: snapshot),
+            in: spaces,
+            folders: migrator.spaceFolderMap(in: spaces, using: snapshot)
         )
     }
 
     /// Spaces whose folder was renamed or moved outside the app.
-    func folderRenames(in spaces: [Space]) -> [SpaceFolderAdoption.FolderRename] {
+    func folderRenames(
+        in spaces: [Space],
+        using snapshot: FolderSnapshot? = nil
+    ) -> [SpaceFolderAdoption.FolderRename] {
         guard isRootPresent else { return [] }
-        return SpaceFolderAdoption.renames(in: spaces, folders: migrator.spaceFolderMap(in: spaces))
+        return SpaceFolderAdoption.renames(
+            in: spaces, folders: migrator.spaceFolderMap(in: spaces, using: snapshot)
+        )
     }
 
     /// Folders duplicated in Finder, each claiming a space another folder already claims.
-    func duplicatedSpaceFolders(in spaces: [Space] = []) -> [[String]] {
-        migrator.spaceFolderMap(in: spaces).duplicatedFolders
+    func duplicatedSpaceFolders(
+        in spaces: [Space] = [],
+        using snapshot: FolderSnapshot? = nil
+    ) -> [[String]] {
+        migrator.spaceFolderMap(in: spaces, using: snapshot).duplicatedFolders
     }
 
     /// Files carrying an identifier another file already claims.
-    func duplicatedDocumentFiles() -> [URL] {
-        migrator.documentFiles().duplicates
+    func duplicatedDocumentFiles(using snapshot: FolderSnapshot? = nil) -> [URL] {
+        migrator.documentFiles(using: snapshot).duplicates
     }
 
     /// The identity a folder claims for itself, so a rename stays the same space.
-    func identity(forDirectoryComponents components: [String]) -> SpaceFile.Identity? {
-        migrator.spaceIdentity(atDirectoryComponents: components)
+    func identity(
+        forDirectoryComponents components: [String],
+        using snapshot: FolderSnapshot? = nil
+    ) -> SpaceFile.Identity? {
+        migrator.spaceIdentity(atDirectoryComponents: components, using: snapshot)
     }
 
     /// Writes one space's identity into the folder it was adopted from.
@@ -134,14 +160,15 @@ struct MarkdownFolderScan: Sendable {
     func plan(
         spaces: [Space],
         known: [DocumentContent],
-        lastKnownFiles: [UUID: URL] = [:]
+        lastKnownFiles: [UUID: URL] = [:],
+        using snapshot: FolderSnapshot? = nil
     ) -> ExternalChangePlan {
         // The same guard as `vanishedSpaceIDs`, kept here as well rather than left to the caller:
         // a missing root reads as "no files at all", and the honest-looking conclusion from that
         // is to trash every document in the library.
         guard isRootPresent else { return ExternalChangePlan() }
 
-        let imported = migrator.importAll(knownSpaces: spaces)
+        let imported = migrator.importAll(knownSpaces: spaces, using: snapshot)
 
         // Files are only adopted when the walk was whole and the file has settled. A file caught
         // mid-write parses as unidentified — that is exactly what a truncated file looks like — and
