@@ -88,8 +88,6 @@ final class RecordingSessionManager {
 
     var isCapturingSystemAudio = false
     var isMicActive = false
-    var isPeriodicDiarizationStopped = false
-    var hasPeriodicDiarizationResults = false
     private var postRecordingTask: Task<Void, Never>?
     private var diarizationInitTask: Task<Void, Never>?
 
@@ -280,13 +278,11 @@ final class RecordingSessionManager {
                 return
             }
 
-            self?.isPeriodicDiarizationStopped = false
-            self?.hasPeriodicDiarizationResults = false
             self?.speakerDetectionStatus = .active
 
-            // Audio accumulates during recording via processAudioBuffer().
-            // Full diarization runs after recording stops via processCompleteRecording()
-            // for maximum accuracy — the model sees the entire conversation context.
+            // Audio accumulates during recording via processAudioBuffer(). Speakers are identified
+            // only once recording stops, by processCompleteWith() over the whole buffer, so the
+            // model sees the entire conversation rather than a sliding window of it.
             self?.logger.info("Diarization models ready — audio accumulating for post-recording processing")
         }
 
@@ -425,14 +421,17 @@ final class RecordingSessionManager {
 
         MeetingStore.shared.updateDuration(finalElapsedTime, for: meetingID)
 
-        // Clear session state
+        // Clear session state. Both diarizers time their output from the start of this session's
+        // own audio buffer, so post-recording needs the offset the session began at.
         currentMeetingID = nil
+        let sessionStart = timeOffset
         timeOffset = 0
 
-        // Drop reference but do NOT cancel — if models are mid-download, let them finish
-        // and cache so the next recording session finds them immediately.
+        // Drop the reference but do NOT cancel — if models are mid-download, let them finish
+        // and cache so the next recording session finds them immediately. Captured so the
+        // post-recording pipeline can wait for initialization to land.
+        let capturedInitTask = diarizationInitTask
         diarizationInitTask = nil
-        isPeriodicDiarizationStopped = true
 
         // Launch diarization + post-recording AI as a non-blocking background pipeline
         let capturedDiarizer = diarizationManager
@@ -440,8 +439,14 @@ final class RecordingSessionManager {
         isDiarizing = capturedDiarizer != nil
 
         postRecordingTask = Task { [weak self] in
+            // If models are still initializing, Sortformer is not streaming yet and diarization
+            // would silently fall back to the less accurate batch path. Wait — but bounded, so a
+            // slow first-run download cannot hold up post-recording AI indefinitely.
+            if let capturedInitTask {
+                await self?.awaitDiarizationInit(capturedInitTask)
+            }
             if let diarizer = capturedDiarizer {
-                await self?.processDiarization(for: meetingID, diarizer: diarizer)
+                await self?.processDiarization(for: meetingID, diarizer: diarizer, sessionStart: sessionStart)
             }
             guard let self else { return }
             if mode == .onlineMeeting {
