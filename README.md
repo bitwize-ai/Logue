@@ -60,7 +60,6 @@ every pull request follows.
 ## Table of contents
 
 - [✨ Features](#-features)
-- [📄 Plain markdown storage](#-plain-markdown-storage-optional)
 - [🖼 Screenshots](#-screenshots)
 - [📥 Install (users)](#-install-users)
 - [🚀 Build from Source](#-build-from-source)
@@ -97,7 +96,7 @@ every pull request follows.
 - **Wiki links & backlinks** — type `[[Document Name]]` to link documents; links show the target's real name, are clickable, survive renames, and every document lists what links back to it
 - **Properties & relationships** — give documents typed fields (text, number, date, select, checkbox) and named links to other documents, all editable in a side panel
 - **Saved views & inbox** — save any filter as a sidebar entry, and triage unfiled documents from an inbox with keyboard-driven bulk actions
-- **Plain markdown storage (opt-in)** — store your documents as ordinary `.md` files in `~/Logue` instead of encrypted storage, and edit them in any editor, track them in git, or point an agent at them. See [Plain markdown storage](#-plain-markdown-storage-optional) below
+- **Plain markdown storage (opt-in)** — store documents as ordinary `.md` files in `~/Logue` instead of encrypted storage, and edit them in any editor, track them in git, or point an agent at them. The folder is the storage, not a copy: edits, new files, renames, moves and deletions flow both ways, and folders map to spaces including nested ones. Off by default, and Logue explains the encryption you give up before turning it on
 
 ### 🤖 Ask Logue — Agentic AI Chat
 
@@ -121,39 +120,6 @@ every pull request follows.
 - **AES-256-GCM encryption at rest** — meetings, transcripts, audio and documents are encrypted on disk. Documents are the one thing you can opt out of, by turning on plain markdown storage; meeting data is always encrypted
 - **No account required** — download and start working; there's no sign-up, no telemetry gate, no cloud dependency
 - **Hardened Runtime, notarized, not sandboxed** — Logue ships Developer ID signed and notarized with the Hardened Runtime on. It is deliberately **not** sandboxed: a sandboxed process cannot be an Accessibility API client, so macOS never lists it under Privacy & Security → Accessibility, which silently disables the inline assistant, global hotkeys and Command Center. Every entitlement exception is documented in the entitlements files
-
-## 📄 Plain markdown storage (optional)
-
-By default your documents live in encrypted storage inside the app's support folder. Turn on
-**Settings → Privacy → Plain Markdown Storage** and they become ordinary `.md` files in
-`~/Logue` instead — one file per document, in folders matching your spaces.
-
-The folder is then *the* storage, not a copy of it. Edits go both ways:
-
-| What you do in Finder or another editor | What Logue does |
-| --- | --- |
-| Edit a file | the document updates |
-| Drop in a `.md` file | it becomes a document |
-| Rename or move a file | same document, refiled if you moved it |
-| Delete a file | the document goes to Logue's trash |
-| Create a folder, nested or not | it becomes a space |
-| Rename, move or delete a folder | the space follows it |
-
-And the reverse: creating, renaming, moving or deleting a space in the app does the same to its
-folder immediately. Changes made outside are picked up by a folder watcher, on launch, and
-whenever you switch back to Logue; there is also a rescan button in the sidebar for the rare case
-none of those catch.
-
-**What you are trading away.** Those files are not encrypted — anything that can read your home
-folder can read them, including other apps and AI agents you have given file access to. Logue
-tells you this before turning it on and asks you to confirm it. The folder sits at `~/Logue`
-rather than in `~/Documents` specifically because iCloud Drive's "Desktop & Documents Folders"
-option would otherwise sync unencrypted copies of your notes; whole-home backup tools still will.
-
-Meetings, transcripts, audio and summaries are unaffected and stay encrypted either way. So does
-your trash: deleted documents are not written to the folder. Turning the setting off moves the
-documents back into encrypted storage and offers to put the folder in the Trash, so you are never
-left with two places that look like your library.
 
 ## 🖼 Screenshots
 
