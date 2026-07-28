@@ -137,6 +137,18 @@ extension DocumentStore {
         persist(documentTypes, to: documentTypesURL)
     }
 
+    /// Moves every document carrying `oldName` onto `newName`.
+    func retypeDocuments(from oldName: String, to newName: String) {
+        guard oldName != newName else { return }
+
+        for (index, document) in documents.enumerated() where document.typeName == oldName {
+            documents[index].setProperty(PropertyKey.type.rawValue, value: .text(newName))
+            documents[index].modifiedAt = Date()
+            saveDocument(id: documents[index].id)
+        }
+        invalidateCaches()
+    }
+
     /// Applies a type to a document and saves it.
     func applyType(_ type: DocumentType, to documentID: UUID) {
         guard let index = documentIndex(for: documentID) else { return }

@@ -63,7 +63,7 @@ struct SpaceFolderWriteTests {
         let migrator = migrator(root)
         try migrator.createFolder(for: work, in: [work])
 
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         #expect(scan.vanishedSpaceIDs(in: [work]).isEmpty)
     }
 
@@ -134,7 +134,7 @@ struct SpaceFolderWriteTests {
         work.name = "Client Work"
         try migrator.moveFolder(from: previous, for: work, in: [work])
 
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         #expect(scan.vanishedSpaceIDs(in: [work]).isEmpty)
         #expect(scan.spaceCreations(in: [work]).isEmpty)
     }
@@ -175,7 +175,7 @@ struct SpaceFolderWriteTests {
         notes.parentID = work.id
         try migrator.moveFolder(from: previous, for: notes, in: [work, notes])
 
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         #expect(scan.vanishedSpaceIDs(in: [work, notes]).isEmpty)
         #expect(scan.spaceCreations(in: [work, notes]).isEmpty)
     }
@@ -209,7 +209,7 @@ struct SpaceFolderWriteTests {
         try migrator.retireFolder(at: SpaceFolderLayout.directoryComponents(forSpace: work.id, in: [work]))
 
         // The space is gone from the store by this point, so the scan sees no spaces at all.
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         #expect(scan.spaceCreations(in: []).isEmpty)
     }
 

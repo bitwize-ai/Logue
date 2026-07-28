@@ -110,7 +110,7 @@ struct MarkdownFolderMisreadTests {
         try write("text", to: root.appendingPathComponent("-Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         let firstID = try #require(library.spaces.first?.id)
@@ -132,7 +132,7 @@ struct MarkdownFolderMisreadTests {
         try write("text", to: root.appendingPathComponent("-Work/plan.md"))
 
         var library = Library()
-        _ = library.apply(MarkdownFolderScan(rootURL: root))
+        _ = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(library.documents.first?.spaceID == library.spaces.first?.id)
     }
@@ -147,7 +147,7 @@ struct MarkdownFolderMisreadTests {
         try write("text", to: root.appendingPathComponent("\(longName)/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         let firstID = try #require(library.spaces.first?.id)
 
@@ -170,7 +170,7 @@ struct MarkdownFolderMisreadTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.spaces.map(\.name) == ["Work"])
 
@@ -195,7 +195,7 @@ struct MarkdownFolderMisreadTests {
 
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         try FileManager.default.copyItem(
@@ -225,7 +225,7 @@ struct MarkdownFolderMisreadTests {
         try stale.write(to: root.appendingPathComponent("Alpha copy.md"), atomically: true, encoding: .utf8)
 
         var library = Library(spaces: [], documents: [doc.content])
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
 
         #expect(library.apply(scan).isEmpty)
         #expect(library.apply(scan).isEmpty)
@@ -246,7 +246,7 @@ struct MarkdownFolderMisreadTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.spaces.count == 1)
 
@@ -268,7 +268,7 @@ struct MarkdownFolderMisreadTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         try "---\n_logue_space_id: not-a-uuid\n---\n".write(
@@ -294,7 +294,7 @@ struct MarkdownFolderMisreadTests {
             at: root.appendingPathComponent("Work"), withIntermediateDirectories: true
         )
 
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         #expect(scan.vanishedSpaceIDs(in: [work]).isEmpty)
     }
 
@@ -317,7 +317,7 @@ struct MarkdownFolderMisreadTests {
         trashed.isTrashed = true
 
         var library = Library(spaces: [], documents: [trashed])
-        let plan = library.apply(MarkdownFolderScan(rootURL: root))
+        let plan = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(plan.updated.isEmpty)
         #expect(library.documents.first?.isTrashed == true)
@@ -349,7 +349,7 @@ struct MarkdownFolderMisreadTests {
         #expect(migrator.export(documents: [doc.content], spaces: [work]).isSuccess)
 
         var library = Library(spaces: [work], documents: [doc.content])
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
 
         #expect(library.apply(scan).isEmpty)
         #expect(library.apply(scan).isEmpty)
@@ -371,7 +371,7 @@ struct MarkdownFolderMisreadTests {
         let url = try #require(migrator.export(documents: [doc.content], spaces: []).writtenFiles[doc.id])
 
         var library = Library(spaces: [], documents: [doc.content])
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         #expect(library.apply(scan).isEmpty)
 
         try String(contentsOf: url, encoding: .utf8)

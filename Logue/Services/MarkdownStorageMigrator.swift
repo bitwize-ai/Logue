@@ -11,6 +11,13 @@ import OSLog
 /// **Export verifies every file by reading it back.** The caller must treat anything
 /// other than complete success as a reason to keep the originals.
 struct MarkdownStorageMigrator {
+    /// The folder, with symlinks resolved.
+    ///
+    /// Resolved because `FileManager.enumerator(at:)` does **not** follow a symlinked root: it walks
+    /// the link itself and yields nothing, while `fileExists` follows it and reports the folder
+    /// present. That combination read as "the folder is there and every document was deleted".
+    /// Pointing this folder at an Obsidian vault or a synced directory is the most obvious use of the
+    /// feature, so it has to work rather than be refused.
     let rootURL: URL
 
     /// How a file that no longer belongs is disposed of.
@@ -25,11 +32,12 @@ struct MarkdownStorageMigrator {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
         }
     ) {
-        self.rootURL = rootURL
+        self.rootURL = rootURL.resolvingSymlinksInPath()
         self.retireFile = retireFile
     }
 
-    private var logger: Logger {
+    // Extension-visible: +SpaceFolders
+    var logger: Logger {
         Logger(subsystem: AppConstants.bundleID, category: "MarkdownStorageMigrator")
     }
 
@@ -62,10 +70,16 @@ struct MarkdownStorageMigrator {
 
     struct ImportResult {
         var documents: [DocumentContent] = []
+        /// False when the walk could not read part of the folder. A caller must not treat a partial
+        /// walk as evidence that anything was deleted.
+        var isComplete = true
         /// Identifiers carried by more than one file. Nothing is applied for these: with two files
         /// claiming one document there is no way to know which the user means, and picking wrongly
         /// replaces their current text with an older copy.
         var ambiguousIdentifiers: Set<UUID> = []
+        /// Documents whose file is present but could not be read on this pass. Absence from the
+        /// results is therefore not evidence they were deleted.
+        var unreadableIdentifiers: Set<UUID> = []
         /// Markdown files carrying no identifier. Surfaced rather than dropped, so the
         /// caller can decide whether to adopt them as new documents.
         var unidentifiedFiles: [URL] = []
@@ -82,7 +96,16 @@ struct MarkdownStorageMigrator {
         let manager = FileManager.default
 
         if manager.fileExists(atPath: rootURL.path) {
-            let entries = (try? manager.contentsOfDirectory(atPath: rootURL.path)) ?? []
+            // A directory we cannot list is not an empty directory. Swallowing the error made an
+            // unreadable folder look safe to adopt, which is the opposite of true.
+            let entries: [String]
+            do {
+                entries = try manager.contentsOfDirectory(atPath: rootURL.path)
+            } catch {
+                throw PrepareError.couldNotCreateRoot(
+                    "the folder already there could not be read: \(error.localizedDescription)"
+                )
+            }
             let unrelated = entries.filter { name in
                 if name.hasPrefix(".") {
                     return false
@@ -242,7 +265,10 @@ struct MarkdownStorageMigrator {
     /// A file that cannot be parsed counts as divergent: it is not what we would write, and
     /// preserving it costs one item in the Trash.
     private func divergesFromDisk(_ document: DocumentContent, at url: URL) -> Bool {
-        guard let onDisk = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        // Unreadable follows the same rule as unparseable, which this method already documents: it is
+        // not what we would write, so it is preserved. Returning false meant "does not diverge", so
+        // an unreadable file was silently overwritten by the export a few lines later.
+        guard let onDisk = try? String(contentsOf: url, encoding: .utf8) else { return true }
         guard let parsed = MarkdownDocumentFile.content(from: onDisk) else { return true }
         return ExternalChangePlanner.differs(parsed, from: document)
     }
@@ -284,9 +310,16 @@ struct MarkdownStorageMigrator {
 
         // Moving between folders keeps the name the user gave the file — unless something in the
         // destination already has it. Writing there anyway would overwrite a different document's
-        // file, and the next scan would find that document fileless and trash it.
-        if let current, !taken.contains(current.lastPathComponent) {
-            return directory.appendingPathComponent(current.lastPathComponent)
+        // file, and the next scan would find that document fileless and trash it. Compared
+        // case-insensitively, and confirmed against the filesystem, because the fold is the
+        // filesystem's to decide and not ours to predict.
+        if let current {
+            let name = current.lastPathComponent
+            let collides = taken.contains { $0.lowercased() == name.lowercased() }
+                || FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path)
+            if !collides {
+                return directory.appendingPathComponent(name)
+            }
         }
         return directory.appendingPathComponent(
             DocumentFilename.filename(for: WritingDocument(content: content, derived: nil), avoiding: taken)
@@ -324,6 +357,15 @@ struct MarkdownStorageMigrator {
     }
 
     /// Reads a written file back and confirms it says what the document says.
+    ///
+    /// Compares **everything the file is supposed to carry**, not three fields of fifteen. The narrow
+    /// version is what let four separate bugs pass verification and flip the mode with confidence:
+    /// typed properties flattening to text, `organised` coming back `false` instead of `nil`,
+    /// `goalMode` never being written at all, and a custom property named `title` shadowing the real
+    /// one. Anything this does not inspect can be destroyed by the round trip and still "verify".
+    ///
+    /// `modifiedAt` is excluded deliberately — it is read from the file's own timestamp — and
+    /// `isTrashed` is excluded because a trashed document has no file by design.
     private func verify(_ content: DocumentContent, at url: URL) throws {
         let contents = try String(contentsOf: url, encoding: .utf8)
         guard let readBack = MarkdownDocumentFile.content(from: contents) else {
@@ -332,10 +374,37 @@ struct MarkdownStorageMigrator {
         guard readBack.id == content.id else { throw VerificationError.identifierMismatch }
         guard readBack.title == content.title else { throw VerificationError.titleMismatch }
         guard readBack.body == content.body else { throw VerificationError.bodyMismatch }
+
+        guard readBack.tags == content.tags else { throw VerificationError.fieldMismatch("tags") }
+        guard readBack.icon == content.icon else { throw VerificationError.fieldMismatch("icon") }
+        guard readBack.goalMode == content.goalMode else {
+            throw VerificationError.fieldMismatch("goal")
+        }
+        guard readBack.isPinned == content.isPinned else {
+            throw VerificationError.fieldMismatch("pinned")
+        }
+        guard readBack.storedIsOrganised == content.storedIsOrganised else {
+            throw VerificationError.fieldMismatch("organised")
+        }
+        guard readBack.storedWidthMode == content.storedWidthMode else {
+            throw VerificationError.fieldMismatch("width")
+        }
+        guard readBack.properties ?? [:] == content.properties ?? [:] else {
+            throw VerificationError.fieldMismatch("properties")
+        }
+        guard readBack.relationships ?? [:] == content.relationships ?? [:] else {
+            throw VerificationError.fieldMismatch("relationships")
+        }
+        // Seconds, because the file stores an ISO-8601 string and the in-memory value has
+        // sub-second precision the format does not carry.
+        guard abs(readBack.createdAt.timeIntervalSince(content.createdAt)) < 1 else {
+            throw VerificationError.fieldMismatch("created")
+        }
     }
 
     private enum VerificationError: LocalizedError {
         case unreadable, identifierMismatch, titleMismatch, bodyMismatch
+        case fieldMismatch(String)
 
         var errorDescription: String? {
             switch self {
@@ -343,6 +412,7 @@ struct MarkdownStorageMigrator {
             case .identifierMismatch: "The written file has a different identifier"
             case .titleMismatch: "The written file has a different title"
             case .bodyMismatch: "The written file has different text"
+            case let .fieldMismatch(field): "The written file lost or changed “\(field)”"
             }
         }
     }
@@ -371,7 +441,9 @@ struct MarkdownStorageMigrator {
     }
 
     /// Writes a space's identity, keeping any prose already in the file.
-    private func writeIdentity(of space: Space, in directory: URL) {
+    ///
+    /// Extension-visible: +SpaceFolders
+    func writeIdentity(of space: Space, in directory: URL) {
         let url = directory.appendingPathComponent(SpaceFile.filename)
         let existing = try? String(contentsOf: url, encoding: .utf8)
         write(SpaceFile.render(space, keepingBodyOf: existing), toSpaceFileIn: directory)
@@ -388,121 +460,6 @@ struct MarkdownStorageMigrator {
         }
     }
 
-    // MARK: - Space folders
-
-    /// Where a space's folder is, asking the folders before the names.
-    func folderURL(forSpace spaceID: UUID?, in spaces: [Space], folders: SpaceFolderMap? = nil) -> URL {
-        let folders = folders ?? spaceFolderMap(in: spaces)
-        return rootURL.appendingPathComponent(
-            folders.components(forSpace: spaceID, in: spaces).joined(separator: "/")
-        )
-    }
-
-    /// Which folder each space occupies, found by the identifier inside its `_space.md`.
-    ///
-    /// By identifier rather than by name, because a name can be changed on either side and the
-    /// identifier cannot. It is also how a space with no folder at all is recognised — which is
-    /// how a folder deleted outside the app is noticed.
-    /// `spaces` only breaks ties between folders claiming the same identity — see
-    /// `SpaceFolderMap.preferred`. The map is otherwise built entirely from what is on disk.
-    func spaceFolderMap(in spaces: [Space] = []) -> SpaceFolderMap {
-        var candidates: [UUID: [[String]]] = [:]
-
-        for url in markdownFiles() where SpaceFile.isSpaceFile(filename: url.lastPathComponent) {
-            guard let contents = try? String(contentsOf: url, encoding: .utf8),
-                  let identity = SpaceFile.identity(from: contents)
-            else { continue }
-            let components = relativeComponents(ofDirectory: url.deletingLastPathComponent())
-            guard !components.isEmpty else { continue }
-            candidates[identity.id, default: []].append(components)
-        }
-
-        var index: [UUID: [String]] = [:]
-        var duplicates: [[String]] = []
-        var duplicateOwners: [[String]: UUID] = [:]
-
-        for (id, paths) in candidates {
-            let ordered = paths.sorted { $0.joined(separator: "/") < $1.joined(separator: "/") }
-            guard let winner = SpaceFolderMap.preferred(ordered, for: id, in: spaces) else { continue }
-            index[id] = winner
-            for loser in ordered where loser != winner {
-                duplicates.append(loser)
-                duplicateOwners[loser] = id
-            }
-        }
-
-        return SpaceFolderMap(
-            componentsByID: index,
-            duplicatedFolders: duplicates.sorted { $0.joined() < $1.joined() },
-            duplicateOwners: duplicateOwners
-        )
-    }
-
-    /// Writes a space's identity into a folder we already know the path of.
-    ///
-    /// Needed when adopting a folder made outside the app: its path cannot be derived from the space
-    /// name, because the name came *from* the path and may be spelled differently — `-Work` derives
-    /// to `Work`. Without this the identity was never written at all, so the next scan saw a space
-    /// with no folder and deleted it.
-    func writeSpaceIdentity(for space: Space, atComponents components: [String]) {
-        let directory = rootURL.appendingPathComponent(components.joined(separator: "/"))
-        guard FileManager.default.fileExists(atPath: directory.path) else { return }
-        writeIdentity(of: space, in: directory)
-    }
-
-    /// Creates a folder for every space, for the migration that turns the setting on.
-    func createSpaceFolders(spaces: [Space]) {
-        for space in spaces {
-            do {
-                try createFolder(for: space, in: spaces)
-            } catch {
-                // Its documents land at the root instead, which is recoverable — unlike failing
-                // the migration and leaving the user with nothing.
-                logger.error("Could not create a space folder: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-    }
-
-    /// Creates a space's folder and writes its identity, for a space made in the app.
-    func createFolder(for space: Space, in spaces: [Space], folders: SpaceFolderMap? = nil) throws {
-        let directory = folderURL(forSpace: space.id, in: spaces, folders: folders)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        writeIdentity(of: space, in: directory)
-    }
-
-    /// Moves a space's folder, for a space renamed or re-parented in the app.
-    ///
-    /// The identity is rewritten afterwards so the moved folder still names its space.
-    func moveFolder(from components: [String], for space: Space, in spaces: [Space]) throws {
-        let source = rootURL.appendingPathComponent(components.joined(separator: "/"))
-        // The destination is name-derived on purpose: renaming a space is precisely the act of
-        // asking for a folder named after the new name, so the folder map must not answer with
-        // where the folder currently is.
-        let destination = rootURL.appendingPathComponent(
-            SpaceFolderLayout.directoryComponents(forSpace: space.id, in: spaces).joined(separator: "/")
-        )
-        guard source.standardizedFileURL != destination.standardizedFileURL,
-              FileManager.default.fileExists(atPath: source.path)
-        else { return }
-
-        try FileManager.default.createDirectory(
-            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        try FileManager.default.moveItem(at: source, to: destination)
-        writeIdentity(of: space, in: destination)
-    }
-
-    /// Moves a space's folder to the Trash, for a space deleted in the app.
-    ///
-    /// A folder that is already gone is not an error — that is the case where the deletion came
-    /// *from* the folder being removed in the first place.
-    func retireFolder(at components: [String]) throws {
-        guard !components.isEmpty else { return }
-        let directory = rootURL.appendingPathComponent(components.joined(separator: "/"))
-        guard FileManager.default.fileExists(atPath: directory.path) else { return }
-        try retireFile(directory)
-    }
-
     // MARK: - Import
 
     /// Reads every document from the folder.
@@ -511,8 +468,18 @@ struct MarkdownStorageMigrator {
         let folders = folders ?? spaceFolderMap(in: knownSpaces)
         var seenIdentifiers: Set<UUID> = []
 
-        for url in markdownFiles() {
-            guard let contents = try? String(contentsOf: url, encoding: .utf8) else { continue }
+        let walked = walk()
+        result.isComplete = walked.isComplete
+
+        for url in walked.files {
+            guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+                // Unreadable is not absent. Recording it keeps the document out of the deletion set.
+                if let id = identifierIfReadable(at: url) {
+                    result.unreadableIdentifiers.insert(id)
+                }
+                result.isComplete = false
+                continue
+            }
 
             // Space files describe folders, never documents.
             if SpaceFile.isSpaceFile(filename: url.lastPathComponent)
@@ -590,23 +557,68 @@ struct MarkdownStorageMigrator {
         return content
     }
 
+    /// The identifier a file claims, when the file can be read at all.
+    private func identifierIfReadable(at url: URL) -> UUID? {
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return MarkdownDocumentFile.identifier(in: contents)
+    }
+
+    /// Whether each of these documents still has a file on disk, checked directly.
+    ///
+    /// Deliberately not a walk: this is the cross-check *against* the walk, so it has to ask the
+    /// filesystem about each path rather than trusting the same traversal that may have failed.
+    func documentsStillOnDisk(_ index: [UUID: URL]) -> Set<UUID> {
+        var present: Set<UUID> = []
+        for (id, url) in index where FileManager.default.fileExists(atPath: url.path) {
+            present.insert(id)
+        }
+        return present
+    }
+
     /// Every `.md` file under the root, skipping hidden directories so a `.git` folder is
     /// never walked.
     func markdownFiles() -> [URL] {
+        walk().files
+    }
+
+    /// The walk, and whether it completed.
+    ///
+    /// `enumerator(at:)` without an error handler skips what it cannot read and returns a *short
+    /// list*, which is indistinguishable from an empty folder — so an unreadable root or subdirectory
+    /// read as "every document was deleted". A caller that is about to act on absence has to know
+    /// the difference.
+    func walk() -> (files: [URL], isComplete: Bool) {
+        var failures = 0
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            errorHandler: { url, error in
+                failures += 1
+                Logger(subsystem: AppConstants.bundleID, category: "MarkdownStorageMigrator").error(
+                    """
+                    Could not read \(url.lastPathComponent, privacy: .public) while walking                     the folder: \(
+                        error.localizedDescription,
+                        privacy: .public
+                    )
+                    """
+                )
+                // Keep going, so one unreadable corner does not hide the rest — but the caller is
+                // told the walk was partial.
+                return true
+            }
         )
-        else { return [] }
+        else { return ([], false) }
 
         // Sorted, because two independent passes pick "the first file with this identifier" and a
         // duplicated file makes that a real choice. Enumeration order is unspecified, so without
         // this a save and a scan could each pick a different copy — and the losing copy then reads
         // as an outside edit and overwrites the user's current text.
-        return enumerator.compactMap { $0 as? URL }
+        let files = enumerator.compactMap { $0 as? URL }
             .filter { $0.pathExtension == DocumentFilename.fileExtension }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+
+        return (files, failures == 0)
     }
 
     /// Every directory under the root, as components relative to it.

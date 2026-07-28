@@ -106,7 +106,7 @@ struct MarkdownFolderScanTests {
         try write("# Groceries\n\n- milk\n", to: root.appendingPathComponent("groceries.md"))
 
         var library = Library()
-        let plan = library.apply(MarkdownFolderScan(rootURL: root))
+        let plan = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(plan.inserted.count == 1)
         #expect(library.documents.first?.body.contains("milk") == true)
@@ -121,7 +121,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("note.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         let second = library.apply(scan)
         let third = library.apply(scan)
@@ -139,7 +139,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        _ = library.apply(MarkdownFolderScan(rootURL: root))
+        _ = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(library.spaces.map(\.name) == ["Work"])
         #expect(library.documents.first?.spaceID == library.spaces.first?.id)
@@ -153,7 +153,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/Projects/Q3/plan.md"))
 
         var library = Library()
-        _ = library.apply(MarkdownFolderScan(rootURL: root))
+        _ = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(library.spaces.count == 3)
         let leaf = try #require(library.spaces.first { $0.name == "Q3" })
@@ -172,7 +172,7 @@ struct MarkdownFolderScanTests {
         )
 
         var library = Library()
-        _ = library.apply(MarkdownFolderScan(rootURL: root))
+        _ = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(library.spaces.map(\.name) == ["Reading"])
     }
@@ -188,7 +188,7 @@ struct MarkdownFolderScanTests {
         try write("first draft", to: file)
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         // What another editor does: rewrite the body, leave the frontmatter alone.
@@ -211,7 +211,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: file)
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.documents.first?.spaceID == nil)
 
@@ -237,7 +237,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: file)
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         let originalID = library.documents.first?.id
 
@@ -259,7 +259,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: file)
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         try FileManager.default.removeItem(at: file)
@@ -286,7 +286,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.spaces.count == 1)
 
@@ -304,7 +304,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         try FileManager.default.removeItem(at: root.appendingPathComponent("Work"))
@@ -323,7 +323,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         try FileManager.default.removeItem(at: root.appendingPathComponent("Work"))
@@ -341,7 +341,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/Projects/Q3/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.spaces.count == 3)
 
@@ -361,7 +361,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Personal/notes.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.spaces.count == 2)
 
@@ -381,7 +381,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/Projects/q3.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.spaces.count == 2)
 
@@ -400,7 +400,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         #expect(library.spaces.count == 1)
 
@@ -422,7 +422,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
 
         let file = try #require(
@@ -452,7 +452,7 @@ struct MarkdownFolderScanTests {
         #expect(migrator.export(documents: [doc.content], spaces: []).isSuccess)
 
         var library = Library(spaces: [], documents: [doc.content])
-        let plan = library.apply(MarkdownFolderScan(rootURL: root))
+        let plan = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(plan.isEmpty)
     }
@@ -473,7 +473,7 @@ struct MarkdownFolderScanTests {
         #expect(migrator.export(documents: [doc.content], spaces: [work]).isSuccess)
 
         var library = Library(spaces: [work], documents: [doc.content])
-        let plan = library.apply(MarkdownFolderScan(rootURL: root))
+        let plan = library.apply(MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0))
 
         #expect(plan.isEmpty)
         #expect(library.documents.count == 1)
@@ -489,7 +489,7 @@ struct MarkdownFolderScanTests {
         try write("text", to: root.appendingPathComponent("Work/plan.md"))
 
         var library = Library()
-        let scan = MarkdownFolderScan(rootURL: root)
+        let scan = MarkdownFolderScan(rootURL: root, adoptionSettleSeconds: 0)
         _ = library.apply(scan)
         let originalID = try #require(library.spaces.first?.id)
 

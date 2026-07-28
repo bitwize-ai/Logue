@@ -20,16 +20,29 @@ enum DocumentFilename {
     private static let fallbackStem = "Untitled"
 
     /// A safe filename for `document`, avoiding any name in `taken`.
+    /// A safe filename for `document`, avoiding any name in `taken`.
+    ///
+    /// `taken` is matched **case-insensitively**, because the filesystems this ships on are.
+    /// `uniqueTitle` deduplicates titles case-sensitively, so `Notes` and `notes` coexist in real
+    /// libraries — and a case-sensitive check here let the second one resolve to a name `taken` did
+    /// not contain, so `write(to:atomically:)` replaced the first document's file. `verify()` then
+    /// read back the winner and passed, the mode flipped, and the loser's markdown was gone with no
+    /// Trash copy.
     static func filename(for document: WritingDocument, avoiding taken: Set<String> = []) -> String {
+        let folded = Set(taken.map { $0.lowercased() })
+        func isFree(_ name: String) -> Bool {
+            !folded.contains(name.lowercased())
+        }
+
         let stem = safeStem(from: document.title)
         let candidate = "\(stem).\(fileExtension)"
-        guard taken.contains(candidate) else { return candidate }
+        guard !isFree(candidate) else { return candidate }
 
         // Disambiguate with a prefix of the document identifier: stable for a given
         // document, so a collision does not produce a different name on every save.
         let shortID = document.id.uuidString.prefix(8)
         let disambiguated = "\(stem) (\(shortID)).\(fileExtension)"
-        guard taken.contains(disambiguated) else { return disambiguated }
+        guard !isFree(disambiguated) else { return disambiguated }
 
         // Fall back to the full identifier, which cannot collide.
         return "\(stem) (\(document.id.uuidString)).\(fileExtension)"

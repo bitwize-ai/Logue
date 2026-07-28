@@ -21,7 +21,7 @@ enum MarkdownDocumentFile {
     /// Keys the format owns. Anything else in frontmatter is treated as a property.
     private static var reservedKeys: Set<String> {
         Set(
-            [identifierKey, "title", "tags", "created", "icon", "width", "pinned", "organised"]
+            [identifierKey, "title", "tags", "created", "icon", "width", "pinned", "organised", "goal"]
                 + RelationshipKind.allCases.map(\.key)
         )
     }
@@ -58,14 +58,19 @@ enum MarkdownDocumentFile {
         if let organised = content.storedIsOrganised {
             fields.append(("organised", .scalar(organised ? "true" : "false")))
         }
+        // Written because it is part of the document: it was never emitted, so every document's
+        // writing goal reset to the default on the first round trip through the folder.
+        fields.append(("goal", .scalar(content.goalMode.rawValue)))
 
-        // Properties, key-sorted for stability.
+        // Properties, key-sorted for stability, each written in a form that reads back as the same
+        // type. `displayString` was destroying them: `.number(5)` became `"5"` and returned as
+        // `.text("5")`, `.boolean(true)` became `"Yes"`, and `.date` became a *locale-dependent*
+        // medium string that cannot be parsed at all — which also broke this file's promise of
+        // identical bytes for an identical document. The loss was then applied live, because
+        // `ExternalChangePlanner.differs` compares properties and the next scan saw a change.
         for key in (content.properties ?? [:]).keys.sorted() {
             guard let value = content.properties?[key] else { continue }
-            switch value {
-            case let .list(items): fields.append((key, .list(items)))
-            default: fields.append((key, .scalar(value.displayString)))
-            }
+            fields.append((key, propertyField(for: value)))
         }
 
         // Relationships in a fixed kind order, targets as wikilinks so the file reads
@@ -94,6 +99,91 @@ enum MarkdownDocumentFile {
         return UUID(uuidString: raw)
     }
 
+    /// How a property value is written so it reads back as the same type.
+    ///
+    /// Inference on read is the trade: a text property whose value happens to look like a number or
+    /// an ISO date comes back as that type. That is worth it, because the alternative — keeping the
+    /// types in a sidecar — means the file alone no longer describes the document, and someone
+    /// editing a date in another editor could not.
+    private static func propertyField(for value: PropertyValue) -> FrontmatterValue {
+        switch value {
+        case let .text(text):
+            // Quoted when it would otherwise be read back as another type, so a text property
+            // holding "5" stays text.
+            .scalar(looksTyped(text) ? "\"\(text)\"" : text)
+        case let .number(number):
+            .scalar(number == number.rounded() && abs(number) < 1e15
+                ? String(Int(number))
+                : String(number))
+        case let .date(date):
+            .scalar(isoFormatter.string(from: date))
+        case let .boolean(flag):
+            .scalar(flag ? "true" : "false")
+        case let .list(items):
+            .list(items)
+        case let .unknown(kind, payload):
+            // Kept as its own tagged form rather than flattened: `.unknown` exists so a document
+            // written by a newer build survives an older one, and flattening it here defeated that
+            // in exactly the mode where the file is the only copy.
+            .scalar(unknownEncoding(kind: kind, payload: payload))
+        }
+    }
+
+    /// Turns a frontmatter value back into a typed property.
+    private static func propertyValue(from value: FrontmatterValue) -> PropertyValue {
+        switch value {
+        case let .list(items):
+            return .list(items)
+        case let .scalar(raw):
+            if let decoded = decodedUnknown(raw) {
+                return decoded
+            }
+            if raw == "true" || raw == "false" {
+                return .boolean(raw == "true")
+            }
+            if let number = Double(raw), looksNumeric(raw) {
+                return .number(number)
+            }
+            if let date = isoFormatter.date(from: raw) {
+                return .date(date)
+            }
+            return .text(raw)
+        }
+    }
+
+    /// Whether a string would be read back as something other than text.
+    private static func looksTyped(_ raw: String) -> Bool {
+        raw == "true" || raw == "false" || looksNumeric(raw) || isoFormatter.date(from: raw) != nil
+            || raw.hasPrefix(unknownPrefix)
+    }
+
+    /// Deliberately stricter than `Double(_:)`, which accepts "inf", "nan" and hex floats — none of
+    /// which a user typing in a text field means as a number.
+    private static func looksNumeric(_ raw: String) -> Bool {
+        !raw.isEmpty && raw.allSatisfy { $0.isNumber || $0 == "-" || $0 == "." || $0 == "+" }
+            && Double(raw) != nil
+    }
+
+    private static let unknownPrefix = "logue-kind:"
+
+    private static func unknownEncoding(kind: String, payload: PreservedJSON) -> String {
+        guard let data = try? JSONEncoder().encode(payload),
+              let json = String(data: data, encoding: .utf8)
+        else { return "\(unknownPrefix)\(kind):null" }
+        return "\(unknownPrefix)\(kind):\(json)"
+    }
+
+    private static func decodedUnknown(_ raw: String) -> PropertyValue? {
+        guard raw.hasPrefix(unknownPrefix) else { return nil }
+        let rest = raw.dropFirst(unknownPrefix.count)
+        guard let separator = rest.firstIndex(of: ":") else { return nil }
+
+        let kind = String(rest[rest.startIndex ..< separator])
+        let json = String(rest[rest.index(after: separator)...])
+        let payload = (try? JSONDecoder().decode(PreservedJSON.self, from: Data(json.utf8))) ?? .null
+        return .unknown(kind: kind, value: payload)
+    }
+
     /// Reads content from a file, or `nil` when it carries no identifier.
     static func content(from markdown: String) -> DocumentContent? {
         guard let id = identifier(in: markdown) else { return nil }
@@ -101,6 +191,12 @@ enum MarkdownDocumentFile {
         let parsed = MarkdownFrontmatter.parse(markdown)
         var content = WritingDocument().content
         content.id = id
+        // `nil`, not the `false` a fresh document starts with. The invariant on this field is that
+        // nil means organised — `isOrganised` is `storedIsOrganised ?? true` — so starting from
+        // false and only assigning when the key is present meant every v1.0.0 document, where it is
+        // nil, round-tripped to *unorganised*. Enabling markdown storage put an entire existing
+        // library into the Inbox, and switching back persisted that.
+        content.storedIsOrganised = nil
 
         content.body = parsed.body.hasSuffix("\n")
             ? String(parsed.body.dropLast())
@@ -124,6 +220,11 @@ enum MarkdownDocumentFile {
         if case let .scalar(organised)? = parsed.fields["organised"] {
             content.storedIsOrganised = organised == "true"
         }
+        if case let .scalar(goal)? = parsed.fields["goal"],
+           let mode = WritingGoalMode(rawValue: goal)
+        {
+            content.goalMode = mode
+        }
         // A malformed date falls back to the default rather than failing the read: a
         // wrong timestamp is recoverable, an unreadable document is not.
         if case let .scalar(created)? = parsed.fields["created"],
@@ -143,10 +244,7 @@ enum MarkdownDocumentFile {
         // rather than silently discarded on the next write.
         var properties: [String: PropertyValue] = [:]
         for (key, value) in parsed.fields where !reservedKeys.contains(key) {
-            switch value {
-            case let .scalar(raw): properties[key] = .text(raw)
-            case let .list(items): properties[key] = .list(items)
-            }
+            properties[key] = propertyValue(from: value)
         }
         content.properties = properties.isEmpty ? nil : properties
 

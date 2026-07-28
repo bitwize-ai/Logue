@@ -16,6 +16,9 @@ struct ExternalChangePlan: Sendable {
     var ignoredIdentifiers: [UUID] = []
     /// Identifiers carried by more than one file, so nothing about them can be applied safely.
     var ambiguousIdentifiers: Set<UUID> = []
+    /// Documents the walk did not return but whose file is still there — an unreadable directory, a
+    /// file moved while the walk was in flight. Reported, never trashed.
+    var unwalkable: [UUID] = []
 
     var isEmpty: Bool {
         updated.isEmpty && inserted.isEmpty && trashed.isEmpty
@@ -45,11 +48,23 @@ enum ExternalChangePlanner {
     ///   - scanned: documents read from files that carry an identifier.
     ///   - adopted: documents built from files that carry none, with fresh identifiers.
     ///   - known: every document the app has, trashed ones included.
+    /// `stillOnDisk` holds documents whose last-known file was found by a direct existence check.
+    ///
+    /// Absence from the walk is not deletion, and this is the guard that says so. Every data-loss
+    /// finding in review flowed through the old rule: a symlinked or unreadable root walks as empty
+    /// while `fileExists` reports it present, an unreadable subdirectory walks as empty, a sync
+    /// client evicting files walks as empty, a file truncated mid-write parses as unidentified, and a
+    /// document moved between folders during the walk is in neither place. All of those produced
+    /// "absent from the walk", and the answer was to trash the document.
+    ///
+    /// Absent from the walk *and* absent from disk is a deletion. Absent from the walk alone is a
+    /// question, and the answer to a question is to do nothing.
     static func plan(
         scanned: [DocumentContent],
         adopted: [DocumentContent] = [],
         known: [DocumentContent],
-        ambiguous: Set<UUID> = []
+        ambiguous: Set<UUID> = [],
+        stillOnDisk: Set<UUID> = []
     ) -> ExternalChangePlan {
         var plan = ExternalChangePlan()
         plan.ambiguousIdentifiers = ambiguous
@@ -91,6 +106,10 @@ enum ExternalChangePlanner {
             where !document.isTrashed && !seen.contains(document.id)
             && !ambiguous.contains(document.id)
         {
+            guard !stillOnDisk.contains(document.id) else {
+                plan.unwalkable.append(document.id)
+                continue
+            }
             plan.trashed.append(document.id)
         }
 

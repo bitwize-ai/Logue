@@ -159,6 +159,13 @@ enum AppConstants {
         /// and neither speaks `Duration`.
         static let folderScanDebounceSeconds: TimeInterval = 0.4
 
+        /// How long a file must have been untouched before it is adopted as a new document.
+        ///
+        /// A file mid-write looks exactly like a file with no identifier, and adopting one wrote our
+        /// frontmatter over content the user was still saving. Comfortably longer than the scan
+        /// debounce, because the point is to outlast a writer that is not atomic.
+        static let adoptionSettleSeconds: TimeInterval = 2.0
+
         /// How long a pane waits before admitting it is still loading.
         ///
         /// Long enough that a fast load looks instant rather than showing a spinner that

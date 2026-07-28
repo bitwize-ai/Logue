@@ -121,7 +121,6 @@ struct PrivacySettingsTab: View {
 
     private func disableMarkdownStorage(retiringFolder: Bool) {
         storageError = nil
-        storage.folderRetirementFailed = false
 
         do {
             let restored = try storage.switchToEncrypted(
@@ -131,11 +130,21 @@ struct PrivacySettingsTab: View {
                 // deleted, and switching would prune the encrypted copies of the difference.
                 expectedDocumentCount: documentStore.activeDocuments.count
             )
-            Task { await documentStore.adoptAfterStorageSwitch(restored) }
 
-            if storage.folderRetirementFailed {
-                storageError = "Your documents were re-encrypted, but the folder could not be moved "
-                    + "to the Trash. It is still in your home folder and can be moved by hand."
+            Task {
+                // In this order, and awaited: the folder is the only copy of anything created while
+                // the setting was on, so it cannot go to the Trash until every document is confirmed
+                // written to encrypted storage. This used to be an unawaited task with log-only
+                // failures, running *after* the folder had already been trashed.
+                await documentStore.adoptAfterStorageSwitch(restored)
+                await documentStore.awaitPendingSaves()
+
+                guard retiringFolder else { return }
+                do {
+                    try storage.retireFolderAfterReEncryption(of: restored)
+                } catch {
+                    storageError = error.localizedDescription
+                }
             }
         } catch {
             // Nothing was changed: the switch refuses before it reads rather than part-way through.
@@ -154,12 +163,26 @@ struct PrivacySettingsTab: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("AES-256-GCM at rest")
                         .font(.callout.weight(.semibold))
-                    Text("Conversations, meetings, and documents are encrypted on disk. The key never leaves this Mac.")
+                    Text(encryptionDetail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
+    }
+
+    /// Reads the mode rather than asserting the default.
+    ///
+    /// The flat claim sat directly above the section explaining that documents are *not* encrypted
+    /// once this setting is on — a contradiction on the one tab where a user goes to check exactly
+    /// this.
+    private var encryptionDetail: String {
+        if storage.mode.isMarkdown {
+            return "Conversations and meetings are encrypted on disk, and the key never leaves this "
+                + "Mac. Documents are not: plain markdown storage is on, so they are readable files "
+                + "in your home folder."
+        }
+        return "Conversations, meetings, and documents are encrypted on disk. The key never leaves this Mac."
     }
 
     // MARK: - Data location

@@ -423,8 +423,35 @@ final class DocumentStore {
         }
     }
 
+    /// Waits for every in-flight per-document write to finish.
+    ///
+    /// `saveDocument` writes in a detached task, so a caller that needs the data *on disk* — turning
+    /// markdown storage off, where the folder is about to go to the Trash — cannot simply return and
+    /// hope. Failures still only log; the caller confirms by looking for the files.
+    ///
+    /// Extension-visible: +Organisation
+    func awaitPendingSaves() async {
+        let tasks = Array(_documentSaveTasks.values)
+        for task in tasks {
+            await task.value
+        }
+        _documentSaveTasks.removeAll()
+    }
+
     /// Saves ALL documents — each to its own file. Cancels any previous bulk save in flight.
     func saveToDisk() {
+        // In markdown mode the folder is the storage, so writing only encrypted files creates
+        // documents with *no* `.md` file — and the next scan reads "document with no file" as a
+        // deletion and trashes the lot. `BackupManager.applyImport` and the sample-data loader both
+        // come through here, so restoring a backup used to be trashed by the next app activation.
+        if DocumentStorage.shared.mode.isMarkdown {
+            let spaces = SpaceStore.shared.spaces
+            for document in documents {
+                DocumentStorage.shared.save(document, spaces: spaces)
+            }
+            return
+        }
+
         _saveTask?.cancel()
         let snapshot = documents
         let dir = documentsDirectory
@@ -510,6 +537,15 @@ final class DocumentStore {
         selectedDocumentID = nil
         savedViews = []
         documentTypes = []
+
+        // In markdown mode the documents are plaintext files outside this directory, so clearing
+        // only Application Support left the whole library readable on disk while the app forgot
+        // about it.
+        do {
+            try DocumentStorage.shared.clearMarkdownFolderContents()
+        } catch {
+            logger.error("Could not empty the documents folder: \(error.localizedDescription, privacy: .public)")
+        }
 
         let dir = documentsDirectory
         // The organisation directory is new and was outside every reset path, so "erase all data"

@@ -115,7 +115,12 @@ extension DocumentStorage {
 
         let spaces = spaceStore.spaces
         let known = documentStore.documents.map(\.content)
-        let plan = await Task.detached { scan.plan(spaces: spaces, known: known) }.value
+        // The index the cross-check needs: where each document's file was last seen, so absence from
+        // the walk can be tested against the filesystem rather than believed.
+        let lastKnownFiles = liveMigrator.fileIndex()
+        let plan = await Task.detached {
+            scan.plan(spaces: spaces, known: known, lastKnownFiles: lastKnownFiles)
+        }.value
 
         report(plan, duplicatedFolders: scan.duplicatedSpaceFolders(in: spaceStore.spaces))
 
@@ -130,6 +135,10 @@ extension DocumentStorage {
             Self.scanLogger.info(
                 "Held back \(plan.updated.count - settled.updated.count, privacy: .public) update(s) for a document edited during the scan"
             )
+            // Queued rather than only logged. `kFSEventStreamCreateFlagIgnoreSelf` means our own next
+            // write produces no event, so a held-back external edit had nothing left to trigger it and
+            // sat unapplied until the app happened to overwrite the file.
+            hasPendingScan = true
         }
 
         documentStore.applyExternalChanges(settled)
@@ -160,6 +169,12 @@ extension DocumentStorage {
         for folder in duplicatedFolders {
             Self.scanLogger.info(
                 "Two folders claim the same space; keeping the one the space is named after, ignoring \(folder.count, privacy: .public) level(s) deep"
+            )
+        }
+
+        if !plan.unwalkable.isEmpty {
+            Self.scanLogger.error(
+                "\(plan.unwalkable.count, privacy: .public) document(s) were not returned by the walk but their files are still there; left alone"
             )
         }
 
@@ -207,7 +222,10 @@ extension DocumentStorage {
         }
 
         for id in roots {
-            spaceStore.deleteSpace(id: id)
+            // The folder is already gone — that is why we are here. Retiring would recompute the path
+            // from the space's name and trash whatever is at it, and deleting a folder then making a
+            // new one with the same name is a normal thing to do.
+            spaceStore.deleteSpace(id: id, retiringFolder: false)
         }
         Self.scanLogger.info(
             "Removed \(vanished.count, privacy: .public) space(s) whose folder was deleted"

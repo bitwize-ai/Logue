@@ -50,11 +50,11 @@ extension MeetingStore {
             if let index = meetings.firstIndex(where: { $0.id == meetingID }),
                isDefaultTitle(meetings[index].title)
             {
-                let deduped = uniqueTitle(cleanTitle, among: activeMeetings.map(\.title))
                 logger.info("generateAITitle: title set for meeting \(meetingID, privacy: .public)")
-                meetings[index].title = deduped
-                meetings[index].modifiedAt = Date()
-                saveMeeting(id: meetingID)
+                // Through `applyTitle` for the link repair as much as the deduplication: a meeting is
+                // a link target, so a generated title silently broke every `[[link]]` pointing at it,
+                // with the user doing nothing at all.
+                applyTitle(cleanTitle, to: meetingID)
             } else {
                 logger.info("generateAITitle: skipped — title already customized")
             }
@@ -99,11 +99,9 @@ extension MeetingStore {
         """
 
         if let cleanTitle = await generateTitle(system: titleSystem, prompt: prompt) {
-            if let index = meetings.firstIndex(where: { $0.id == meetingID }) {
+            if meetings.contains(where: { $0.id == meetingID }) {
                 logger.info("regenerateAITitle: title updated for meeting \(meetingID, privacy: .public)")
-                meetings[index].title = cleanTitle
-                meetings[index].modifiedAt = Date()
-                saveMeeting(id: meetingID)
+                applyTitle(cleanTitle, to: meetingID)
             }
         }
     }

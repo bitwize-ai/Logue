@@ -73,10 +73,6 @@ final class DocumentStorage {
     /// What the last scan of the folder found, for the rescan button's tooltip.
     private(set) var lastScanSummary: String?
 
-    /// Set when turning the setting off could not move the folder to the Trash, so Settings can
-    /// say so rather than leaving the user to notice a folder they were told would go.
-    var folderRetirementFailed = false
-
     /// True while a scan the *user* asked for is running, so the button can spin.
     ///
     /// Separate from `isScanInFlight` on purpose: a scan triggered by coming back to the app should
@@ -193,6 +189,7 @@ final class DocumentStorage {
         case exportFailed(count: Int, firstReason: String)
         case folderUnavailable
         case folderIncomplete(found: Int, expected: Int)
+        case reEncryptionIncomplete(count: Int)
 
         var errorDescription: String? {
             switch self {
@@ -201,6 +198,10 @@ final class DocumentStorage {
             case .folderUnavailable:
                 "The Logue folder could not be found, so nothing was changed. If it is on a drive "
                     + "that is not connected, or you moved it, put it back and try again."
+            case let .reEncryptionIncomplete(count):
+                "\(count) document(s) had not finished writing to encrypted storage, so the folder "
+                    + "was left where it is. Your documents are safe in both places — try turning "
+                    + "the setting off again."
             case let .folderIncomplete(found, expected):
                 "The folder holds \(found) document(s) but Logue has \(expected), so nothing was "
                     + "changed. Press the rescan button in the sidebar to reconcile them first — "
@@ -251,6 +252,34 @@ final class DocumentStorage {
         invalidateFileIndex()
         startWatchingIfNeeded()
         logger.info("Switched document storage to plain markdown")
+    }
+
+    /// Moves the folder to the Trash, once its documents are durably encrypted elsewhere.
+    ///
+    /// Split out of `switchToEncrypted` and called only after the re-encryption has been awaited and
+    /// checked. It used to run inside the switch, where "the documents are in hand" meant *in memory*
+    /// — the caller then persisted them through an unawaited `Task` whose failures were log-only. A
+    /// user who had worked for a month in markdown mode (documents created then have no encrypted
+    /// copy at all) could turn the setting off, have the detached writes hit a full disk, be shown
+    /// success, and find the only copy of that month in the Trash.
+    func retireFolderAfterReEncryption(of documents: [WritingDocument]) throws {
+        let missing = documents.filter { !$0.isTrashed && !hasEncryptedCopy(of: $0.id) }
+        guard missing.isEmpty else {
+            throw SwitchError.reEncryptionIncomplete(count: missing.count)
+        }
+
+        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        logger.info("Moved the documents folder to the Trash")
+    }
+
+    /// Whether a document has landed in encrypted storage.
+    private func hasEncryptedCopy(of id: UUID) -> Bool {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL.temporaryDirectory
+        let url = support
+            .appendingPathComponent("Logue/documents")
+            .appendingPathComponent("\(id.uuidString).json")
+        return FileManager.default.fileExists(atPath: url.path)
     }
 
     /// Switches back to encrypted storage, reading the folder first.
@@ -305,22 +334,24 @@ final class DocumentStorage {
         mode = .encrypted
         invalidateFileIndex()
 
-        // Last, and only once the documents are in hand: if reading the folder went wrong, the
-        // folder is the only place that text exists.
-        if retiringFolder {
-            do {
-                try migrator.retireRoot()
-                logger.info("Moved the documents folder to the Trash")
-            } catch {
-                // The switch itself worked, so this does not fail it — the user is told, and can
-                // move the folder themselves.
-                logger.error("Could not move the documents folder to the Trash: \(error.localizedDescription, privacy: .public)")
-                folderRetirementFailed = true
-            }
-        }
-
         logger.info("Switched document storage back to encrypted")
         return documents
+    }
+
+    /// Empties the plain-markdown folder without changing the setting.
+    ///
+    /// For the "clear data" paths, which are not "turn this feature off": the folder went to the
+    /// Trash and an empty one takes its place. Before this, clearing left the entire library sitting
+    /// in plaintext in `~/Logue` while the app forgot it existed — the worst of both, since the data
+    /// was still readable by anything on the Mac but no longer reachable from the app.
+    func clearMarkdownFolderContents() throws {
+        guard mode.isMarkdown else { return }
+
+        let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
+        try migrator.retireRoot()
+        try migrator.prepareRoot()
+        invalidateFileIndex()
+        logger.info("Emptied the documents folder")
     }
 
     /// Removes the plain-markdown folder and returns to encrypted storage, for "erase all data".
