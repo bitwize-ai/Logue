@@ -30,37 +30,56 @@ extension DocumentStore {
     @discardableResult
     func importFiles(at urls: [URL], into spaceID: UUID?) async -> ImportOutcome {
         let logger = Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
+
+        // Partitioned before the read, not after: a file the folder already stores is discarded
+        // either way, and reading one only to drop it costs the whole file.
+        var outcome = ImportOutcome()
+        var readable: [URL] = []
+        for url in urls {
+            if let reason = Self.alreadyStoredReason(for: url) {
+                outcome.skipped.append(ImportOutcome.Skipped(file: url.lastPathComponent, reason: reason))
+            } else {
+                readable.append(url)
+            }
+        }
+
         let parsed = await Task.detached(priority: .userInitiated) {
-            urls.map { url in (name: url.lastPathComponent, url: url, result: Self.read(url)) }
+            readable.map { url in (name: url.lastPathComponent, result: Self.read(url)) }
         }.value
 
-        var outcome = ImportOutcome()
+        // Re-checked after the await, not only by the caller before it. Reading a batch off a
+        // network volume takes long enough for the user to delete the space in the meantime, and
+        // the panel stays open throughout; documents filed against a dead id have no sidebar row.
+        var destination = spaceID
+        if let spaceID, SpaceStore.shared.space(for: spaceID) == nil {
+            logger.warning("Import target space no longer exists — filing at the top level")
+            destination = nil
+        }
+
         for file in parsed {
-            // In markdown mode the folder *is* the library, so a file already inside it is
-            // already a document — or is about to be adopted as one by the next scan. Importing
-            // it would make a second document from the same text and leave the original file
-            // behind to be adopted separately.
-            if let reason = Self.alreadyStoredReason(for: file.url) {
-                outcome.skipped.append(ImportOutcome.Skipped(file: file.name, reason: reason))
-                continue
-            }
             switch file.result {
             case let .success(document):
-                let created = createDocument(
+                createDocument(
                     title: document.title,
                     body: document.body,
-                    inSpace: spaceID,
+                    tags: document.tags,
+                    inSpace: destination,
                     select: false
                 )
-                for tag in document.tags {
-                    addTag(tag, to: created.id)
-                }
                 outcome.imported += 1
             case let .failure(error):
                 let reason = (error as? MarkdownImport.ImportError).map(Self.description) ?? "could not be read"
                 outcome.skipped.append(ImportOutcome.Skipped(file: file.name, reason: reason))
+                // The underlying error too: everything that is not an ImportError collapses to
+                // one reason, and without this a report of "it skipped 40 files" cannot be
+                // diagnosed at all.
                 logger.warning(
-                    "Import skipped \(file.name, privacy: .private): \(reason, privacy: .public)"
+                    """
+                    Import skipped \(file.name, privacy: .private): \(reason, privacy: .public)                     (\(
+                        error.localizedDescription,
+                        privacy: .public
+                    ))
+                    """
                 )
             }
         }
@@ -120,12 +139,23 @@ extension DocumentStore {
     }
 
     /// Why a file should not be imported because the app already stores it, or `nil` when it is
-    /// an ordinary outside file. Symlinks are resolved on both sides so an aliased path cannot
-    /// slip past the check.
+    /// an ordinary outside file.
+    ///
+    /// In markdown mode the folder *is* the library, so a file inside it is already a document —
+    /// or is about to be adopted as one by the next scan. Importing it would make a second
+    /// document from the same text and leave the original to be adopted separately. Symlinks are
+    /// resolved on both sides so an aliased path cannot slip past.
     private static func alreadyStoredReason(for url: URL) -> String? {
         guard DocumentStorage.shared.mode.isMarkdown else { return nil }
-        let root = DocumentStorage.markdownRootURL.resolvingSymlinksInPath().standardizedFileURL.path
-        let file = url.resolvingSymlinksInPath().standardizedFileURL.path
+        // Only `.md`, because that is all a scan adopts. Refusing a `.txt` sitting in the folder
+        // would leave it importable by no route at all, under a message that is not even true.
+        guard url.pathExtension.lowercased() == "md" else { return nil }
+
+        // Compared case-insensitively: the default APFS volume is, so a path reached through a
+        // differently-cased component would otherwise slip past and be imported twice.
+        let root = DocumentStorage.markdownRootURL.resolvingSymlinksInPath()
+            .standardizedFileURL.path.lowercased()
+        let file = url.resolvingSymlinksInPath().standardizedFileURL.path.lowercased()
         guard file.hasPrefix(root + "/") else { return nil }
         return "already in the Logue folder"
     }
