@@ -340,21 +340,22 @@ extension DocumentStorage {
         }.value
     }
 
-    /// Removes deletions for documents that did not exist when the walk began.
+    /// Applies `ExternalChangePlanner.keepingDocumentsCreatedDuringWalk` and reports what it saved.
     ///
-    /// `discardingUpdatesThatMovedOn` does this for updates but not for deletions. A document
-    /// created while the folder was being read is absent from the walk for the one reason that is
-    /// not a deletion, and trashing it takes its file with it — importing a batch mid-scan trashed
-    /// every document in it.
+    /// The rule itself lives next to `discardingUpdatesThatMovedOn`, where it is pure and tested;
+    /// what stays here is the part that needs the store — logging, and asking for another scan so
+    /// the rescued documents get diffed against a walk that could have seen them.
     private func keepDocumentsCreatedDuringWalk(
         in plan: inout ExternalChangePlan, predatingWalk: Set<UUID>
     ) {
-        let created = plan.trashed.filter { !predatingWalk.contains($0) }
-        guard !created.isEmpty else { return }
+        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
+            plan, predatingWalk: predatingWalk
+        )
+        guard !kept.isEmpty else { return }
 
-        plan.trashed.removeAll { !predatingWalk.contains($0) }
+        plan = settled
         Self.scanLogger.info(
-            "Kept \(created.count, privacy: .public) document(s) created while the folder was being read"
+            "Kept \(kept.count, privacy: .public) document(s) created while the folder was being read"
         )
         hasPendingScan = true
     }

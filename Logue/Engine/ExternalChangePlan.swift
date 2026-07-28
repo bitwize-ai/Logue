@@ -149,6 +149,27 @@ enum ExternalChangePlanner {
         return settled
     }
 
+    /// Drops deletions for documents that did not exist when the walk began.
+    ///
+    /// The other half of `discardingUpdatesThatMovedOn`, and the more dangerous one: a document
+    /// created while the folder was being read is absent from the walk for the one reason that is
+    /// not a deletion, and trashing it takes its file with it. Importing a batch mid-scan trashed
+    /// every document in it.
+    ///
+    /// Returns the identifiers it rescued, so the caller can log them and ask for another scan —
+    /// they still need to be diffed, just against a walk that could have seen them.
+    static func keepingDocumentsCreatedDuringWalk(
+        _ plan: ExternalChangePlan,
+        predatingWalk: Set<UUID>
+    ) -> (plan: ExternalChangePlan, kept: [UUID]) {
+        let kept = plan.trashed.filter { !predatingWalk.contains($0) }
+        guard !kept.isEmpty else { return (plan, []) }
+
+        var settled = plan
+        settled.trashed.removeAll { !predatingWalk.contains($0) }
+        return (settled, kept)
+    }
+
     /// Whether a file's content differs from the document in a way worth applying.
     ///
     /// Timestamps are deliberately excluded. An external editor rewrites the body without

@@ -282,6 +282,55 @@ struct ConcurrentEditProtectionTests {
         #expect(settled.trashed.count == 1)
     }
 
+    // MARK: - Deletions that moved on
+
+    /// The counterpart to dropping a stale update, and the more dangerous of the two: trashing a
+    /// document takes its file with it. A batch imported while the folder was being read is absent
+    /// from that walk for the one reason that is not a deletion.
+    @Test("A document created during the walk is not trashed for being absent from it")
+    func createdDuringWalkSurvives() {
+        let existed = UUID()
+        let createdSince = UUID()
+
+        var plan = ExternalChangePlan()
+        plan.trashed = [createdSince]
+
+        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
+            plan, predatingWalk: [existed]
+        )
+        #expect(settled.trashed.isEmpty)
+        #expect(kept == [createdSince])
+    }
+
+    @Test("A document that existed before the walk and has no file is still trashed")
+    func predatingDeletionStillApplies() {
+        let gone = UUID()
+        var plan = ExternalChangePlan()
+        plan.trashed = [gone]
+
+        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
+            plan, predatingWalk: [gone]
+        )
+        #expect(settled.trashed == [gone])
+        #expect(kept.isEmpty)
+    }
+
+    /// Rescuing one must not suspend deletion for the rest, or one mid-scan import would freeze
+    /// external deletions for the whole library.
+    @Test("Rescuing a new document still lets a real deletion through")
+    func rescueIsScoped() {
+        let gone = UUID()
+        let createdSince = UUID()
+        var plan = ExternalChangePlan()
+        plan.trashed = [gone, createdSince]
+
+        let (settled, kept) = ExternalChangePlanner.keepingDocumentsCreatedDuringWalk(
+            plan, predatingWalk: [gone]
+        )
+        #expect(settled.trashed == [gone])
+        #expect(kept == [createdSince])
+    }
+
     @Test("A document that vanished from memory during the scan is left for the next one")
     func missingDocumentDropsUpdate() {
         let snapshot = document("Alpha", body: "old")
