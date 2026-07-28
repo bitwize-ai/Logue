@@ -11,6 +11,14 @@ enum PropertyValue: Equatable, Sendable {
     case date(Date)
     case boolean(Bool)
     case list([String])
+    /// A kind this build does not know, kept exactly as written so the round trip loses nothing.
+    ///
+    /// Decoding used to throw on an unrecognised `kind`, and that throw propagated out of
+    /// `[String: PropertyValue]`, out of `WritingDocument.init(from:)`, and into the per-file
+    /// `catch` in `DocumentStore` that skips the file — so a document written by a newer build
+    /// *disappeared from the library* on an older one. `relationships` is stored as raw strings for
+    /// exactly this reason; this had no such tolerance.
+    case unknown(kind: String, value: PreservedJSON)
 
     /// How the value reads in the UI.
     var displayString: String {
@@ -25,6 +33,8 @@ enum PropertyValue: Equatable, Sendable {
             value ? "Yes" : "No"
         case let .list(values):
             values.joined(separator: ", ")
+        case let .unknown(_, value):
+            value.displayString
         }
     }
 
@@ -71,12 +81,25 @@ extension PropertyValue: Codable {
         case let .list(values):
             try container.encode(Kind.list, forKey: .kind)
             try container.encode(values, forKey: .value)
+        case let .unknown(kind, value):
+            // The original tag and payload, unchanged: a newer build must find what it wrote.
+            try container.encode(kind, forKey: .kind)
+            try container.encode(value, forKey: .value)
         }
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let kind = try container.decode(Kind.self, forKey: .kind)
+
+        let rawKind = try container.decode(String.self, forKey: .kind)
+        guard let kind = Kind(rawValue: rawKind) else {
+            self = .unknown(
+                kind: rawKind,
+                value: (try? container.decode(PreservedJSON.self, forKey: .value)) ?? .null
+            )
+            return
+        }
+
         switch kind {
         case .text:
             self = try .text(container.decode(String.self, forKey: .value))

@@ -22,6 +22,11 @@ extension MainWindowView {
             break
         }
 
+        // Choosing a list from the sidebar abandons the link trail deliberately, so the trail must
+        // not survive it: `clear()` had no callers at all, which meant Back could jump to a document
+        // the user had left several navigations ago instead of to the list they were looking at.
+        NavigationHistory.shared.clear()
+
         storeChangeVersion += 1
         withAnimation(.easeOut(duration: 0.08)) {
             isEditing = false
@@ -34,16 +39,25 @@ extension MainWindowView {
     /// Opens a document/meeting breadcrumb, preferring the link trail so a chain of
     /// followed links unwinds one step at a time.
     func navigateToContentBreadcrumb(_ item: SidebarItem) {
-        storeChangeVersion += 1
+        // Bumped only when something is actually going to change the selection. Incrementing first
+        // and then finding nothing to do left the counter ahead of `lastSeenStoreVersion`, and the
+        // version guard swallowed the *next* real sidebar click. CLAUDE.md says to sync the counter
+        // in the handler that increments it, which is what the guard in `MainWindowView` does — so
+        // the increment has to be truthful.
         if ContentNavigator.goBack() {
+            storeChangeVersion += 1
             return
         }
 
         switch item {
         case let .document(id):
-            ContentNavigator.open(.document(id: id), recordHistory: false)
+            if ContentNavigator.open(.document(id: id), recordHistory: false) {
+                storeChangeVersion += 1
+            }
         case let .meeting(id):
-            ContentNavigator.open(.meeting(id: id), recordHistory: false)
+            if ContentNavigator.open(.meeting(id: id), recordHistory: false) {
+                storeChangeVersion += 1
+            }
         default:
             break
         }

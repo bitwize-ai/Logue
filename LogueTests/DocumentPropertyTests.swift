@@ -155,3 +155,85 @@ struct DocumentPropertyTests {
         #expect(WritingDocument().property("nope") == nil)
     }
 }
+
+/// A property written by a build that knows a kind this one does not.
+///
+/// The failure this guards is severe and silent: decoding threw, the throw propagated out of
+/// `WritingDocument.init(from:)`, and `DocumentStore`'s per-file `catch` skipped the file — so the
+/// document vanished from the library. Rolling back a build must not lose documents.
+@Suite("Unknown property kinds")
+struct UnknownPropertyKindTests {
+    private func decode(_ json: String) throws -> PropertyValue {
+        try JSONDecoder().decode(PropertyValue.self, from: Data(json.utf8))
+    }
+
+    @Test("An unrecognised kind decodes instead of throwing")
+    func unknownKindDecodes() throws {
+        let value = try decode(#"{"kind":"reference","value":"doc-123"}"#)
+
+        #expect(value == .unknown(kind: "reference", value: .string("doc-123")))
+    }
+
+    @Test("A document carrying one still decodes, rather than disappearing")
+    func documentSurvives() throws {
+        var doc = WritingDocument()
+        doc.title = "Has a future property"
+        var encoded = try JSONEncoder().encode(doc)
+
+        // Rewrite one property as a kind this build does not have, the way a newer build would.
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        object["properties"] = ["status": ["kind": "reference", "value": "doc-123"]]
+        encoded = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(WritingDocument.self, from: encoded)
+        #expect(decoded.title == "Has a future property")
+        #expect(decoded.properties?["status"] == .unknown(kind: "reference", value: .string("doc-123")))
+    }
+
+    /// Tolerating the tag but dropping the payload would still lose the user's data the moment they
+    /// went back to the newer build.
+    @Test("The round trip is lossless, including nested values")
+    func roundTripIsLossless() throws {
+        let json = #"{"kind":"reference","value":{"id":"abc","weight":2,"tags":["a","b"],"live":true}}"#
+        let value = try decode(json)
+
+        let reEncoded = try JSONEncoder().encode(value)
+        let again = try JSONDecoder().decode(PropertyValue.self, from: reEncoded)
+
+        #expect(again == value)
+        if case let .unknown(kind, payload) = value {
+            #expect(kind == "reference")
+            if case let .object(fields) = payload {
+                #expect(fields["id"] == .string("abc"))
+                #expect(fields["weight"] == .number(2))
+                #expect(fields["tags"] == .array([.string("a"), .string("b")]))
+                #expect(fields["live"] == .boolean(true))
+            } else {
+                Issue.record("Expected the payload to survive as an object")
+            }
+        } else {
+            Issue.record("Expected an unknown kind")
+        }
+    }
+
+    @Test("A missing value is tolerated rather than fatal")
+    func missingValueTolerated() throws {
+        #expect(try decode(#"{"kind":"reference"}"#) == .unknown(kind: "reference", value: .null))
+    }
+
+    @Test("Known kinds are unaffected")
+    func knownKindsStillWork() throws {
+        #expect(try decode(#"{"kind":"text","value":"hello"}"#) == .text("hello"))
+        #expect(try decode(#"{"kind":"number","value":42}"#) == .number(42))
+        #expect(try decode(#"{"kind":"boolean","value":true}"#) == .boolean(true))
+        #expect(try decode(#"{"kind":"list","value":["a"]}"#) == .list(["a"]))
+    }
+
+    @Test("An unknown kind shows something rather than nothing")
+    func unknownKindDisplays() throws {
+        #expect(try decode(#"{"kind":"reference","value":"Design doc"}"#).displayString == "Design doc")
+        #expect(try decode(#"{"kind":"rating","value":4}"#).displayString == "4")
+    }
+}

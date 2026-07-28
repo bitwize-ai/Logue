@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 
 /// Edits a document's typed properties — the frontmatter-style metadata that
@@ -137,6 +138,7 @@ private struct PropertyRow: View {
 
     @State private var draft = ""
     @State private var isHovered = false
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -178,20 +180,63 @@ private struct PropertyRow: View {
             .datePickerStyle(.compact)
 
         default:
+            // Committed on Return or when focus leaves, not on every keystroke. `onChange(of:
+            // draft)` fired for the `onAppear` assignment as well as for typing, so merely opening
+            // the panel emitted an edit with no user input — and each edit went to
+            // `store.updateDocument`, which stamps `modifiedAt` and does an encrypted disk write.
+            // Per keystroke, undebounced, while the rest of the editor debounces. `modifiedAt` is
+            // also what saved views sort on, so opening a panel reordered the library.
             TextField("Value", text: $draft)
                 .textFieldStyle(.roundedBorder)
                 .font(.callout)
                 .onAppear { draft = value?.displayString ?? "" }
-                .onChange(of: draft) { _, newValue in
-                    // Keep list values as lists so filters can match individual entries.
-                    if case .list = value {
-                        onEdit(.list(newValue.split(separator: ",").map {
-                            $0.trimmingCharacters(in: .whitespaces)
-                        }))
-                    } else {
-                        onEdit(.text(newValue))
+                .onSubmit { commitDraft() }
+                .onChange(of: isFocused) { wasFocused, isFocused in
+                    if wasFocused, !isFocused {
+                        commitDraft()
                     }
                 }
+                .focused($isFocused)
         }
     }
+
+    /// Turns the typed text back into a value of the property's own type.
+    ///
+    /// Everything that was not a boolean or a date used to be written back as `.text`, so opening
+    /// the panel on a `.number(5)` turned it into `.text("5")` and destroyed the type — and
+    /// `.number` was unreachable from the UI entirely, despite `PropertyValue` having the case and
+    /// filters being able to compare numerically.
+    private func commitDraft() {
+        let trimmed = draft.trimmingCharacters(in: .whitespaces)
+
+        switch value {
+        case .list:
+            // Kept as a list so filters can match individual entries.
+            onEdit(.list(draft.split(separator: ",").map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }))
+
+        case .number:
+            // A number that no longer parses becomes text rather than being silently discarded:
+            // the user typed it, and refusing it without saying anything is worse.
+            if let parsed = Double(trimmed) {
+                onEdit(.number(parsed))
+            } else {
+                onEdit(.text(draft))
+            }
+
+        case let .unknown(kind, _):
+            // A kind from a newer build: editing it as text is the best this build can do, and
+            // that is better than pretending the field is read-only.
+            Self.logger.info("Edited a property of unknown kind \(kind, privacy: .public) as text")
+            onEdit(.text(draft))
+
+        case .text, .boolean, .date, .none:
+            onEdit(.text(draft))
+        }
+    }
+
+    private static let logger = Logger(
+        subsystem: AppConstants.bundleID, category: "PropertiesPanel"
+    )
 }

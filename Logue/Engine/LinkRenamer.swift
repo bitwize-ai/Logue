@@ -19,15 +19,14 @@ enum LinkRenamer {
         let replacement = sanitisedTitle(newTitle)
         guard !replacement.isEmpty else { return body }
 
-        let oldKey = normalise(oldTitle)
+        let oldKey = WikiLinkParser.titleKey(oldTitle)
         guard !oldKey.isEmpty else { return body }
 
-        let nsBody = body as NSString
         var result = body
 
         // Rewrite back-to-front so earlier ranges stay valid as lengths change.
         for link in WikiLinkParser.links(in: body).reversed() {
-            guard normalise(link.target) == oldKey else { continue }
+            guard WikiLinkParser.titleKey(link.target) == oldKey else { continue }
 
             let rebuilt = if let display = link.displayText {
                 "[[\(replacement)|\(display)]]"
@@ -38,8 +37,7 @@ enum LinkRenamer {
             result = (result as NSString).replacingCharacters(in: link.range, with: rebuilt)
         }
 
-        // Guard against a caller passing a body that no longer matches the ranges.
-        return nsBody.length == (body as NSString).length ? result : body
+        return result
     }
 
     /// Rewrites a document's body and relationship targets.
@@ -54,10 +52,10 @@ enum LinkRenamer {
         var updated = document
         updated.body = rewriting(body: document.body, from: oldTitle, to: newTitle)
 
-        let oldKey = normalise(oldTitle)
+        let oldKey = WikiLinkParser.titleKey(oldTitle)
         for (kind, targets) in document.typedRelationships {
             let rewritten = targets.map { target -> String in
-                normalise(stripLinkSyntax(target)) == oldKey ? replacement : target
+                WikiLinkParser.titleKey(stripLinkSyntax(target)) == oldKey ? replacement : target
             }
             if rewritten != targets {
                 updated.setRelationship(kind, targets: rewritten)
@@ -70,14 +68,14 @@ enum LinkRenamer {
     /// Whether `document` references `oldTitle` at all — lets a caller skip
     /// rewriting and re-saving documents that would not change.
     static func needsRewrite(document: WritingDocument, from oldTitle: String) -> Bool {
-        let oldKey = normalise(oldTitle)
+        let oldKey = WikiLinkParser.titleKey(oldTitle)
         guard !oldKey.isEmpty else { return false }
 
-        if WikiLinkParser.links(in: document.body).contains(where: { normalise($0.target) == oldKey }) {
+        if WikiLinkParser.links(in: document.body).contains(where: { WikiLinkParser.titleKey($0.target) == oldKey }) {
             return true
         }
         return document.typedRelationships.values.contains { targets in
-            targets.contains { normalise(stripLinkSyntax($0)) == oldKey }
+            targets.contains { WikiLinkParser.titleKey(stripLinkSyntax($0)) == oldKey }
         }
     }
 
@@ -97,9 +95,5 @@ enum LinkRenamer {
 
     private static func stripLinkSyntax(_ raw: String) -> String {
         WikiLinkParser.links(in: raw).first?.target ?? raw
-    }
-
-    private static func normalise(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }

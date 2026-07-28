@@ -236,17 +236,7 @@ final class DocumentStore {
     }
 
     func renameDocument(id: UUID, newTitle: String) {
-        guard let index = documentIndex(for: id) else { return }
-        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let otherTitles = activeDocuments.filter { $0.id != id }.map(\.title)
-        let oldTitle = documents[index].title
-        let resolved = uniqueTitle(trimmed, among: otherTitles)
-        documents[index].title = resolved
-        documents[index].modifiedAt = Date()
-        saveDocument(id: id)
-
-        repairInboundLinks(from: oldTitle, to: resolved, renamedID: id)
+        applyTitle(newTitle, to: id)
     }
 
     /// Retargets `[[wikilinks]]` and relationship fields that pointed at the old
@@ -257,12 +247,18 @@ final class DocumentStore {
     /// rolling back — the encrypted store has no cross-document transaction. Stale
     /// links show up as "Unresolved" in the Links panel rather than being lost, so
     /// partial repair degrades visibly instead of silently.
-    private func repairInboundLinks(from oldTitle: String, to newTitle: String, renamedID: UUID) {
+    ///
+    /// `renamedID` is nil when the renamed thing is a meeting, which is a link *target* but not a
+    /// document.
+    ///
+    /// Extension-visible: +AITitle
+    func repairInboundLinks(from oldTitle: String, to newTitle: String, renamedID: UUID?) {
         guard oldTitle.caseInsensitiveCompare(newTitle) != .orderedSame else { return }
 
+        // Trashed documents are repaired too. They are cheap to walk, and the alternative is that
+        // restoring one later hands the user permanently broken links with nothing to repair from.
         for document in documents where document.id != renamedID {
-            guard !document.isTrashed,
-                  LinkRenamer.needsRewrite(document: document, from: oldTitle),
+            guard LinkRenamer.needsRewrite(document: document, from: oldTitle),
                   let index = documentIndex(for: document.id)
             else { continue }
 
@@ -275,6 +271,39 @@ final class DocumentStore {
             documents[index].modifiedAt = Date()
             saveDocument(id: document.id)
         }
+
+        // Meeting summaries are first-class link *sources* — `LinkIndex.build` indexes them — so a
+        // rename that skipped them broke every `[[link]]` written in a meeting's summary while the
+        // Links panel went on listing it as a backlink.
+        MeetingStore.shared.repairInboundLinks(from: oldTitle, to: newTitle)
+    }
+
+    /// The single place a document's title changes.
+    ///
+    /// Every path used to do its own thing: `renameDocument` deduplicated and repaired links, while
+    /// `generateAITitle`, `regenerateAITitle` and the agent's write tool each assigned `title`
+    /// directly — so an AI-generated title silently broke every inbound link, and
+    /// `regenerateAITitle` could mint a *duplicate* title, which then hijacked `[[link]]`
+    /// resolution through first-writer-wins. Automatic paths breaking a user's links without them
+    /// touching anything is the worst version of this.
+    ///
+    /// Returns the title actually applied, which may be deduplicated.
+    @discardableResult
+    func applyTitle(_ newTitle: String, to id: UUID) -> String? {
+        guard let index = documentIndex(for: id) else { return nil }
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let oldTitle = documents[index].title
+        let resolved = uniqueTitle(trimmed, among: activeDocuments.filter { $0.id != id }.map(\.title))
+        guard resolved != oldTitle else { return oldTitle }
+
+        documents[index].title = resolved
+        documents[index].modifiedAt = Date()
+        saveDocument(id: id)
+
+        repairInboundLinks(from: oldTitle, to: resolved, renamedID: id)
+        return resolved
     }
 
     func togglePin(id: UUID) {
@@ -479,9 +508,16 @@ final class DocumentStore {
     func clearAllData() {
         documents = []
         selectedDocumentID = nil
+        savedViews = []
+        documentTypes = []
+
         let dir = documentsDirectory
+        // The organisation directory is new and was outside every reset path, so "erase all data"
+        // left the user's saved views and types behind for the next launch to load.
+        let organisationDir = organisationStorageDirectory
         Task.detached(priority: .utility) {
             try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: organisationDir)
             // Note: SemanticIndex spans both meetings and documents — clearing only the
             // document namespace via `removeDocument` would be inefficient. We rely on
             // `MeetingStore.clearAllData()` (which calls `SemanticIndex.clearAll()`)

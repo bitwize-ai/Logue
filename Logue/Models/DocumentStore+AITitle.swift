@@ -33,9 +33,7 @@ extension DocumentStore {
             if let index = documentIndex(for: documentID),
                isDefaultDocumentTitle(documents[index].title)
             {
-                documents[index].title = uniqueTitle(cleanTitle, among: activeDocuments.map(\.title))
-                documents[index].modifiedAt = Date()
-                saveDocument(id: documentID)
+                applyTitle(cleanTitle, to: documentID)
             }
         }
     }
@@ -81,11 +79,10 @@ extension DocumentStore {
         }
 
         if let cleanTitle = await generateTitle(prompt: prompt) {
-            if let index = documentIndex(for: documentID) {
-                documents[index].title = cleanTitle
-                documents[index].modifiedAt = Date()
-                saveDocument(id: documentID)
-            }
+            // Through `applyTitle` for the deduplication as much as the link repair: this path had
+            // neither, so a regenerated title could collide with an existing document's and then
+            // win `[[link]]` resolution by being first in the index.
+            applyTitle(cleanTitle, to: documentID)
         }
     }
 

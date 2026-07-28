@@ -64,7 +64,7 @@ struct LinkIndex: Sendable {
         for entry in entries {
             titles[entry.id] = entry.title
             kinds[entry.id] = entry.kind
-            let key = Self.normalise(entry.title)
+            let key = WikiLinkParser.titleKey(entry.title)
             // First writer wins on a duplicate title — deterministic for a given input order.
             if !key.isEmpty, idsByTitle[key] == nil {
                 idsByTitle[key] = entry.id
@@ -80,7 +80,7 @@ struct LinkIndex: Sendable {
             var unresolved: [String] = []
 
             for target in WikiLinkParser.uniqueTargets(in: entry.body) {
-                guard let targetID = idsByTitle[Self.normalise(target)] else {
+                guard let targetID = idsByTitle[WikiLinkParser.titleKey(target)] else {
                     unresolved.append(target)
                     continue
                 }
@@ -105,7 +105,7 @@ struct LinkIndex: Sendable {
             for (kind, targets) in entry.relationships {
                 for rawTarget in targets {
                     let target = Self.relationshipTarget(rawTarget)
-                    guard let targetID = idsByTitle[Self.normalise(target)] else {
+                    guard let targetID = idsByTitle[WikiLinkParser.titleKey(target)] else {
                         broken[entry.id, default: []].append(target)
                         continue
                     }
@@ -176,7 +176,7 @@ struct LinkIndex: Sendable {
 
     /// The item a link target refers to, if any.
     func resolve(target: String) -> UUID? {
-        idsByNormalisedTitle[Self.normalise(target)]
+        idsByNormalisedTitle[WikiLinkParser.titleKey(target)]
     }
 
     func title(of id: UUID) -> String? {
@@ -194,11 +194,8 @@ struct LinkIndex: Sendable {
 
     // MARK: - Private
 
-    /// Titles are matched case-insensitively and ignore surrounding whitespace,
-    /// so `[[  alpha ]]` finds a note titled `Alpha`.
-    private static func normalise(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
+    // Titles are matched case-insensitively and ignore surrounding whitespace,
+    // so `[[  alpha ]]` finds a note titled `Alpha`.
 }
 
 // MARK: - Building From Stores

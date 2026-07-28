@@ -50,6 +50,11 @@ enum FilterField: Equatable, Codable, Sendable {
     case modifiedAt
     case createdAt
     case property(String)
+    /// Whether the document is pinned. Added so the sidebar's built-in filters are expressible as
+    /// a saved view — without it, "save what I am looking at" could not capture Pinned or Inbox.
+    case isPinned
+    /// Whether the document has been triaged out of the Inbox.
+    case isOrganised
 
     var label: String {
         switch self {
@@ -58,6 +63,8 @@ enum FilterField: Equatable, Codable, Sendable {
         case .tag: "Tag"
         case .modifiedAt: "Modified"
         case .createdAt: "Created"
+        case .isPinned: "Pinned"
+        case .isOrganised: "Organised"
         case let .property(key): key.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
@@ -151,6 +158,10 @@ struct FilterCondition: Equatable, Codable, Identifiable, Sendable {
             document.tags.isEmpty ? [""] : document.tags
         case let .property(key):
             [document.property(key)?.displayString ?? ""]
+        case .isPinned:
+            [document.isPinned ? "true" : "false"]
+        case .isOrganised:
+            [document.isOrganised ? "true" : "false"]
         case .modifiedAt, .createdAt:
             []
         }
@@ -170,12 +181,47 @@ struct FilterCondition: Equatable, Codable, Identifiable, Sendable {
     /// An invalid pattern matches nothing. User-authored regexes are expected to be
     /// wrong sometimes, and a filter is not a place to throw.
     private func matchesRegex(_ candidates: [String]) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: value) else { return false }
+        guard let regex = Self.compiledRegex(for: value) else { return false }
         return candidates.contains { candidate in
             let range = NSRange(location: 0, length: (candidate as NSString).length)
             return regex.firstMatch(in: candidate, range: range) != nil
         }
     }
+
+    /// Compiles a pattern once and remembers it.
+    ///
+    /// This runs per document per evaluation, so filtering a thousand documents compiled the same
+    /// pattern a thousand times on the main thread. The cache follows the convention already used in
+    /// `WikiLinkParser`. An invalid pattern is remembered as invalid *and logged* — a user staring at
+    /// empty results otherwise gets no signal at all, and there was already an unused `Logger` in
+    /// this file waiting for exactly this.
+    private static func compiledRegex(for pattern: String) -> NSRegularExpression? {
+        regexCacheLock.lock()
+        defer { regexCacheLock.unlock() }
+
+        if let cached = regexCache[pattern] {
+            return cached
+        }
+
+        do {
+            let compiled = try NSRegularExpression(pattern: pattern)
+            regexCache[pattern] = compiled
+            return compiled
+        } catch {
+            regexCache[pattern] = nil as NSRegularExpression?
+            Self.logger.info(
+                "Filter regex is not valid, so it matches nothing: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
+
+    /// `@unchecked Sendable` is unnecessary here — the dictionary is only ever touched under
+    /// `regexCacheLock`, which is what makes this safe from the main actor and from a background
+    /// filter pass alike.
+    nonisolated(unsafe) private static var regexCache: [String: NSRegularExpression?] = [:]
+    private static let regexCacheLock = NSLock()
+    private static let logger = Logger(subsystem: AppConstants.bundleID, category: "SavedViewFilter")
 }
 
 // MARK: - Group

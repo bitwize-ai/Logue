@@ -218,7 +218,6 @@ final class MarkdownStyler {
         textStorage.endEditing()
     }
 
-    /// Force a re-restyle on next call (used when block text is updated externally).
     /// Attribute carrying a wikilink's target, so a click can resolve it without
     /// re-parsing the text.
     static let wikiLinkTargetAttribute = NSAttributedString.Key("logueWikiLinkTarget")
@@ -255,27 +254,46 @@ final class MarkdownStyler {
             }
             textStorage.addAttributes(attributes, range: innerRange)
 
-            bracketRanges.append(NSRange(location: link.range.location, length: delimiterLength))
+            // Exactly two ranges per link, opening then closing. `pairedDelimiter` pairs by
+            // `idx % 2`, so a third range for one link flips the parity of every delimiter after
+            // it — and `deleteBackward` trusts the pairing, so one Backspace rewrote a *different*
+            // link and `didChangeText()` persisted it. When there is an alias, the hidden
+            // `Target|` is folded into the opening delimiter instead of appended separately.
+            bracketRanges.append(
+                NSRange(location: link.range.location, length: delimiterLength + aliasHiddenLength(
+                    of: link, innerRange: innerRange, in: textStorage
+                ))
+            )
             bracketRanges.append(
                 NSRange(location: NSMaxRange(link.range) - delimiterLength, length: delimiterLength)
             )
-
-            // Hide the `|alias` separator and target when an alias is present, so the
-            // display text is what reads.
-            if link.displayText != nil {
-                let inner = (textStorage.string as NSString).substring(with: innerRange)
-                if let pipe = inner.range(of: "|") {
-                    let pipeOffset = inner.distance(from: inner.startIndex, to: pipe.lowerBound)
-                    bracketRanges.append(
-                        NSRange(location: innerRange.location, length: pipeOffset + 1)
-                    )
-                }
-            }
         }
 
         return bracketRanges
     }
 
+    /// How much of `Target|` to hide at the front of an aliased link, in UTF-16 units.
+    ///
+    /// Measured with `NSString.range(of:)` rather than `String.distance(from:to:)`. The latter
+    /// counts `Character`s while the result is used as an `NSRange.length`, so anything
+    /// multi-unit before the pipe — an emoji, a ZWJ sequence, a flag, an NFD accent — produced a
+    /// length short of the pipe. That left the raw target visible and handed `addAttributes` a
+    /// range ending inside a surrogate pair. Existing tests put emoji *before* the link, where
+    /// the arithmetic is already right, which is why it shipped green.
+    private static func aliasHiddenLength(
+        of link: WikiLink,
+        innerRange: NSRange,
+        in textStorage: NSTextStorage
+    ) -> Int {
+        guard link.displayText != nil else { return 0 }
+
+        let pipe = (textStorage.string as NSString).range(of: "|", range: innerRange)
+        guard pipe.location != NSNotFound else { return 0 }
+
+        return NSMaxRange(pipe) - innerRange.location
+    }
+
+    /// Force a re-restyle on next call (used when block text is updated externally).
     func invalidate() {
         lastHash = 0
     }
