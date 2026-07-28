@@ -57,6 +57,12 @@ extension DocumentStore {
         }
 
         for file in parsed {
+            // Creating a document is synchronous, and this whole method is main-actor, so without
+            // this the batch ran as one uninterrupted turn — SwiftUI could not draw a frame until
+            // the last file was done, which is a beachball with no spinner and no way to cancel.
+            // Yielding costs a batch nothing measurable and lets the window stay alive.
+            await Task.yield()
+
             switch file.result {
             case let .success(document):
                 createDocument(
@@ -89,8 +95,9 @@ extension DocumentStore {
     }
 
     /// Reads and parses one file. `nonisolated` so a batch can run off the main
-    /// actor; it touches no store state.
-    nonisolated private static func read(_ url: URL) -> Result<MarkdownImport.ImportedDocument, Error> {
+    /// actor; it touches no store state. Internal so a test can point it at a temp
+    /// directory — it makes falsifiable claims about encodings that are worth asserting.
+    nonisolated static func read(_ url: URL) -> Result<MarkdownImport.ImportedDocument, Error> {
         do {
             let contents = try readText(at: url)
             return try .success(MarkdownImport.document(fileName: url.lastPathComponent, contents: contents))
@@ -110,8 +117,18 @@ extension DocumentStore {
     /// decode to plausible-looking CJK rather than falling through — `Café résumé`
     /// came back as `䍡曩⁲畭湡整潫`. Windows-1252 is the better guess for what UTF-8
     /// rejects, and Latin-1 is the backstop that cannot fail.
-    nonisolated private static func readText(at url: URL) throws -> String {
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+    ///
+    /// Which is why the ladder is not the whole answer. Latin-1 maps every byte, so a `.dylib`
+    /// renamed `.md` decodes rather than being rejected, and imports as mojibake full of NULs —
+    /// and in markdown mode that gets written straight back out as a `.md` file. `looksLikeText`
+    /// is the check that stops it.
+    nonisolated static func readText(at url: URL) throws -> String {
+        // A size we could not read is not a small one. Treating it as zero let exactly the file
+        // this pre-check exists for — the one we cannot say anything about — be read whole into
+        // memory anyway.
+        guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            throw CocoaError(.fileReadUnknown)
+        }
         guard size <= MarkdownImport.maxFileBytes else {
             throw MarkdownImport.ImportError.fileTooLarge(bytes: size)
         }
@@ -124,11 +141,39 @@ extension DocumentStore {
         encodings.append(contentsOf: [.windowsCP1252, .isoLatin1])
 
         for encoding in encodings {
-            if let text = String(data: data, encoding: encoding) {
-                return text
+            guard let text = String(data: data, encoding: encoding) else { continue }
+            guard looksLikeText(text) else {
+                throw CocoaError(.fileReadInapplicableStringEncoding)
             }
+            return text
         }
         throw CocoaError(.fileReadInapplicableStringEncoding)
+    }
+
+    /// Whether decoded bytes are plausibly a text file rather than a binary that merely decoded.
+    ///
+    /// Two signals, both deliberately blunt. A NUL is decisive: no text encoding a person writes
+    /// notes in produces one, and every binary format is full of them. Beyond that, a share of
+    /// control characters above a few percent is the shape of a binary — a note that uses form
+    /// feeds or an escape sequence stays well under it.
+    ///
+    /// Only the leading bytes are examined, because a binary announces itself immediately and the
+    /// point of this check is to run before the file is turned into a document.
+    nonisolated static func looksLikeText(_ text: String) -> Bool {
+        let sample = text.unicodeScalars.prefix(4096)
+        guard !sample.isEmpty else { return true }
+
+        var controls = 0
+        for scalar in sample {
+            if scalar.value == 0 {
+                return false
+            }
+            // Tab, newline and carriage return are text, whatever else `Cc` contains.
+            if CharacterSet.controlCharacters.contains(scalar), scalar != "\t", scalar != "\n", scalar != "\r" {
+                controls += 1
+            }
+        }
+        return Double(controls) / Double(sample.count) < 0.05
     }
 
     nonisolated private static func hasUTF16ByteOrderMark(_ data: Data) -> Bool {

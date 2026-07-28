@@ -80,9 +80,20 @@ final class DocumentStorage {
     /// Extension-visible: +Rescan
     @ObservationIgnored var cachedFileIndex: [UUID: URL]?
 
-    /// Extension-visible: +Rescan
+    /// Which folder each space occupies, remembered between saves.
+    ///
+    /// The same walk as `cachedFileIndex` and the same reason, a level up: `export` needs it to
+    /// place a file, so an uncached one read every `_space.md` in the library on every save. That
+    /// is what made a bulk import quadratic in wall-clock — 500 notes each walking a 250-file tree.
+    ///
+    /// Cached and invalidated together with the file index, because both are derived from one walk
+    /// and anything that stales one stales the other.
+    @ObservationIgnored private var cachedSpaceFolders: SpaceFolderMap?
+
+    /// Extension-visible: +Rescan, SpaceStore+MarkdownFolder
     func invalidateFileIndex() {
         cachedFileIndex = nil
+        cachedSpaceFolders = nil
     }
 
     private func fileIndex(using migrator: MarkdownStorageMigrator) -> [UUID: URL] {
@@ -92,6 +103,15 @@ final class DocumentStorage {
         let index = migrator.fileIndex()
         cachedFileIndex = index
         return index
+    }
+
+    private func spaceFolders(using migrator: MarkdownStorageMigrator, in spaces: [Space]) -> SpaceFolderMap {
+        if let cachedSpaceFolders {
+            return cachedSpaceFolders
+        }
+        let folders = migrator.spaceFolderMap(in: spaces)
+        cachedSpaceFolders = folders
+        return folders
     }
 
     /// What the last scan of the folder found, for the rescan button's tooltip.
@@ -475,6 +495,9 @@ final class DocumentStorage {
             documents: [document.content],
             spaces: spaces,
             reusing: index,
+            // The cached map, not a fresh walk. Without it `export` read every `_space.md` in the
+            // library to work out one directory, on every save.
+            folders: spaceFolders(using: migrator, in: spaces),
             // Only this document's space needs its identity rewritten. Rewriting every space's
             // `_space.md` on every save was N writes per keystroke batch for no gain.
             identitiesFor: spaces.filter { $0.id == document.spaceID }
