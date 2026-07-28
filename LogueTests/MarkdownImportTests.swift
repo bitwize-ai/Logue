@@ -116,6 +116,52 @@ struct MarkdownImportTests {
         }
     }
 
+    // MARK: - Frontmatter Validation
+
+    @Test("A leading thematic break is not mistaken for frontmatter")
+    func leadingThematicBreakKeepsContent() throws {
+        let contents = "---\n\nImportant intro.\n\nSecond paragraph.\n\n---\n\n# Real Heading\n\nRest."
+        let doc = try MarkdownImport.document(fileName: "n.md", contents: contents)
+        #expect(doc.body.contains("Important intro."))
+        #expect(doc.body.contains("Second paragraph."))
+    }
+
+    @Test("A later title wins when the first carries no value")
+    func laterNonEmptyTitleWins() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "note.md",
+            contents: "---\ntitle:\ntitle: Real One\n---\nBody."
+        )
+        #expect(doc.title == "Real One")
+    }
+
+    @Test("Only a matching pair of surrounding quotes is stripped")
+    func interiorQuotesArePreserved() throws {
+        let quoted = try MarkdownImport.document(fileName: "n.md", contents: "---\ntitle: \"Quoted\"\n---\nB.")
+        #expect(quoted.title == "Quoted")
+        let interior = try MarkdownImport.document(fileName: "n.md", contents: "---\ntitle: \"Q1\" review\n---\nB.")
+        #expect(interior.title == "\"Q1\" review")
+    }
+
+    @Test("An indented key inside a nested mapping is not read as the title")
+    func nestedTitleKeyIsIgnored() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "note.md",
+            contents: "---\nmeta:\n  title: Nested\n---\nBody."
+        )
+        #expect(doc.title == "note")
+    }
+
+    @Test("A block containing YAML list items is still frontmatter")
+    func yamlListBlockIsFrontmatter() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: L\ntags:\n  - one\n  - two\n---\nBody."
+        )
+        #expect(doc.title == "L")
+        #expect(doc.body == "Body.")
+    }
+
     // MARK: - Line Endings
 
     @Test("Frontmatter in a Windows-authored file is parsed, not shown as prose")

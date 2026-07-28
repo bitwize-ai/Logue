@@ -79,6 +79,10 @@ enum MarkdownImport {
     /// fence, and an optional `title:` key between them. Anything more exotic in the
     /// block (tags, dates) is simply dropped with it — those keys have no home in a
     /// `WritingDocument`, and keeping the raw block would show YAML as prose.
+    ///
+    /// Returns `nil` unless the block actually looks like YAML. A markdown file may
+    /// open with a `---` thematic break, and treating that as a fence would discard
+    /// every paragraph up to the next one — silent, unrecoverable content loss.
     private static func parseFrontmatter(_ text: String) -> (title: String?, remainder: String)? {
         let lines = text.components(separatedBy: "\n")
         guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
@@ -87,20 +91,45 @@ enum MarkdownImport {
         })
         else { return nil }
 
+        let block = lines[1 ..< closing]
+        guard block.allSatisfy(isYAMLLine) else { return nil }
+
         var title: String?
-        for line in lines[1 ..< closing] {
+        for line in block where line.first?.isWhitespace != true {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.lowercased().hasPrefix("title:") else { continue }
-            let value = trimmed.dropFirst("title:".count)
-                .trimmingCharacters(in: .whitespaces)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            let value = unquoted(String(trimmed.dropFirst("title:".count))
+                .trimmingCharacters(in: .whitespaces))
+            // Keep looking when the key carries no value, so a later `title:` that
+            // does have one still wins.
             if !value.isEmpty {
                 title = value
+                break
             }
-            break
         }
         let remainder = lines[(closing + 1)...].joined(separator: "\n")
         return (title, remainder)
+    }
+
+    /// Whether a line inside a fence is plausibly YAML: blank, a comment, a
+    /// `key:` mapping, or a `- ` sequence item. Prose fails all four.
+    private static func isYAMLLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("- ") {
+            return true
+        }
+        guard let colon = trimmed.firstIndex(of: ":") else { return false }
+        let key = trimmed[trimmed.startIndex ..< colon]
+        return !key.isEmpty && !key.contains(" ")
+    }
+
+    /// Strips one matching pair of surrounding quotes. Trimming each end
+    /// independently would turn `"Q1" review` into an unbalanced `Q1" review`.
+    private static func unquoted(_ value: String) -> String {
+        for quote in ["\"", "'"] where value.hasPrefix(quote) && value.hasSuffix(quote) && value.count >= 2 {
+            return String(value.dropFirst().dropLast())
+        }
+        return value
     }
 
     /// Uses a `# Heading` as the title when it is the first non-empty line.
