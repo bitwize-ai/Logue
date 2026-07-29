@@ -127,36 +127,66 @@ struct SpeakerRenameTests {
         #expect(result.segments.map(\.speakerLabel) == original.segments.map(\.speakerLabel))
     }
 
-    @Test("Retyping the shared name does not merge rows that already collide")
-    func retypingSharedNameDoesNotMerge() {
-        // Documents the gap called out in `renamingSpeaker`: the unchanged-name early-out
-        // fires before the merge, so the obvious repair on an already-broken meeting is a no-op.
+    // MARK: - Repairing meetings already holding duplicate rows
+
+    /// A meeting persisted in the broken state: two `Speaker` rows sharing one name.
+    private func duplicateRowMeeting() -> MeetingNote {
         var meeting = twoSpeakerMeeting()
         meeting.speakers = [
             Speaker(id: "s1", name: "John", color: Speaker.generateColor(for: 0)),
             Speaker(id: "s2", name: "John", color: Speaker.generateColor(for: 1)),
         ]
-
-        let result = meeting.renamingSpeaker(from: "John", to: "John")
-
-        #expect(result.speakers.count == 2)
+        return meeting
     }
 
-    @Test("Renaming away and back cannot collapse rows that already share a name")
-    func renameAwayAndBackStillDoesNotMerge() {
-        // Renames are keyed by name, not by speaker id, so both colliding rows move together
-        // on the way out and both come back on the way in. There is no rename-only repair.
-        var meeting = twoSpeakerMeeting()
-        meeting.speakers = [
-            Speaker(id: "s1", name: "John", color: Speaker.generateColor(for: 0)),
-            Speaker(id: "s2", name: "John", color: Speaker.generateColor(for: 1)),
+    @Test("Collapsing merges rows that share a name onto the first of them")
+    func collapsingMergesSharedNames() {
+        let result = duplicateRowMeeting().collapsingDuplicateSpeakers()
+
+        #expect(result.speakers.count == 1)
+        #expect(result.speakers.first?.id == "s1")
+        #expect(result.speakers.first?.name == "John")
+    }
+
+    @Test("Collapsing remaps the absorbed row's speaker segments onto the survivor")
+    func collapsingRemapsSpeakerSegments() {
+        var meeting = duplicateRowMeeting()
+        meeting.speakerSegments = [
+            SpeakerSegment(speakerId: "s1", startTime: 0, endTime: 1, text: "one"),
+            SpeakerSegment(speakerId: "s2", startTime: 1, endTime: 2, text: "two"),
         ]
 
-        let movedAway = meeting.renamingSpeaker(from: "John", to: "Temp")
-        #expect(movedAway.speakers.map(\.name) == ["Temp", "Temp"])
+        let result = meeting.collapsingDuplicateSpeakers()
 
-        let movedBack = movedAway.renamingSpeaker(from: "Temp", to: "John")
-        #expect(movedBack.speakers.map(\.name) == ["John", "John"])
+        #expect(result.speakerSegments.map(\.speakerId) == ["s1", "s1"])
+        #expect(result.speakerSegments.map(\.text) == ["one", "two"])
+    }
+
+    @Test("Collapsing leaves a meeting with distinct speaker names untouched")
+    func collapsingIsNoOpForDistinctNames() {
+        let original = twoSpeakerMeeting()
+        let result = original.collapsingDuplicateSpeakers()
+
+        #expect(result.speakers.map(\.id) == original.speakers.map(\.id))
+        #expect(result.speakers.map(\.name) == original.speakers.map(\.name))
+    }
+
+    @Test("Retyping the shared name collapses rows that already collide")
+    func retypingSharedNameCollapsesRows() {
+        // The obvious repair on an already-broken meeting: type the name it should have.
+        let result = duplicateRowMeeting().renamingSpeaker(from: "John", to: "John")
+
+        #expect(result.speakers.count == 1)
+        #expect(result.speakers.first?.name == "John")
+    }
+
+    @Test("Renaming colliding rows to a new name collapses them too")
+    func renamingCollidingRowsAwayCollapses() {
+        let result = duplicateRowMeeting().renamingSpeaker(from: "John", to: "Jonathan")
+
+        #expect(result.speakers.count == 1)
+        #expect(result.speakers.first?.name == "Jonathan")
+        #expect(result.segments.allSatisfy { $0.speakerLabel != "John" })
     }
 
     @Test("An empty or whitespace-only new name is rejected")

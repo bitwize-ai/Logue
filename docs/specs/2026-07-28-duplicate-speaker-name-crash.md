@@ -69,6 +69,30 @@ compare before writing — it stamps `modifiedAt`, invalidates caches and persis
 a rename field committed without an edit would otherwise rewrite the meeting and reorder it in any
 modified-date sort. Committing a field unchanged is ordinary behaviour, not an edge case.
 
+**Repair the meetings already holding duplicate rows.** Stopping the trap lets those meetings open,
+but it leaves the redundant `Speaker` row in place, and the user cannot remove it: the speakers panel
+builds its rows from `segments` grouped by `speakerLabel` and iterates `id: \.name`, so two rows
+named "John" render as one. There is no id to target and no per-row affordance to target it with, so
+an id-based rename would have no way to be driven from the UI.
+
+A second pure helper collapses them instead:
+
+```swift
+extension MeetingNote {
+    func collapsingDuplicateSpeakers() -> MeetingNote
+}
+```
+
+Rows sharing a name merge onto the first of the group, with the absorbed rows' `SpeakerSegment`
+entries re-attributed to the survivor. It runs in two places:
+
+- At the end of `renamingSpeaker(from:to:)`, which makes the merge fall out of the rename rather than
+  being a separate branch. Renaming onto an unused name leaves nothing to collapse, so it is a no-op
+  there. The unchanged-name early-out is relaxed for exactly one case — retyping a name two rows
+  already share — because that is the only way the user can express the repair.
+- On the decode path in `MeetingStore+Persistence`, so an affected meeting is repaired when it loads
+  rather than waiting for the user to guess at a rename.
+
 ## Testing
 
 Swift Testing suite (`@Suite`, `@Test`, `#expect`) in `LogueTests/SpeakerRenameTests.swift`. Pure
@@ -80,6 +104,10 @@ logic — no model downloads, no inference.
 - Merging into a name held by a speaker with no segments still collapses the rows
 - Building a name-keyed color map from a meeting holding duplicate names does not trap, and covers
   every distinct name
+- Collapsing merges rows sharing a name onto the first of them, re-attributes the absorbed rows'
+  speaker segments to the survivor, and leaves a meeting with distinct names untouched
+- On a meeting already holding duplicate rows, both retyping the shared name and renaming it to a
+  new one collapse the rows
 - Empty and whitespace-only names, renaming to the current name, and renaming an unknown speaker are
   no-ops; surrounding whitespace is trimmed
 
