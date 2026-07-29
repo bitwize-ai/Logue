@@ -276,6 +276,7 @@
 		7B000982F90A41A9148CD0F7 /* AnthropicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80F43E54BB04A47E0876AED0 /* AnthropicClient.swift */; };
 		7D75693118B0AE322F91355B /* ExportTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B645AB2F4B86D9BDF86A6AC1 /* ExportTools.swift */; };
 		7D9E0319DF269BCBEA310EAF /* PromptIntentClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5C20AEF42BA3F04F38856B5 /* PromptIntentClassifier.swift */; };
+		7E7693F0187CD0074F45421B /* BrowserBridgeServer+Tools.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB52E32FB2EF536165066A86 /* BrowserBridgeServer+Tools.swift */; };
 		7ED7B074F362CB5CB0376532 /* WritingAgentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E4CF4E9246459183E66FD7 /* WritingAgentState.swift */; };
 		7EDAD755078BE465D2501F2A /* BugReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0066968A733446EF38C97E5 /* BugReportView.swift */; };
 		7FA6705812D9F7EF8BB4A207 /* AgentChatState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363A3EDC8BB82CC18EB86C1C /* AgentChatState.swift */; };
@@ -1023,6 +1024,7 @@
 		EAAA4BF89D7A99D017BB1C8E /* PromptBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptBuilderTests.swift; sourceTree = "<group>"; };
 		EB27F11A2333C941E28C916E /* DeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkTests.swift; sourceTree = "<group>"; };
 		EB319F816250DC8D8652F6BB /* MeetingActionItemsPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingActionItemsPanelView.swift; sourceTree = "<group>"; };
+		EB52E32FB2EF536165066A86 /* BrowserBridgeServer+Tools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserBridgeServer+Tools.swift"; sourceTree = "<group>"; };
 		EB9F1B2B62A565ABF10817F5 /* ConferencingAppDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConferencingAppDetector.swift; sourceTree = "<group>"; };
 		EC3417F4F42C4F317FA8FD4C /* LogueLogo.svg */ = {isa = PBXFileReference; path = LogueLogo.svg; sourceTree = "<group>"; };
 		EC6A90044034B16931832718 /* TextAnalysisRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextAnalysisRequest.swift; sourceTree = "<group>"; };
@@ -1192,6 +1194,7 @@
 				B0F5C6BB36E68365D56EF996 /* BrowserBridgeRoute.swift */,
 				0CF329AEF9DA7EDE1B1CF4E6 /* BrowserBridgeServer.swift */,
 				6B09E81F8469DC3A84D5353E /* BrowserBridgeServer+Handlers.swift */,
+				EB52E32FB2EF536165066A86 /* BrowserBridgeServer+Tools.swift */,
 				D02332BE58A290E7D19E4D7D /* BrowserBridgeSettings.swift */,
 				6022EE09B190183A46D41F97 /* HTTPMessage.swift */,
 			);
@@ -2264,6 +2267,7 @@
 				85C9F35793B4ACD6B226E085 /* BookmarkColorHelper.swift in Sources */,
 				4DB90578B4CA008D808824C1 /* BrowserBridgeRoute.swift in Sources */,
 				EE8E41D5DDCB41B4B8AB8087 /* BrowserBridgeServer+Handlers.swift in Sources */,
+				7E7693F0187CD0074F45421B /* BrowserBridgeServer+Tools.swift in Sources */,
 				FF22452C6C48807D20EFB494 /* BrowserBridgeServer.swift in Sources */,
 				6EEE4BC7A3149F86FCEB9A15 /* BrowserBridgeSettings.swift in Sources */,
 				C53B4DB0013DAEC4D7EF3C6F /* BrowserExtensionSection.swift in Sources */,

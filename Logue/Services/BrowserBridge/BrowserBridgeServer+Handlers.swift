@@ -141,6 +141,13 @@ extension BrowserBridgeServer {
             return
         }
 
+        // A request carrying tools takes the tool path, whichever endpoint it arrived on. The
+        // model may answer in text or ask to call something, and only that path can stream both.
+        if let toolRequest = Self.chatRequest(from: body), toolRequest.usesTools {
+            await streamWithTools(toolRequest, origin: origin, on: connection)
+            return
+        }
+
         let wantsStream = (body["stream"] as? Bool) ?? (route == .chatCompletions)
         if wantsStream {
             await streamChat(prompt: prompt, origin: origin, on: connection)
@@ -235,7 +242,7 @@ extension BrowserBridgeServer {
         connection.write(Data("data: [DONE]\n\n".utf8), thenClose: true)
     }
 
-    private static func deltaFrame(identifier: String, token: String) -> String {
+    nonisolated static func deltaFrame(identifier: String, token: String) -> String {
         encode([
             "id": identifier,
             "object": "chat.completion.chunk",
@@ -243,19 +250,19 @@ extension BrowserBridgeServer {
         ])
     }
 
-    private static func finishFrame(identifier: String) -> String {
+    nonisolated static func finishFrame(identifier: String, reason: String = "stop") -> String {
         encode([
             "id": identifier,
             "object": "chat.completion.chunk",
-            "choices": [["index": 0, "delta": [:] as [String: Any], "finish_reason": "stop"]],
+            "choices": [["index": 0, "delta": [:] as [String: Any], "finish_reason": reason]],
         ])
     }
 
-    private static func errorFrame(message: String) -> String {
+    nonisolated static func errorFrame(message: String) -> String {
         encode(["error": message, "code": 500])
     }
 
-    private static func encode(_ object: [String: Any]) -> String {
+    nonisolated static func encode(_ object: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let text = String(data: data, encoding: .utf8)
         else { return "{}" }
