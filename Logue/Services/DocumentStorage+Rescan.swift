@@ -168,6 +168,7 @@ extension DocumentStorage {
         }
 
         documentStore.applyExternalChanges(settled)
+        retryUnwritableDocuments(in: documentStore)
 
         if let minimumVisibleDuration {
             let remaining = minimumVisibleDuration - started.duration(to: .now)
@@ -347,6 +348,41 @@ extension DocumentStorage {
                 using: snapshot
             )
         }.value
+    }
+
+    /// Re-attempts the write for every document recorded as having no file.
+    ///
+    /// Nothing else did. An id entered that set on a failed export and left it only on a *later*
+    /// successful save, so a document edited while the folder's drive was unmounted was written to
+    /// encrypted storage and then never touched again — invisible to anything syncing `~/Logue`,
+    /// permanently exempt from the deletion check, and reported only as a log line. A scan is the
+    /// natural retry point: it already runs when the folder becomes reachable again, and a
+    /// successful `save` clears the record itself.
+    ///
+    /// Ids the store no longer holds are dropped rather than retried — a document permanently
+    /// deleted since the failure has nothing left to write.
+    private func retryUnwritableDocuments(in documentStore: DocumentStore) {
+        guard !unwritableDocuments.isEmpty else { return }
+
+        let byID = Dictionary(
+            documentStore.documents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+        )
+        let stale = unwritableDocuments.filter { byID[$0] == nil }
+        clearUnwritable(stale)
+
+        let spaces = SpaceStore.shared.spaces
+        var recovered = 0
+        for id in unwritableDocuments {
+            guard let document = byID[id], !document.isTrashed else { continue }
+            if save(document, spaces: spaces) {
+                recovered += 1
+            }
+        }
+        if recovered > 0 {
+            Self.scanLogger.info(
+                "Wrote \(recovered, privacy: .public) document(s) that had failed to reach the folder"
+            )
+        }
     }
 
     /// Applies `ExternalChangePlanner.keepingDeletionsThatMovedOn` and reports what it saved.
