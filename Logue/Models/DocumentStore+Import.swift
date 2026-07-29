@@ -46,9 +46,13 @@ extension DocumentStore {
         // than that has no representable path, and `SpaceFolderLayout` answers "no path" with the
         // markdown root — which would put a subfolder's `_space.md` and documents in `~/Logue`.
         let limits = Self.limits(forDestination: spaceID)
-        let scanned = await Task.detached(priority: .userInitiated) {
-            Self.collect(from: urls, storedRoot: storedRoot, limits: limits)
-        }.value
+        // A plain `await` on a `nonisolated` async function, not `Task.detached`. Both leave the
+        // main actor, but a detached task has no cancellation relationship to the one awaiting it
+        // — so every `Task.isCancelled` inside the walk was unreachable, and the guards read as
+        // "cancellation is handled" while doing nothing at all.
+        let scanned = await Self.collectOffTheMainActor(
+            from: urls, storedRoot: storedRoot, limits: limits
+        )
 
         var outcome = ImportOutcome()
         outcome.skipped = scanned.skipped
@@ -77,6 +81,9 @@ extension DocumentStore {
             // the batch ran as one uninterrupted turn: SwiftUI could not draw a frame until the
             // last file was done, which is a beachball with no spinner and nothing to cancel.
             await Task.yield()
+            // Checked here, before this folder's documents are created — never once creation has
+            // started. Breaking out mid-way left documents inserted in memory with no file behind
+            // them, under a report that said nothing had been imported.
             guard !Task.isCancelled else {
                 outcome.wasCancelled = true
                 return outcome
@@ -128,10 +135,17 @@ extension DocumentStore {
     /// space's own depth. Importing a 12-deep vault into a space at depth 1 would otherwise create
     /// spaces at depths 2…13, and everything past the cap resolves to the markdown root.
     static func limits(forDestination spaceID: UUID?) -> ImportLimits {
-        let depth = SpaceFolderLayout.directoryComponents(
-            forSpace: spaceID, in: SpaceStore.shared.spaces
-        ).count
-        return ImportLimits(maxDepth: max(1, SpaceFolderLayout.maxDepth - depth))
+        // `SpaceFolderLayout.depth`, not `directoryComponents(...).count`. The latter clamps to
+        // nothing past the cap, so a destination *deeper* than the cap read as depth zero and the
+        // allowance sprang back to the full twelve — the worst possible answer for the one case
+        // that already has no representable path.
+        let depth = SpaceFolderLayout.depth(ofSpace: spaceID, in: SpaceStore.shared.spaces)
+        // Floored at zero, not one. `max(1, ...)` still permitted one level of subfolder below a
+        // destination already at the cap, and that child lands past it — where `directoryComponents`
+        // returns no path, which resolves to the markdown root. Zero means the folder's files are
+        // filed flat into the destination and its subfolders are refused with a reason, which is
+        // visibly incomplete rather than silently written to the root of the library.
+        return ImportLimits(maxDepth: max(0, SpaceFolderLayout.maxDepth - depth))
     }
 
     /// The user-facing reason a file was not imported.
@@ -216,8 +230,6 @@ extension DocumentStore {
         /// `SpaceFolderLayout.maxDepth`, because a folder deeper than a space can be is not a
         /// folder we can store.
         var maxDepth: Int
-
-        static let unlimitedDepth = SpaceFolderLayout.maxDepth
     }
 
     /// Running totals the walk checks against `ImportLimits`.
@@ -235,8 +247,20 @@ extension DocumentStore {
     /// A directory's identity on disk, for cycle detection. Path is not identity — that is the
     /// whole point of a symlink.
     private struct FileIdentity: Hashable {
-        let volume: Int
-        let file: Int
+        let volume: NSObject
+        let file: NSObject
+
+        /// Equality is `isEqual:`, which is what these opaque objects document. Hashing on its
+        /// own would let a collision silently drop a real directory — a wrong answer given
+        /// quietly, where the whole point of this type is to give a right one.
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.volume.isEqual(rhs.volume) && lhs.file.isEqual(rhs.file)
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(volume.hash)
+            hasher.combine(file.hash)
+        }
     }
 
     /// Expands the selection into readable files, walking directories.
@@ -249,6 +273,16 @@ extension DocumentStore {
     /// becomes a space rather than having its contents tipped into the destination — and so two
     /// folders selected together stay two trees instead of merging wherever their subfolder names
     /// happen to agree.
+    /// `collect` off the main actor, in the caller's task.
+    ///
+    /// `nonisolated` and `async`, so calling it from the main actor hops to the generic executor
+    /// without starting an unstructured task — which is what keeps cancellation connected.
+    nonisolated static func collectOffTheMainActor(
+        from urls: [URL], storedRoot: String?, limits: ImportLimits
+    ) async -> ScannedSelection {
+        collect(from: urls, storedRoot: storedRoot, limits: limits)
+    }
+
     nonisolated static func collect(
         from urls: [URL], storedRoot: String?, limits: ImportLimits
     ) -> ScannedSelection {
@@ -261,8 +295,11 @@ extension DocumentStore {
                 return scanned
             }
             if isDirectory(url) {
+                // With no room left below the destination the folder cannot become a space, so its
+                // files go flat into the destination and its subfolders are refused below.
+                let root = limits.maxDepth >= 1 ? [url.lastPathComponent] : []
                 walk(
-                    url, relativeTo: [url.lastPathComponent], depth: 1,
+                    url, relativeTo: root,
                     storedRoot: storedRoot, limits: limits, budget: &budget, into: &scanned
                 )
             } else {
@@ -272,11 +309,9 @@ extension DocumentStore {
         return scanned
     }
 
-    // swiftlint:disable:next function_parameter_count
     nonisolated private static func walk(
         _ directory: URL,
         relativeTo path: [String],
-        depth: Int,
         storedRoot: String?,
         limits: ImportLimits,
         budget: inout WalkBudget,
@@ -292,7 +327,7 @@ extension DocumentStore {
         // path at all past its cap, which resolves to the markdown root — so the folder's
         // `_space.md` and every document in it would be written straight into `~/Logue`, and the
         // next scan would read them as root-level and flatten the hierarchy away.
-        guard depth <= limits.maxDepth else {
+        guard path.count <= limits.maxDepth else {
             scanned.skipped.append(ImportOutcome.Skipped(
                 file: directory.lastPathComponent,
                 reason: "nested deeper than \(limits.maxDepth) folders below the destination"
@@ -300,10 +335,18 @@ extension DocumentStore {
             return
         }
 
-        guard let identity = identity(of: directory), budget.visited.insert(identity).inserted else {
-            // Either unreadable, or already entered by another path — a symlink loop.
+        guard let identity = identity(of: directory) else {
+            // Reported rather than dropped in silence. Some network filesystems do not vend a
+            // file identifier, and without this their whole contents vanished from the import
+            // with nothing said.
+            scanned.skipped.append(ImportOutcome.Skipped(
+                file: directory.lastPathComponent, reason: "the folder could not be identified"
+            ))
             return
         }
+        // Already entered by another path — a symlink loop. Not reported: it is the same folder,
+        // and its contents were taken the first time.
+        guard budget.visited.insert(identity).inserted else { return }
 
         let contents: [URL]
         do {
@@ -314,9 +357,16 @@ extension DocumentStore {
                 options: [.skipsHiddenFiles]
             )
         } catch {
+            // A constant reason, with the detail logged. `error.localizedDescription` names the
+            // folder, so every unreadable directory produced its own grouping key and its own
+            // line — and picking the home folder walks into every TCC-protected directory there
+            // is, which is exactly the slip the caps exist for. That un-bounded the alert the
+            // grouping was added to bound.
+            Logger(subsystem: AppConstants.bundleID, category: "DocumentStore").warning(
+                "Import could not read a folder: \(error.localizedDescription, privacy: .public)"
+            )
             scanned.skipped.append(ImportOutcome.Skipped(
-                file: directory.lastPathComponent,
-                reason: "folder could not be read (\(error.localizedDescription))"
+                file: directory.lastPathComponent, reason: "the folder could not be read"
             ))
             return
         }
@@ -325,7 +375,7 @@ extension DocumentStore {
             guard scanned.stoppedEarly == nil, !scanned.wasCancelled else { return }
             if isDirectory(url) {
                 walk(
-                    url, relativeTo: path + [url.lastPathComponent], depth: depth + 1,
+                    url, relativeTo: path + [url.lastPathComponent],
                     storedRoot: storedRoot, limits: limits, budget: &budget, into: &scanned
                 )
             } else {
@@ -366,7 +416,15 @@ extension DocumentStore {
             scanned.stoppedEarly = "more than \(limits.maxFiles) files"
             return
         }
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        // Not `?? 0`. A size we could not read is not a small one — the same rule `readText`
+        // already applies, and charging zero bytes for it defeats the budget for exactly the
+        // files nothing can say anything about.
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            scanned.skipped.append(ImportOutcome.Skipped(
+                file: name, reason: "its size could not be read"
+            ))
+            return
+        }
         guard budget.bytes + size <= limits.maxTotalBytes else {
             scanned.stoppedEarly = "more than \(limits.maxTotalBytes / 1_048_576) MB of files"
             return
@@ -399,7 +457,7 @@ extension DocumentStore {
             guard let volume = values.volumeIdentifier as? NSObject,
                   let file = values.fileResourceIdentifier as? NSObject
             else { return nil }
-            return FileIdentity(volume: volume.hash, file: file.hash)
+            return FileIdentity(volume: volume, file: file)
         } catch {
             Logger(subsystem: AppConstants.bundleID, category: "DocumentStore")
                 .warning("Import could not identify a folder: \(error.localizedDescription, privacy: .public)")

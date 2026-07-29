@@ -239,6 +239,44 @@ struct ImportFileReadingTests {
         #expect(scanned.skipped.first?.reason == "already in the Logue folder")
     }
 
+    /// `max(1, …)` still permitted one level below a destination already at the cap, and that
+    /// child lands past it — where `directoryComponents` returns no path, which resolves to the
+    /// markdown root.
+    @Test("With no depth left, files go flat and subfolders are refused")
+    func noDepthLeftFilesFlat() throws {
+        let root = try vault()
+        let scanned = DocumentStore.collect(from: [root], storedRoot: nil, limits: .init(maxDepth: 0))
+
+        #expect(scanned.files[[]]?.map(\.name) == ["Inbox.md"])
+        #expect(scanned.files.keys.allSatisfy { $0.isEmpty })
+        #expect(scanned.skipped.contains { $0.reason.contains("nested deeper") })
+    }
+
+    /// `error.localizedDescription` names the folder, so each unreadable directory produced its
+    /// own grouping key and its own alert line — un-bounding the alert the grouping bounds.
+    @Test("Unreadable folders share one reason so the report stays bounded")
+    func unreadableFoldersShareAReason() throws {
+        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        for name in ["alpha", "beta"] {
+            let dir = root.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir.path)
+        }
+        defer {
+            for name in ["alpha", "beta"] {
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: root.appendingPathComponent(name).path
+                )
+            }
+        }
+
+        let scanned = DocumentStore.collect(from: [root], storedRoot: nil, limits: .init(maxDepth: 12))
+        let reasons = Set(scanned.skipped.map(\.reason))
+
+        // Two failures, one line in the alert.
+        #expect(reasons.count <= 1)
+    }
+
     // MARK: - End to end
 
     @Test("A frontmatter file on disk becomes a document")
