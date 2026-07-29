@@ -215,6 +215,13 @@ extension BrowserBridgeServer {
                 maxTokens: AppConstants.BrowserBridge.chatMaxTokens
             )
             for try await token in stream {
+                // Stop pulling tokens the moment the client goes away. Writing into a dead
+                // connection fails quietly, so without this a user pressing stop — or closing the
+                // tab — left the model generating to nobody and holding the inference gate.
+                guard connection.isLive else {
+                    logger.info("Browser bridge stopped a stream: the client went away")
+                    return
+                }
                 guard !token.isEmpty else { continue }
                 connection.write(HTTPMessage.eventFrame(Self.deltaFrame(identifier: identifier, token: token)))
             }

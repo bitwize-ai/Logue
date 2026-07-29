@@ -235,7 +235,23 @@ extension BrowserBridgeServer {
         private let queue: DispatchQueue
         private let onClose: @Sendable (ObjectIdentifier) -> Void
         private var buffer = Data()
-        private var isClosed = false
+        /// Lock-protected because the streaming handler asks whether the client is still there
+        /// from the main actor, while everything else touches it on `queue`.
+        private let closed = OSAllocatedUnfairLock(initialState: false)
+
+        private var isClosed: Bool {
+            get { closed.withLock { $0 } }
+            set { closed.withLock { $0 = newValue } }
+        }
+
+        /// Whether the client is still on the other end.
+        ///
+        /// A stream asks this between tokens. Without it, a browser that closed the tab — or a
+        /// user who pressed stop — left the Mac generating an answer nobody would ever read,
+        /// holding the inference gate against whatever asked next.
+        var isLive: Bool {
+            !isClosed
+        }
 
         init(
             nwConnection: NWConnection,
