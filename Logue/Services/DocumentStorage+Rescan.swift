@@ -372,11 +372,21 @@ extension DocumentStorage {
 
         let spaces = SpaceStore.shared.spaces
         var recovered = 0
+        var failed = 0
         for id in unwritableDocuments {
             guard let document = byID[id], !document.isTrashed else { continue }
             if save(document, spaces: spaces) {
                 recovered += 1
+            } else {
+                failed += 1
             }
+        }
+        // A failed export invalidates both folder caches, so without this the next iteration paid
+        // a full traversal that opens every `.md` in the library — on the main actor, once per
+        // still-failing document, on every scan. That is a stall scaling with the number of
+        // unwritable documents times the library size, for exactly the user whose disk is full.
+        if failed > 0 {
+            invalidateFileIndex()
         }
         if recovered > 0 {
             Self.scanLogger.info(

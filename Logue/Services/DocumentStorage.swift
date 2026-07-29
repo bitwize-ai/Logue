@@ -243,11 +243,6 @@ final class DocumentStorage {
         unwritableDocuments = Set((stored ?? []).compactMap(UUID.init(uuidString:)))
     }
 
-    /// Records that a document has no file in the folder, or that it has one again.
-    ///
-    /// Both directions matter. Forgetting to clear leaves a document permanently exempt from the
-    /// deletion check, so removing its file in Finder would stop working — silently, which is the
-    /// worst way for a folder-is-the-library promise to break.
     /// Forgets every recorded failure.
     ///
     /// Called wherever the folder stops being the library — turning markdown storage off, erasing
@@ -267,6 +262,11 @@ final class DocumentStorage {
         unwritableDocuments.subtract(ids)
     }
 
+    /// Records that a document has no file in the folder, or that it has one again.
+    ///
+    /// Both directions matter. Forgetting to clear leaves a document permanently exempt from the
+    /// deletion check, so removing its file in Finder would stop working — silently, which is the
+    /// worst way for a folder-is-the-library promise to break.
     private func setUnwritable(_ isUnwritable: Bool, for id: UUID) {
         if isUnwritable {
             unwritableDocuments.insert(id)
@@ -408,12 +408,25 @@ final class DocumentStorage {
         let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
         let imported = migrator.importAll(knownSpaces: knownSpaces)
 
+        // Documents the folder was never able to hold do not count against it. The retry on each
+        // scan recovers the ones that can be written — a drive that came back — but a read-only
+        // folder or a full disk never reconciles, and refusing on that count left the user unable
+        // to turn markdown storage off at all, following advice (press Rescan) that cannot work.
+        // Their content is in encrypted storage already, which is where this switch is taking it.
+        let unreachable = unwritableDocuments.count
+        let expected = max(0, expectedDocumentCount - unreachable)
+        if unreachable > 0 {
+            logger.info(
+                "\(unreachable, privacy: .public) document(s) never reached the folder; not expecting them back"
+            )
+        }
+
         // A partially present folder is the dangerous case, because it looks like a successful
         // read of a smaller library. Refusing sends the user to Rescan, which reconciles the
         // difference visibly instead of destroying it.
-        guard imported.documents.count >= expectedDocumentCount else {
+        guard imported.documents.count >= expected else {
             throw SwitchError.folderIncomplete(
-                found: imported.documents.count, expected: expectedDocumentCount
+                found: imported.documents.count, expected: expected
             )
         }
 
