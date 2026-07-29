@@ -108,11 +108,14 @@ extension DocumentStore {
         // unrelated edit happens to invalidate it.
         invalidateCaches()
 
+        // No cancellation check in here. Once these are in `documents`, every one of them has to
+        // reach disk: stopping half way left the rest in memory with no file, and the caller would
+        // still report the import as cancelled and nothing created. The yields keep the window
+        // alive; the caller checks cancellation before it asks for the next batch.
         for (index, doc) in created.enumerated() {
             if index > 0, index.isMultiple(of: Self.savesPerYield) {
                 await Task.yield()
             }
-            guard !Task.isCancelled else { break }
             saveDocument(id: doc.id)
         }
         return created.map(\.id)
