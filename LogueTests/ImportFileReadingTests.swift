@@ -100,8 +100,10 @@ struct ImportFileReadingTests {
 
     // MARK: - Walking a vault
 
-    private func vault() throws -> URL {
-        let root = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    private func vault(named name: String = "MyVault") throws -> URL {
+        let root = URL.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent(name)
         let files: [String: String] = [
             "Inbox.md": "# Inbox\n\nTop level.",
             "Projects/Apollo.md": "# Apollo\n\nOne.",
@@ -123,21 +125,92 @@ struct ImportFileReadingTests {
     /// the whole shape of the problem this walk exists for.
     @Test("A chosen folder is walked, and subfolders keep their place in the tree")
     func directoryIsWalkedIntoPaths() throws {
-        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil)
+        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil, limits: .init(maxDepth: 12))
 
-        #expect(scanned.files[[]]?.map(\.name) == ["Inbox.md"])
-        #expect(scanned.files[["Projects"]]?.map(\.name) == ["Apollo.md"])
-        #expect(scanned.files[["Projects", "Notes"]]?.map(\.name) == ["Deep.md"])
+        // The chosen folder owns its subtree. Seeding the walk with an empty path tipped a vault's
+        // root notes straight into the destination and gave it no space of its own.
+        #expect(scanned.files[["MyVault"]]?.map(\.name) == ["Inbox.md"])
+        #expect(scanned.files[["MyVault", "Projects"]]?.map(\.name) == ["Apollo.md"])
+        #expect(scanned.files[["MyVault", "Projects", "Notes"]]?.map(\.name) == ["Deep.md"])
+    }
+
+    /// Two folders chosen together shared one path-keyed dictionary, so wherever their subfolder
+    /// names agreed the trees were interleaved into a single space.
+    @Test("Two chosen folders stay two trees")
+    func multipleFoldersDoNotMerge() throws {
+        let work = try vault(named: "Work")
+        let personal = try vault(named: "Personal")
+
+        let scanned = DocumentStore.collect(
+            from: [work, personal], storedRoot: nil, limits: .init(maxDepth: 12)
+        )
+
+        #expect(scanned.files[["Work", "Projects"]]?.map(\.name) == ["Apollo.md"])
+        #expect(scanned.files[["Personal", "Projects"]]?.map(\.name) == ["Apollo.md"])
+        #expect(scanned.files[["Projects"]] == nil)
+    }
+
+    /// `SpaceFolderLayout` returns no path at all past its depth cap, which resolves to the
+    /// markdown root — so a folder nested deeper than a space can be would write its `_space.md`
+    /// and its documents straight into `~/Logue`.
+    @Test("A folder deeper than the destination allows is refused, not silently rooted")
+    func tooDeepIsRefused() throws {
+        let scanned = DocumentStore.collect(
+            from: [try vault()], storedRoot: nil, limits: .init(maxDepth: 2)
+        )
+
+        #expect(scanned.files[["MyVault", "Projects"]]?.map(\.name) == ["Apollo.md"])
+        #expect(scanned.files[["MyVault", "Projects", "Notes"]] == nil)
+        #expect(scanned.skipped.contains { $0.reason.contains("nested deeper") })
+    }
+
+    /// A folder chosen one click above the vault is a normal slip, and the walk holds everything
+    /// it reads in memory before a single document is created.
+    @Test("A walk stops at the file cap and says so")
+    func fileCapStopsTheWalk() throws {
+        var limits = DocumentStore.ImportLimits(maxDepth: 12)
+        limits.maxFiles = 2
+
+        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil, limits: limits)
+
+        #expect(scanned.fileCount == 2)
+        #expect(scanned.stoppedEarly?.contains("2 files") == true)
+    }
+
+    @Test("A walk stops at the byte cap and says so")
+    func byteCapStopsTheWalk() throws {
+        var limits = DocumentStore.ImportLimits(maxDepth: 12)
+        limits.maxTotalBytes = 1
+
+        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil, limits: limits)
+
+        #expect(scanned.fileCount == 0)
+        #expect(scanned.stoppedEarly != nil)
+    }
+
+    /// `isDirectory` resolves symlinks, so a link to an ancestor reads as an ordinary folder and
+    /// the walk re-enters it. Depth alone does not save us — N links give N^depth paths.
+    @Test("A symlink loop terminates instead of walking forever")
+    func symlinkCycleTerminates() throws {
+        let root = try vault()
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("Projects/loop"), withDestinationURL: root
+        )
+
+        let scanned = DocumentStore.collect(from: [root], storedRoot: nil, limits: .init(maxDepth: 12))
+
+        // Each real file is found once; the link back to the root is not re-entered.
+        #expect(scanned.fileCount == 3)
     }
 
     /// A vault is full of images and PDFs. Reporting every one as "skipped" would bury the
     /// failures that actually need the user's attention.
     @Test("Attachments and hidden config are passed over without being reported")
     func attachmentsAreNotReportedAsSkipped() throws {
-        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil)
+        let scanned = DocumentStore.collect(from: [try vault()], storedRoot: nil, limits: .init(maxDepth: 12))
 
         #expect(scanned.skipped.isEmpty)
-        #expect(scanned.files[["Attachments"]] == nil)
+        #expect(scanned.files[["MyVault", "Attachments"]] == nil)
         #expect(scanned.files.keys.contains { $0.contains(".obsidian") } == false)
     }
 
@@ -146,7 +219,7 @@ struct ImportFileReadingTests {
     @Test("A hand-picked file of the wrong type is reported")
     func handPickedWrongTypeIsReported() throws {
         let url = try temporaryFile(named: "photo.png", containing: Data("x".utf8))
-        let scanned = DocumentStore.collect(from: [url], storedRoot: nil)
+        let scanned = DocumentStore.collect(from: [url], storedRoot: nil, limits: .init(maxDepth: 12))
 
         #expect(scanned.files.isEmpty)
         #expect(scanned.skipped.map(\.file) == ["photo.png"])
@@ -160,7 +233,7 @@ struct ImportFileReadingTests {
         try Data("# Note".utf8).write(to: url)
 
         let storedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path.lowercased()
-        let scanned = DocumentStore.collect(from: [url], storedRoot: storedRoot)
+        let scanned = DocumentStore.collect(from: [url], storedRoot: storedRoot, limits: .init(maxDepth: 12))
 
         #expect(scanned.files.isEmpty)
         #expect(scanned.skipped.first?.reason == "already in the Logue folder")
