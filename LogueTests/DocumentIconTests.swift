@@ -94,4 +94,21 @@ struct EditorLayoutModeTests {
     func stableRawValues() {
         #expect(EditorLayoutMode(rawValue: "allPanels") == .allPanels)
     }
+
+    /// The View menu builds its ⌘1 / ⌘2 / ⌘3 items from `1 ... allCases.count` and resolves
+    /// each through `init(shortcutNumber:)`, so a case added without a number would silently
+    /// go unbound rather than fail to compile.
+    @Test("Every layout is reachable from a shortcut number")
+    func everyLayoutHasAShortcut() {
+        let reachable = (1 ... EditorLayoutMode.allCases.count)
+            .compactMap { EditorLayoutMode(shortcutNumber: $0) }
+        #expect(Set(reachable) == Set(EditorLayoutMode.allCases))
+    }
+
+    /// A value written by a future version, or a corrupted one, must not leave the window in
+    /// a state no shortcut can describe — callers fall back to `allPanels`.
+    @Test("An unrecognised stored value is not a layout")
+    func unknownRawValue() {
+        #expect(EditorLayoutMode(rawValue: "splitScreenTriptych") == nil)
+    }
 }

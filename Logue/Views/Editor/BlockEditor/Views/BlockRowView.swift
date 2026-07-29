@@ -99,6 +99,9 @@ struct BlockRowView: View {
         case let .blockQuote(id, text):
             blockQuoteView(id: id, text: text)
 
+        case let .callout(id, kind, title, body):
+            calloutView(id: id, kind: kind, title: title, body: body)
+
         case let .codeBlock(id, language, code):
             codeBlockView(id: id, language: language, code: code)
 
@@ -447,15 +450,136 @@ struct BlockRowView: View {
         }
     }
 
+    // MARK: - Callout
+
+    /// A GitHub-style alert: kind icon and heading, with the body editable underneath.
+    ///
+    /// The body uses the same `editableTextView` as a quote, so typing, splitting and the
+    /// backspace-at-start behaviour are the ones the rest of the editor already has. Only the
+    /// chrome around it — icon, colour, heading, tinted background — is new.
+    private func calloutView(id: BlockID, kind: CalloutKind, title: String, body: String) -> some View {
+        HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(kind.accent.opacity(AppThemeConstants.opacityStrong))
+                .frame(width: blockquoteBarWidth)
+
+            VStack(alignment: .leading, spacing: 4) {
+                calloutHeader(id: id, kind: kind, title: title)
+
+                editableTextView(
+                    id: id,
+                    text: textBinding(for: id),
+                    font: .systemFont(ofSize: fontSize),
+                    isFocused: isFocused,
+                    searchHighlights: blockSearchHighlights(),
+                    onEnter: { offset in
+                        // An empty callout collapses to a paragraph on Return, matching what a
+                        // quote does — otherwise the only way out is the context menu.
+                        if body.isEmpty {
+                            document.replaceBlock(id: id, with: .paragraph(id: id, text: ""))
+                        } else {
+                            splitBlock(id: id, at: offset)
+                        }
+                    },
+                    onBackspaceAtStart: {
+                        if body.isEmpty {
+                            document.replaceBlock(id: id, with: .paragraph(id: id, text: ""))
+                        } else {
+                            mergeWithPrevious(id: id)
+                        }
+                    }
+                )
+            }
+            .padding(.leading, fontSize * 0.75)
+            .padding(.trailing, fontSize * 0.5)
+            .padding(.vertical, fontSize * 0.5)
+        }
+        .background(kind.accent.opacity(AppThemeConstants.opacityLight))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// The icon, kind picker and optional title line.
+    private func calloutHeader(id: BlockID, kind: CalloutKind, title: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: kind.symbolName)
+                .font(.system(size: fontSize * 0.85))
+                .foregroundStyle(kind.accent)
+
+            Menu {
+                ForEach(CalloutKind.allCases, id: \.self) { candidate in
+                    Button {
+                        document.replaceBlock(
+                            id: id,
+                            with: .callout(id: id, kind: candidate, title: title, body: calloutBody(of: id))
+                        )
+                    } label: {
+                        Label(candidate.defaultTitle, systemImage: candidate.symbolName)
+                    }
+                }
+            } label: {
+                Text(title.isEmpty ? kind.defaultTitle : title)
+                    .font(.system(size: fontSize * 0.9, weight: .semibold))
+                    .foregroundStyle(kind.accent)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Callout type")
+
+            Spacer()
+
+            if isFocused {
+                // Only offered while the block is focused: an always-visible field would put a
+                // text box in every callout in the document.
+                TextField("Optional title", text: calloutTitleBinding(for: id))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: fontSize * 0.8))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 160)
+            }
+        }
+    }
+
+    /// The current body text, read back from the document so a kind change cannot write a
+    /// stale copy of it over what the user has since typed.
+    private func calloutBody(of id: BlockID) -> String {
+        if case let .callout(_, _, _, body) = document.block(for: id) {
+            return body
+        }
+        return ""
+    }
+
+    private func calloutTitleBinding(for id: BlockID) -> Binding<String> {
+        Binding(
+            get: {
+                if case let .callout(_, _, title, _) = document.block(for: id) {
+                    return title
+                }
+                return ""
+            },
+            set: { newTitle in
+                if case let .callout(_, kind, _, body) = document.block(for: id) {
+                    // Newlines would break the single-line `> [!NOTE] title` form on the way
+                    // back out, so they are stripped rather than allowed to corrupt the fence.
+                    let cleaned = newTitle.replacingOccurrences(of: "\n", with: " ")
+                    document.replaceBlock(id: id, with: .callout(id: id, kind: kind, title: cleaned, body: body))
+                }
+            }
+        )
+    }
+
     // MARK: - Code Block
 
     private func codeBlockHeader(id: BlockID, code: String) -> some View {
         HStack {
+            languageMenu(for: id)
+            // The free-text field stays alongside the menu so a language the highlighter
+            // does not know — one that arrived in imported markdown, or a new one — can
+            // still be written into the fence by hand.
             TextField("language", text: languageBinding(for: id))
                 .textFieldStyle(.plain)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: 120)
+                .frame(maxWidth: 100)
             Spacer()
             Button {
                 NSPasteboard.general.clearContents()
@@ -471,6 +595,33 @@ struct BlockRowView: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 4)
+    }
+
+    /// Picks the fence language from the set the highlighter actually supports.
+    ///
+    /// `CodeSyntaxHighlighter.supportedLanguages` is the source of the list, so the menu
+    /// cannot drift from what highlighting is available for. The chosen language is also
+    /// remembered, and becomes the default for the next code block inserted.
+    private func languageMenu(for id: BlockID) -> some View {
+        let binding = languageBinding(for: id)
+        let current = CodeSyntaxHighlighter.displayName(forLanguage: binding.wrappedValue)
+
+        return Menu {
+            Button("Plain Text") { binding.wrappedValue = "" }
+            Divider()
+            ForEach(CodeSyntaxHighlighter.supportedLanguages) { language in
+                Button(language.displayName) {
+                    binding.wrappedValue = language.id
+                    CodeBlockLanguageMemory.remember(language.id)
+                }
+            }
+        } label: {
+            Text(current ?? "Plain Text")
+                .font(.caption)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Syntax highlighting language")
     }
 
     @ViewBuilder

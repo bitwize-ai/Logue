@@ -22,7 +22,17 @@ enum BlockSerializer {
             case let .math(latex):
                 blocks.append(.math(id: UUID(), latex: latex))
             case let .markdown(text):
-                blocks += parseMarkdownSegment(text)
+                // Callouts get pulled out for the same reason as math fences: cmark reads one
+                // as a block quote and folds its line breaks into spaces, so a multi-line
+                // callout body could not be written back the way it arrived.
+                for calloutSegment in calloutSegments(in: text) {
+                    switch calloutSegment {
+                    case let .callout(kind, title, body):
+                        blocks.append(.callout(id: UUID(), kind: kind, title: title, body: body))
+                    case let .markdown(plain):
+                        blocks += parseMarkdownSegment(plain)
+                    }
+                }
             }
         }
 
@@ -97,6 +107,91 @@ enum BlockSerializer {
         }
 
         return segments
+    }
+
+    // MARK: - Callout Splitting
+
+    private enum CalloutSegment {
+        case markdown(String)
+        case callout(kind: CalloutKind, title: String, body: String)
+    }
+
+    /// Splits `markdown` into alternating plain-markdown runs and callout blocks.
+    ///
+    /// A callout is a block quote whose first line is `> [!TYPE]`, optionally followed by a
+    /// title on the same line. It runs until the first line that is not part of the quote.
+    /// Anything that is not one of the five recognised types — `> [!BANANA]`, or a plain
+    /// `> quote` — is left in the markdown run untouched, so cmark parses it as the block
+    /// quote it is.
+    private static func calloutSegments(in markdown: String) -> [CalloutSegment] {
+        guard markdown.contains("[!") else { return [.markdown(markdown)] }
+
+        let lines = markdown.components(separatedBy: "\n")
+        var segments: [CalloutSegment] = []
+        var pending: [String] = []
+        var index = 0
+
+        while index < lines.count {
+            guard let header = calloutHeader(in: lines[index]) else {
+                pending.append(lines[index])
+                index += 1
+                continue
+            }
+
+            // Body lines are the quote lines that follow, stopping at the first line that is
+            // not quoted — a blank line ends the quote in CommonMark, and a non-quote line
+            // starts a new block.
+            var bodyLines: [String] = []
+            var cursor = index + 1
+            while cursor < lines.count, let content = quotedContent(of: lines[cursor]) {
+                bodyLines.append(content)
+                cursor += 1
+            }
+
+            if !pending.isEmpty {
+                segments.append(.markdown(pending.joined(separator: "\n")))
+                pending = []
+            }
+            segments.append(.callout(
+                kind: header.kind,
+                title: header.title,
+                body: bodyLines.joined(separator: "\n")
+            ))
+            index = cursor
+        }
+
+        if !pending.isEmpty {
+            segments.append(.markdown(pending.joined(separator: "\n")))
+        }
+
+        return segments
+    }
+
+    /// Reads `> [!TYPE] optional title`, or `nil` when the line is not a callout header.
+    private static func calloutHeader(in line: String) -> (kind: CalloutKind, title: String)? {
+        guard let content = quotedContent(of: line) else { return nil }
+        let trimmed = content.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("[!"), let closing = trimmed.firstIndex(of: "]") else { return nil }
+
+        let marker = String(trimmed[trimmed.index(trimmed.startIndex, offsetBy: 2) ..< closing])
+        guard let kind = CalloutKind(marker: marker) else { return nil }
+
+        let title = trimmed[trimmed.index(after: closing)...].trimmingCharacters(in: .whitespaces)
+        return (kind, title)
+    }
+
+    /// The content of a quote line with its `>` marker removed, or `nil` if it is not one.
+    ///
+    /// Exactly one following space is dropped, because that space is the marker's separator
+    /// rather than the author's indentation — dropping all leading whitespace would flatten a
+    /// deliberately indented body line and break the round-trip.
+    private static func quotedContent(of line: String) -> String? {
+        guard let markerRange = line.range(of: ">"),
+              line[line.startIndex ..< markerRange.lowerBound].allSatisfy(\.isWhitespace)
+        else { return nil }
+
+        let rest = line[markerRange.upperBound...]
+        return rest.hasPrefix(" ") ? String(rest.dropFirst()) : String(rest)
     }
 
     // MARK: - Serialize (Blocks → Markdown)
@@ -404,9 +499,26 @@ enum BlockSerializer {
         case let .mermaid(_, source):
             return "```\(Self.mermaidLanguage)\n\(source)\n```"
 
+        case let .callout(_, kind, title, body):
+            return serializeCallout(kind: kind, title: title, body: body)
+
         case let .math(_, latex):
             return "\(mathFence)\n\(latex)\n\(mathFence)"
         }
+    }
+
+    /// Writes a callout back as `> [!TYPE] title` plus quoted body lines.
+    ///
+    /// An empty body line serializes as a bare `>` rather than `"> "`, which is what it was
+    /// read from — a trailing space there is the one thing that would stop the round-trip
+    /// being byte-exact.
+    private static func serializeCallout(kind: CalloutKind, title: String, body: String) -> String {
+        var lines = ["> [!\(kind.rawValue)]" + (title.isEmpty ? "" : " \(title)")]
+        // A callout with no body is a single header line, not a header plus an empty quote.
+        if !body.isEmpty {
+            lines += body.components(separatedBy: "\n").map { $0.isEmpty ? ">" : "> \($0)" }
+        }
+        return lines.joined(separator: "\n")
     }
 
     static let mermaidLanguage = "mermaid"

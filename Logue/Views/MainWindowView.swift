@@ -64,12 +64,49 @@ struct MainWindowView: View {
     @State private var lastSeenStoreVersion: Int = 0
 
     @State private var showCommandPalette = false
+    @State private var showQuickOpen = false
+
+    /// Which panes are shown, driven by ⌘1 / ⌘2 / ⌘3 and persisted across launches.
+    ///
+    /// Stored as the raw string so `@AppStorage` can hold it directly; `layoutMode` below is
+    /// the typed view of it, and every layout decision reads `showsList` / `showsInspector`
+    /// from `EditorLayoutMode` rather than re-deriving what each mode means.
+    @AppStorage(AppConstants.UserDefaultsKeys.editorLayoutMode) private var layoutModeRaw =
+        EditorLayoutMode.allPanels.rawValue
+
+    private var layoutMode: EditorLayoutMode {
+        EditorLayoutMode(rawValue: layoutModeRaw) ?? .allPanels
+    }
+
     // Extension-visible: +Navigation
     /// Remembers the sidebar context when entering editing mode (since sidebarSelection is nilled out).
     @State var editingSourceSelection: SidebarItem?
 
+    /// Bridge between `EditorLayoutMode` and the split view's own column visibility.
+    ///
+    /// The write-back only ever records a *collapse*, and never tries to work out which mode a
+    /// re-appearing sidebar should mean. That is deliberate, and it was a bug first: SwiftUI
+    /// echoes the new visibility straight back through this binding after the menu sets a mode,
+    /// and the echo arrives with `layoutMode` still reading the value it had a moment ago —
+    /// `@AppStorage` caches, so the setter cannot see its own write. Reconstructing the mode
+    /// from that stale read turned every ⌘3 pressed from editor-only into editor-and-list,
+    /// because the old mode showed no inspector. Only the collapse direction is safe to infer,
+    /// and it is the only one that has to be: every path that shows the list again names the
+    /// mode it wants.
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { layoutMode.showsList ? .all : .detailOnly },
+            set: { newValue in
+                // Idempotent when the mode is already editor-only, which is what the echo of
+                // our own `.detailOnly` looks like.
+                guard newValue == .detailOnly else { return }
+                layoutModeRaw = EditorLayoutMode.editorOnly.rawValue
+            }
+        )
+    }
+
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: columnVisibility) {
             CategorySidebarView(selection: $sidebarSelection)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
         } detail: {
@@ -218,9 +255,43 @@ struct MainWindowView: View {
                 .transition(.opacity)
             }
         }
+        // Quick Open (Cmd+P / Cmd+O)
+        .overlay {
+            if showQuickOpen {
+                ZStack {
+                    Color.black.opacity(0.2)
+                        .ignoresSafeArea()
+                        .onTapGesture { showQuickOpen = false }
+
+                    VStack {
+                        QuickOpenPaletteView(isPresented: $showQuickOpen)
+                            .padding(.top, 80)
+                        Spacer()
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
         .onKeyPress(keys: [KeyEquivalent("k")], phases: .down) { keyPress in
             guard keyPress.modifiers.contains(.command) else { return .ignored }
             showCommandPalette.toggle()
+            return .handled
+        }
+        // ⌘= is the alias for Zoom In. The View menu binds ⌘+, which on any layout where `+`
+        // needs Shift is a chord the menu never matches — so the unshifted key in the same
+        // physical position is handled here instead. It cannot be a second menu item: see
+        // the comment on the zoom group in `LogueApp`.
+        .onKeyPress(keys: [KeyEquivalent("=")], phases: .down) { keyPress in
+            guard keyPress.modifiers == .command else { return .ignored }
+            EditorZoom.mutatePersisted { $0.zoomIn() }
+            return .handled
+        }
+        .onKeyPress(keys: [KeyEquivalent("p"), KeyEquivalent("o")], phases: .down) { keyPress in
+            // Plain ⌘P / ⌘O only. Without the shift check, ⇧⌘P would open quick-open too,
+            // and the two palettes must not both be up at once.
+            guard keyPress.modifiers == .command else { return .ignored }
+            showCommandPalette = false
+            showQuickOpen.toggle()
             return .handled
         }
         .onKeyPress(keys: [KeyEquivalent("f")], phases: .down) { keyPress in

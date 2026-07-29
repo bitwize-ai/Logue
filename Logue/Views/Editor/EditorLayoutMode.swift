@@ -30,4 +30,17 @@ enum EditorLayoutMode: String, CaseIterable, Codable, Sendable {
         case .allPanels: "All Panels"
         }
     }
+
+    /// The persisted layout, read straight from `UserDefaults`.
+    ///
+    /// Exists so a `@State` property can be initialised from the stored mode — a property
+    /// initialiser cannot read another wrapper's value. Views that need to *react* to the
+    /// mode changing observe the `@AppStorage` key instead.
+    static var stored: EditorLayoutMode {
+        guard let raw = UserDefaults.standard.string(
+            forKey: AppConstants.UserDefaultsKeys.editorLayoutMode
+        )
+        else { return .allPanels }
+        return EditorLayoutMode(rawValue: raw) ?? .allPanels
+    }
 }
