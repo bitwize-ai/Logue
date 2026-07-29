@@ -100,7 +100,9 @@ struct DocumentListContentView: View {
                 Divider()
             }
 
-            if documents.isEmpty {
+            if !store.isLoaded {
+                ContentLoadingView()
+            } else if documents.isEmpty {
                 emptyState
             } else if viewMode == .grid {
                 documentGrid

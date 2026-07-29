@@ -48,6 +48,38 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 - `MeetingStore` (@MainActor @Observable) — encrypted JSON persistence (split: +AI, +Diarization, +Metadata, +Persistence, +Search, +SeedData, +WelcomeMeeting, Protocols)
 - `MeetingNote` (struct, Codable, Sendable) — segments, speakers, speakerSegments, hasSpeakerData
 - `EncryptionManager` — AES-256-GCM at rest, 7-day migration window for legacy unencrypted data
+- `DocumentStorage` (@MainActor @Observable) — the only thing that knows *where* documents live: encrypted JSON, or plain `.md` files in `~/Logue` (split: +Rescan)
+
+### Document Storage Modes
+
+Documents have two storage modes; meetings only ever have one (encrypted). Off by default,
+opt-in under Settings → Privacy.
+
+**When plain markdown storage is on, the file IS the document.** There is no second copy and
+nothing to reconcile. Rules that follow from that, all of which have bitten:
+
+- **A scan updates the app and writes nothing back.** A write would produce a filesystem event,
+  which produces a scan, which produces a write. The only exception is stamping `_logue_id` into
+  a file dropped in by hand, without which every scan adopts it again.
+- **A space's folder is found by its identity, never by recomputing a path from its name.**
+  `SpaceFolderMap` resolves both directions from the `_logue_space_id` in `_space.md`. Deriving
+  paths from names meant a folder the app spells differently (`-Work`, >60 chars) never matched
+  its own space, which read as "no folder", which deleted the space and everything in it.
+- **A living folder must never read as deleted.** `vanishedSpaceIDs` requires the folder to be
+  absent by *both* the identity index and a path check, because anything that stops us reading
+  `_space.md` is not evidence the folder is gone.
+- **Nothing hard-deletes a file the user can see.** `trashItem`, never `removeItem` — a wrong
+  decision should cost a trip to the Trash, not their text.
+- **Ambiguity is never resolved by guessing.** Two files claiming one document means nothing is
+  applied to that document at all; two folders claiming one space keeps the one the space is
+  named after. Both are logged.
+- **A plan is diffed against a snapshot, so re-check before applying.** Reading happens off the
+  main actor and the user can type during it; `discardingUpdatesThatMovedOn` holds back anything
+  that changed.
+- **Structural changes made in the app write to disk immediately** (create/rename/move/delete a
+  space). That is what earns a scan the right to read a missing folder as a deletion.
+- **A missing root folder means do nothing.** An unmounted drive, a moved folder and an
+  unfinished sync are indistinguishable from "everything was deleted".
 
 ### Tests (Swift Testing framework — @Suite, @Test, #expect, NOT XCTest)
 
@@ -168,4 +200,12 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 | `Services/RecordingSessionManager.swift` | Recording lifecycle (`RecordingState` enum) |
 | `Services/EncryptionManager.swift` | AES-256-GCM encryption at rest (7-day migration window) |
 | `Services/SandboxContainerMigrator.swift` | One-time move of user data out of the pre-1.0.1 sandbox container (runs in `LogueApp.init()`) |
+| `Services/DocumentStorage.swift` | Storage mode, switching both ways, the `~/Logue` location (+Rescan: watching and scanning) |
+| `Services/MarkdownStorageMigrator.swift` | Every filesystem operation on the folder — export/verify/import/reconcile, folder create/move/retire |
+| `Services/MarkdownFolderScan.swift` | One scan pass: folders → spaces, files → documents, → plan. Takes its root as a parameter, so it is testable |
+| `Engine/SpaceFolderMap.swift` | Which folder belongs to which space, by identity rather than by name |
+| `Engine/ExternalChangePlan.swift` | Pure diffing rules for what a scan means, plus the stale-update guard |
+| `Engine/SpaceFolderAdoption.swift` | Pure rules for new, renamed and vanished folders |
+| `Engine/MarkdownDocumentFile.swift` | The `.md` file format for a document (frontmatter + body) |
+| `Engine/SpaceFile.swift` | `_space.md` — a folder's space identity, and the prose the user may add below it |
 | `App/AppConstants.swift` | All constants: `LLMDefaults`, `Audio`, `Diarization`, `Delays` |

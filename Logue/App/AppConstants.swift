@@ -29,6 +29,9 @@ enum AppConstants {
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
+        /// How documents are stored: `encrypted` (default) or `markdown`.
+        static let documentStorageMode = "documentStorageMode"
+        static let unwritableDocuments = "unwritableDocuments"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"
@@ -149,6 +152,33 @@ enum AppConstants {
     // MARK: - Centralized Delays
 
     enum Delays {
+        /// Coalesces a burst of filesystem events from another editor saving, so one
+        /// external save triggers one folder scan rather than several.
+        ///
+        /// A `TimeInterval` rather than a `Duration` because its only caller is
+        /// `DispatchQueue.asyncAfter`, sitting between two C APIs — `FSEventStream` and GCD —
+        /// and neither speaks `Duration`.
+        static let folderScanDebounceSeconds: TimeInterval = 0.4
+
+        /// How long a file must have been untouched before it is adopted as a new document.
+        ///
+        /// A file mid-write looks exactly like a file with no identifier, and adopting one wrote our
+        /// frontmatter over content the user was still saving. Comfortably longer than the scan
+        /// debounce, because the point is to outlast a writer that is not atomic.
+        static let adoptionSettleSeconds: TimeInterval = 2.0
+
+        /// How long a pane waits before admitting it is still loading.
+        ///
+        /// Long enough that a fast load looks instant rather than showing a spinner that
+        /// flashes, short enough that a slow one does not look broken.
+        static let loadingIndicatorAppearance: Duration = .milliseconds(250)
+
+        /// How long the rescan button keeps spinning at minimum.
+        ///
+        /// A scan of a normal folder finishes in milliseconds — faster than the eye, so
+        /// without a floor the press would look like it did nothing at all.
+        static let rescanMinimumVisible: Duration = .milliseconds(700)
+
         /// -- UI Debounce --
         /// Search field input debounce (document list, meeting list, overview, sidebar)
         static let searchDebounce: Duration = .milliseconds(300)

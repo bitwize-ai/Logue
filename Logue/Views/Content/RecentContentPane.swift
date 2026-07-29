@@ -26,9 +26,17 @@ struct RecentContentPane: View {
             .map { $0 }
     }
 
+    /// Both stores, because this pane mixes documents and meetings: showing "nothing here"
+    /// while either is still reading would be wrong about half the content.
+    private var isLoaded: Bool {
+        documentStore.isLoaded && meetingStore.isLoaded
+    }
+
     var body: some View {
         Group {
-            if recentItems.isEmpty {
+            if !isLoaded {
+                ContentLoadingView()
+            } else if recentItems.isEmpty {
                 ContentUnavailableView {
                     Label("No Recent Items", systemImage: "clock")
                 } description: {

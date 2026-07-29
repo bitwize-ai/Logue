@@ -264,6 +264,11 @@ struct MeetingListPane: View {
 
     private func autoSelectFirst() {
         guard !hasAutoSelected, selectedItem == nil else { return }
+        // Before the store has read from disk an existing library looks empty, and the branch
+        // below reacts to empty by *creating* a meeting — so launching would leave a stray
+        // "Untitled Meeting" behind. The `activeMeetings.count` change that loading produces
+        // calls this again.
+        guard store.isLoaded else { return }
 
         // If no meetings exist, create one
         if store.activeMeetings.isEmpty {
@@ -407,7 +412,9 @@ struct MeetingListPane: View {
         .scrollContentBackground(.hidden)
         .background(AppThemeConstants.surfaceBackground)
         .overlay {
-            if filteredMeetings.isEmpty, !hasUpcomingEvents {
+            if !store.isLoaded {
+                ContentLoadingView()
+            } else if filteredMeetings.isEmpty, !hasUpcomingEvents {
                 emptyStateView
             }
         }

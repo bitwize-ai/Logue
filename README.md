@@ -93,6 +93,10 @@ every pull request follows.
 - **Fact verification** — flags claims that may need a source
 - **Table support** — full table creation, editing, and context menus inside the editor
 - **Writing goals** — set and track word count, reading level, and tone targets
+- **Wiki links & backlinks** — type `[[Document Name]]` to link documents; links show the target's real name, are clickable, survive renames, and every document lists what links back to it
+- **Properties & relationships** — give documents typed fields (text, number, date, select, checkbox) and named links to other documents, all editable in a side panel
+- **Saved views & inbox** — save any filter as a sidebar entry, and triage unfiled documents from an inbox with keyboard-driven bulk actions
+- **Plain markdown storage (opt-in)** — store documents as ordinary `.md` files in `~/Logue` instead of encrypted storage, and edit them in any editor, track them in git, or point an agent at them. The folder is the storage, not a copy: edits, new files, renames, moves and deletions flow both ways, and folders map to spaces including nested ones. Off by default, and Logue explains the encryption you give up before turning it on
 
 ### 🤖 Ask Logue — Agentic AI Chat
 
@@ -113,9 +117,9 @@ every pull request follows.
 ### 🔒 Privacy & Security
 
 - **On-device AI by default** — inference, transcription, and diarization run locally via MLX on Apple Silicon; no content is sent to any cloud service unless you opt into web search or an external AI provider
-- **AES-256-GCM encryption at rest** — all meeting data and documents are encrypted on disk
+- **AES-256-GCM encryption at rest** — meetings, transcripts, audio and documents are encrypted on disk. Documents are the one thing you can opt out of, by turning on plain markdown storage; meeting data is always encrypted
 - **No account required** — download and start working; there's no sign-up, no telemetry gate, no cloud dependency
-- **Sandboxed release builds** — App Sandbox is enabled in production, and every entitlement exception is documented
+- **Hardened Runtime, notarized, not sandboxed** — Logue ships Developer ID signed and notarized with the Hardened Runtime on. It is deliberately **not** sandboxed: a sandboxed process cannot be an Accessibility API client, so macOS never lists it under Privacy & Security → Accessibility, which silently disables the inline assistant, global hotkeys and Command Center. Every entitlement exception is documented in the entitlements files
 
 ## 🖼 Screenshots
 
@@ -230,7 +234,7 @@ Building and running unsigned dev builds needs none of the above. See
 
 - [`Logue/`](/Logue) — Main Swift source; SwiftUI + AppKit application target.
 - [`Logue/Engine/`](/Logue/Engine) — LLM inference actor, prompt builders, and retry helpers. All AI logic lives here.
-- [`Logue/Services/`](/Logue/Services) — Recording pipeline, transcription, speaker diarization, encryption, and scheduling services.
+- [`Logue/Services/`](/Logue/Services) — Recording pipeline, transcription, speaker diarization, encryption, document storage, and scheduling services.
 - [`Logue/Views/`](/Logue/Views) — All SwiftUI views: Meeting workspace, Writing editor, Ask Logue chat, Action items, Settings, and more.
 - [`LogueTests/`](/LogueTests) — Swift Testing suites (`@Suite`, `@Test`), including real-inference LLM integration tests.
 - [`Vendor/`](/Vendor) — Vendored git submodule dependencies — no remote access required at build time.

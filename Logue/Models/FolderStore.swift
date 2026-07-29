@@ -94,7 +94,69 @@ final class SpaceStore {
         let space = Space(name: deduped, parentID: parentID, sortOrder: maxOrder + 1)
         spaces.append(space)
         saveToDisk()
+        // Immediately, not lazily: a space with no folder is how a scan recognises a folder the
+        // user deleted, so a space that never got one would delete itself on the next scan.
+        createFolder(for: space)
         return space
+    }
+
+    /// Takes on a folder that already exists on disk as a space.
+    ///
+    /// Unlike `createSpace` the name is kept **exactly** as the folder spells it, and no
+    /// disambiguating suffix is added. That matters: a deduped name would be written back as a
+    /// differently-named folder, which the next scan would read as another new folder, and the
+    /// library would grow every time it was looked at.
+    ///
+    /// A space that already has this identifier is returned unchanged, so re-adopting is free.
+    @discardableResult
+    func adoptSpace(
+        id: UUID,
+        name: String,
+        parentID: UUID?,
+        icon: String? = nil,
+        color: String? = nil,
+        sortOrder: Int? = nil
+    ) -> Space? {
+        if let existing = spaces.first(where: { $0.id == id }) {
+            return existing
+        }
+
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // A folder restored from a backup carries the order it had in `_space.md`; otherwise it goes
+        // last, where a newly noticed folder belongs.
+        let maxOrder = spaces.filter { $0.parentID == parentID }.map(\.sortOrder).max() ?? -1
+        let space = Space(
+            id: id,
+            name: trimmed,
+            parentID: parentID,
+            sortOrder: sortOrder ?? (maxOrder + 1),
+            icon: icon,
+            color: color
+        )
+        spaces.append(space)
+        saveToDisk()
+        return space
+    }
+
+    /// Follows a folder that was renamed or moved outside the app.
+    ///
+    /// The name is taken exactly as the folder spells it, with no deduplication: this is not a
+    /// user typing a name we can adjust, it is a fact on disk. Deduplicating would write a
+    /// differently-named folder, which the next scan would read as yet another new folder.
+    func adoptSpaceRename(id: UUID, name: String, parentID: UUID?) {
+        guard let index = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        // A folder cannot be moved inside itself, but a corrupted `_space.md` could claim it
+        // was — which would make the parent chain a cycle.
+        guard parentID != id, !allDescendantIDs(of: id).contains(parentID ?? id) else { return }
+
+        spaces[index].name = trimmed
+        spaces[index].parentID = parentID
+        saveToDisk()
     }
 
     func renameSpace(id: UUID, newName: String) {
@@ -103,14 +165,21 @@ final class SpaceStore {
         guard !trimmed.isEmpty else { return }
         let parentID = spaces[index].parentID
         let otherNames = spaces.filter { $0.id != id && $0.parentID == parentID }.map(\.name)
+
+        // Captured before the change: the path is derived from the name, so afterwards there is
+        // no way to work out where the folder used to be.
+        let previousComponents = folderComponents(for: id)
+
         spaces[index].name = uniqueTitle(trimmed, among: otherNames)
         saveToDisk()
+        moveFolder(for: id, from: previousComponents)
     }
 
     func setSpaceIcon(id: UUID, icon: String?) {
         guard let index = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[index].icon = icon
         saveToDisk()
+        refreshFolderIdentity(for: id)
     }
 
     func setAIInsight(id: UUID, key: String, content: String, contentSignature: String) {
@@ -170,10 +239,20 @@ final class SpaceStore {
         }
     }
 
-    func deleteSpace(id: UUID) {
+    /// Deletes a space and everything under it.
+    ///
+    /// `retiringFolder` is false when the deletion *came from* the folder disappearing. Retiring
+    /// then is not merely redundant: the path is recomputed from the name, and if the user has
+    /// already made a new folder there — deleting and recreating one is a normal thing to do —
+    /// this would move that new folder to the Trash.
+    func deleteSpace(id: UUID, retiringFolder: Bool = true) {
         // Recursively delete child spaces
         let childIDs = allDescendantIDs(of: id)
         let allIDs = childIDs.union([id])
+
+        // Captured before the spaces go, for the same reason as in `renameSpace`. Only the top of
+        // the tree is needed: retiring its folder takes the children with it.
+        let folderToRetire = folderComponents(for: id)
 
         // Trash all documents and meetings in this space and descendants
         for spaceID in allIDs {
@@ -182,6 +261,12 @@ final class SpaceStore {
         }
         spaces.removeAll { allIDs.contains($0.id) }
         saveToDisk()
+
+        // Without this the folder stays behind with its `_space.md` still naming the space, and
+        // the next scan reads it as a folder the user made and creates the space all over again.
+        if retiringFolder {
+            retireFolder(for: id, at: [folderToRetire])
+        }
     }
 
     func space(for id: UUID) -> Space? {
@@ -194,10 +279,13 @@ final class SpaceStore {
         if let newParentID, allDescendantIDs(of: id).contains(newParentID) {
             return
         }
+        let previousComponents = folderComponents(for: id)
+
         spaces[index].parentID = newParentID
         let siblings = spaces.filter { $0.parentID == newParentID && $0.id != id }
         spaces[index].sortOrder = (siblings.map(\.sortOrder).min() ?? 1) - 1
         saveToDisk()
+        moveFolder(for: id, from: previousComponents)
     }
 
     // MARK: - Persistence
