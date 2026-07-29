@@ -401,7 +401,7 @@ enum TranscriptionLanguage: String, CaseIterable, Identifiable {
         case .french: Locale(identifier: "fr-FR")
         case .german: Locale(identifier: "de-DE")
         case .italian: Locale(identifier: "it-IT")
-        case .portuguese: Locale(identifier: "pt-BR")
+        case .portuguese: Locale(identifier: "pt-PT")
         case .dutch: Locale(identifier: "nl-NL")
         case .japanese: Locale(identifier: "ja-JP")
         case .chinese: Locale(identifier: "zh-CN")
