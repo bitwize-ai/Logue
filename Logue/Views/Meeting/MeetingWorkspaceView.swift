@@ -123,7 +123,7 @@ struct MeetingWorkspaceView: View {
                             )
                         },
                         onRenameSpeaker: { oldName, newName in
-                            store.updateMeeting(meeting.renamingSpeaker(from: oldName, to: newName))
+                            renameSpeaker(in: meeting, from: oldName, to: newName)
                         },
                         onSeekToTime: { time in
                             audioPlaybackService.seek(to: time)
@@ -765,6 +765,16 @@ extension MeetingWorkspaceView {
         ("Important", .red),
         ("Question", .purple),
     ]
+
+    /// Renaming to a name another speaker already holds merges the two — see
+    /// `MeetingNote.renamingSpeaker(from:to:)`.
+    func renameSpeaker(in meeting: MeetingNote, from oldName: String, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Skip the persist entirely when the field was committed unchanged. `updateMeeting`
+        // does not compare, so without this a no-op commit still bumps `modifiedAt`.
+        guard !trimmed.isEmpty, trimmed != oldName else { return }
+        store.updateMeeting(meeting.renamingSpeaker(from: oldName, to: trimmed))
+    }
 
     func addBookmark(for meeting: MeetingNote, label: String, color: BookmarkColor) {
         let bookmark = Bookmark(

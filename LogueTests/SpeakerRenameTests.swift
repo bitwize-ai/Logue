@@ -127,6 +127,38 @@ struct SpeakerRenameTests {
         #expect(result.segments.map(\.speakerLabel) == original.segments.map(\.speakerLabel))
     }
 
+    @Test("Retyping the shared name does not merge rows that already collide")
+    func retypingSharedNameDoesNotMerge() {
+        // Documents the gap called out in `renamingSpeaker`: the unchanged-name early-out
+        // fires before the merge, so the obvious repair on an already-broken meeting is a no-op.
+        var meeting = twoSpeakerMeeting()
+        meeting.speakers = [
+            Speaker(id: "s1", name: "John", color: Speaker.generateColor(for: 0)),
+            Speaker(id: "s2", name: "John", color: Speaker.generateColor(for: 1)),
+        ]
+
+        let result = meeting.renamingSpeaker(from: "John", to: "John")
+
+        #expect(result.speakers.count == 2)
+    }
+
+    @Test("Renaming away and back cannot collapse rows that already share a name")
+    func renameAwayAndBackStillDoesNotMerge() {
+        // Renames are keyed by name, not by speaker id, so both colliding rows move together
+        // on the way out and both come back on the way in. There is no rename-only repair.
+        var meeting = twoSpeakerMeeting()
+        meeting.speakers = [
+            Speaker(id: "s1", name: "John", color: Speaker.generateColor(for: 0)),
+            Speaker(id: "s2", name: "John", color: Speaker.generateColor(for: 1)),
+        ]
+
+        let movedAway = meeting.renamingSpeaker(from: "John", to: "Temp")
+        #expect(movedAway.speakers.map(\.name) == ["Temp", "Temp"])
+
+        let movedBack = movedAway.renamingSpeaker(from: "Temp", to: "John")
+        #expect(movedBack.speakers.map(\.name) == ["John", "John"])
+    }
+
     @Test("An empty or whitespace-only new name is rejected")
     func blankNameIsNoOp() {
         let original = twoSpeakerMeeting()

@@ -23,6 +23,12 @@ extension MeetingNote {
     ///
     /// Returns `self` unchanged when `newName` is blank, unchanged from `oldName`, or when no
     /// speaker is named `oldName`.
+    ///
+    /// A meeting already persisted with two rows sharing a name cannot be collapsed through this
+    /// API at all. Renames are keyed by name rather than by speaker id, so retyping the shared name
+    /// is caught by the early-out above, and renaming it away moves *both* rows together — renaming
+    /// back then returns both. Either way the merge branch is never reached. Such meetings open and
+    /// are fully usable; only tidying the redundant row is out of reach until rename is id-based.
     func renamingSpeaker(from oldName: String, to newName: String) -> MeetingNote {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != oldName else { return self }
