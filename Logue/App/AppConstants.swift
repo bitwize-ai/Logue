@@ -32,6 +32,9 @@ enum AppConstants {
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
         static let unwritableDocuments = "unwritableDocuments"
+
+        /// Opt-in: whether the loopback server for the browser extension is running.
+        static let browserBridgeEnabled = "browserBridgeEnabled"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"
@@ -150,6 +153,21 @@ enum AppConstants {
     static let defaultMeetingTitle = "Untitled Meeting"
 
     // MARK: - Centralized Delays
+
+    /// The loopback bridge the Logue browser extension talks to.
+    enum BrowserBridge {
+        /// Ports tried in order. More than one because the first is a guess about what else is
+        /// on the machine — the extension scans the same list, so the two stay in step.
+        static let candidatePorts: [UInt16] = [52452, 52453, 52454]
+
+        /// Open connections allowed at once. A browser uses a handful; anything beyond this is a
+        /// runaway rather than a user.
+        static let maxConcurrentConnections = 16
+
+        /// Output cap for a chat answer. The default of 512 truncates conversational replies
+        /// mid-sentence.
+        static let chatMaxTokens = 2048
+    }
 
     enum Delays {
         /// Coalesces a burst of filesystem events from another editor saving, so one
