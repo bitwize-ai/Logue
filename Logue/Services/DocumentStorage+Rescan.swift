@@ -101,6 +101,15 @@ extension DocumentStorage {
             return nil
         }
 
+        // What the library held before the walk began — the contents, not only the identifiers.
+        //
+        // Everything downstream that asks "did this move on during the scan?" has to ask it against
+        // *this*, because the walk is the long wait and it is where the user types. Reading the
+        // baseline afterwards made the question almost meaningless: it only ever caught mutations
+        // landing during the short plan step, so an edit made while the folder was being read was
+        // compared against itself, looked settled, and the file's older text was written over it.
+        let baseline = documentStore.documents.map(\.content)
+
         // One traversal, read off the main actor, handed to every step below. Each of those steps
         // used to start its own — seven per scan, three of them opening every document in the
         // library, and all of it on the main actor on every app activation.
@@ -124,24 +133,30 @@ extension DocumentStorage {
         // the walk can be tested against the filesystem rather than believed. From the snapshot, so
         // it costs nothing extra.
         let lastKnownFiles = liveMigrator.fileIndex(using: snapshot)
-        let plan = await Task.detached {
-            scan.plan(
-                spaces: spaces, known: known, lastKnownFiles: lastKnownFiles, using: snapshot
-            )
-        }.value
+        let plan = await buildPlan(
+            scan, spaces: spaces, known: known, lastKnownFiles: lastKnownFiles, snapshot: snapshot
+        )
 
         report(
             plan,
             duplicatedFolders: scan.duplicatedSpaceFolders(in: spaceStore.spaces, using: snapshot)
         )
 
-        // The plan was diffed against `known`, taken before the folder was read. The user can type
-        // during that read, and applying an update built from the older snapshot would replace what
-        // they just typed with what the file said beforehand. Anything that moved on is dropped and
-        // left for the next scan, which diffs against the newer text.
-        let settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
-            plan, comparedTo: known, current: documentStore.documents.map(\.content)
+        // Compared against the pre-walk baseline, not `known`. `known` is read after the walk, so
+        // using it asked whether anything changed during the *plan* — a few milliseconds — rather
+        // than during the read, which is the whole window. Three ordinary things happening while
+        // the folder is read went wrong that way: an edit was overwritten with the file's older
+        // text, a restore was undone and its file binned, and a document dragged to another space
+        // jumped back.
+        //
+        // `known` still feeds the plan itself. It has to: `deleteVanishedSpaces` above legitimately
+        // trashes documents, and diffing against a baseline that predates that would resurrect them.
+        let current = documentStore.documents.map(\.content)
+        var settled = ExternalChangePlanner.discardingUpdatesThatMovedOn(
+            plan, comparedTo: baseline, current: current
         )
+        keepDeletionsThatMovedOn(in: &settled, baseline: baseline, current: current)
+
         if settled.updated.count != plan.updated.count {
             Self.scanLogger.info(
                 "Held back \(plan.updated.count - settled.updated.count, privacy: .public) update(s) for a document edited during the scan"
@@ -153,6 +168,7 @@ extension DocumentStorage {
         }
 
         documentStore.applyExternalChanges(settled)
+        retryUnwritableDocuments(in: documentStore)
 
         if let minimumVisibleDuration {
             let remaining = minimumVisibleDuration - started.duration(to: .now)
@@ -308,5 +324,94 @@ extension DocumentStorage {
             }
         }
         Self.scanLogger.info("Adopted \(creations.count, privacy: .public) folder(s) as spaces")
+    }
+
+    /// Diffs the folder against the library, off the main actor.
+    ///
+    /// `unwritableDocuments` is read here rather than inside the detached task: it is main-actor
+    /// state, and it says which documents have no file because writing one failed. Their absence
+    /// from the walk is our own doing, not the user deleting anything.
+    private func buildPlan(
+        _ scan: MarkdownFolderScan,
+        spaces: [Space],
+        known: [DocumentContent],
+        lastKnownFiles: [UUID: URL],
+        snapshot: FolderSnapshot
+    ) async -> ExternalChangePlan {
+        let withoutFiles = unwritableDocuments
+        return await Task.detached {
+            scan.plan(
+                spaces: spaces,
+                known: known,
+                lastKnownFiles: lastKnownFiles,
+                withoutFiles: withoutFiles,
+                using: snapshot
+            )
+        }.value
+    }
+
+    /// Re-attempts the write for every document recorded as having no file.
+    ///
+    /// Nothing else did. An id entered that set on a failed export and left it only on a *later*
+    /// successful save, so a document edited while the folder's drive was unmounted was written to
+    /// encrypted storage and then never touched again — invisible to anything syncing `~/Logue`,
+    /// permanently exempt from the deletion check, and reported only as a log line. A scan is the
+    /// natural retry point: it already runs when the folder becomes reachable again, and a
+    /// successful `save` clears the record itself.
+    ///
+    /// Ids the store no longer holds are dropped rather than retried — a document permanently
+    /// deleted since the failure has nothing left to write.
+    private func retryUnwritableDocuments(in documentStore: DocumentStore) {
+        guard !unwritableDocuments.isEmpty else { return }
+
+        let byID = Dictionary(
+            documentStore.documents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+        )
+        let stale = unwritableDocuments.filter { byID[$0] == nil }
+        clearUnwritable(stale)
+
+        let spaces = SpaceStore.shared.spaces
+        var recovered = 0
+        var failed = 0
+        for id in unwritableDocuments {
+            guard let document = byID[id], !document.isTrashed else { continue }
+            if save(document, spaces: spaces) {
+                recovered += 1
+            } else {
+                failed += 1
+            }
+        }
+        // A failed export invalidates both folder caches, so without this the next iteration paid
+        // a full traversal that opens every `.md` in the library — on the main actor, once per
+        // still-failing document, on every scan. That is a stall scaling with the number of
+        // unwritable documents times the library size, for exactly the user whose disk is full.
+        if failed > 0 {
+            invalidateFileIndex()
+        }
+        if recovered > 0 {
+            Self.scanLogger.info(
+                "Wrote \(recovered, privacy: .public) document(s) that had failed to reach the folder"
+            )
+        }
+    }
+
+    /// Applies `ExternalChangePlanner.keepingDeletionsThatMovedOn` and reports what it saved.
+    ///
+    /// The rule itself lives next to `discardingUpdatesThatMovedOn`, where it is pure and tested;
+    /// what stays here is the part that needs the store — logging, and asking for another scan so
+    /// the rescued documents get diffed against a walk that could have seen them.
+    private func keepDeletionsThatMovedOn(
+        in plan: inout ExternalChangePlan, baseline: [DocumentContent], current: [DocumentContent]
+    ) {
+        let (settled, kept) = ExternalChangePlanner.keepingDeletionsThatMovedOn(
+            plan, baseline: baseline, current: current
+        )
+        guard !kept.isEmpty else { return }
+
+        plan = settled
+        Self.scanLogger.info(
+            "Kept \(kept.count, privacy: .public) document(s) whose file appeared during the scan"
+        )
+        hasPendingScan = true
     }
 }

@@ -161,6 +161,7 @@ struct MarkdownFolderScan: Sendable {
         spaces: [Space],
         known: [DocumentContent],
         lastKnownFiles: [UUID: URL] = [:],
+        withoutFiles: Set<UUID> = [],
         using snapshot: FolderSnapshot? = nil
     ) -> ExternalChangePlan {
         // The same guard as `vanishedSpaceIDs`, kept here as well rather than left to the caller:
@@ -193,7 +194,8 @@ struct MarkdownFolderScan: Sendable {
             adopted: adopted,
             known: known,
             ambiguous: imported.ambiguousIdentifiers,
-            stillOnDisk: stillOnDisk
+            stillOnDisk: stillOnDisk,
+            withoutFiles: withoutFiles
         )
     }
 

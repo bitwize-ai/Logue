@@ -79,4 +79,52 @@ struct DroppedFileImportTests {
 
         #expect(fields.title == "Untitled Document")
     }
+
+    // MARK: - This path rewrites the file, so it must not reshape it
+
+    /// `adopt` renders what this returns and writes it back, so trimming the body rewrote a note
+    /// that opened with an indented code block into a paragraph — in the user's own file.
+    @Test("Leading indentation is content, not stray whitespace")
+    func leadingIndentationSurvives() throws {
+        let fields = try #require(
+            DroppedFileImport.fields(fileContents: "\n    indented code block", filename: "n.md")
+        )
+        #expect(fields.body.contains("    indented code block"))
+    }
+
+    /// The 120-character cap exists because imported titles reach LLM prompts. Applying it to a
+    /// file the user already owns truncates their text on disk with no way back.
+    @Test("A long title is not truncated on a file we already hold")
+    func longTitleIsNotTruncated() throws {
+        let long = String(repeating: "a", count: 250)
+        let fields = try #require(
+            DroppedFileImport.fields(fileContents: "# \(long)\n\nBody.", filename: "n.md")
+        )
+        #expect(fields.title.count == 250)
+    }
+
+    /// `DocumentContent` has nowhere to put a modified date, so consuming these on this path took
+    /// the key out of properties and then dropped it — deleting `modified:` from the file.
+    @Test("A modified date is kept as a property rather than deleted")
+    func modifiedIsKeptAsAProperty() throws {
+        let fields = try #require(DroppedFileImport.fields(
+            fileContents: "---\ntitle: Post\nmodified: 2025-01-02\n---\nBody.",
+            filename: "n.md"
+        ))
+        #expect(fields.properties["modified"] != nil)
+    }
+
+    /// A file already in the folder has no dialog to explain a refusal, and nothing marks it — so
+    /// a silently un-adoptable file is re-read on every scan, forever.
+    @Test("An oversized file in the folder is still adopted")
+    func oversizedFileIsStillAdopted() throws {
+        let big = String(repeating: "x", count: MarkdownImport.maxFileBytes + 1)
+        let fields = try #require(DroppedFileImport.fields(fileContents: big, filename: "big.md"))
+        #expect(fields.body.count > MarkdownImport.maxFileBytes)
+    }
+
+    @Test("A whitespace-only file in the folder is still adopted")
+    func whitespaceOnlyFileIsStillAdopted() throws {
+        #expect(DroppedFileImport.fields(fileContents: "   \n\n  ", filename: "n.md") != nil)
+    }
 }

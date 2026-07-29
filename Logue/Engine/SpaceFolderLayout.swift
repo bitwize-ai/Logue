@@ -15,6 +15,31 @@ enum SpaceFolderLayout {
 
     private static let fallbackComponent = "Untitled Space"
 
+    /// How many levels down a space sits, counting itself. `nil` is the top level, so zero.
+    ///
+    /// Distinct from `directoryComponents(forSpace:in:).count`, which clamps to nothing past
+    /// `maxDepth` — so a space *deeper* than the cap reads there as depth zero. Anything deciding
+    /// how much room is left has to ask this instead, or it concludes a too-deep space has the
+    /// full allowance available below it.
+    ///
+    /// Uncapped, and cycle-guarded the same way, because the answer for a broken chain should be a
+    /// number rather than a hang.
+    static func depth(ofSpace spaceID: UUID?, in spaces: [Space]) -> Int {
+        guard let spaceID else { return 0 }
+
+        let byID = Dictionary(spaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var visited: Set<UUID> = []
+        var current: UUID? = spaceID
+        var depth = 0
+
+        while let id = current, visited.insert(id).inserted {
+            guard let space = byID[id] else { break }
+            depth += 1
+            current = space.parentID
+        }
+        return depth
+    }
+
     // MARK: - Space → directories
 
     /// Directory names for a space, outermost first.
