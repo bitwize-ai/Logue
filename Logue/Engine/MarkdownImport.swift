@@ -23,6 +23,12 @@ enum MarkdownImport {
         /// file dropped straight into the storage folder keeps its tags — the two paths
         /// disagreeing on one file is worse than either rule on its own.
         let tags: [String]
+        /// The note's own last-modified date, when its frontmatter states one.
+        ///
+        /// Without it `modifiedAt` fell back to `createdAt`, so a note written in 2019 and edited
+        /// last week imported as last modified in 2019 — with the real value visible only as a
+        /// stray property.
+        let modifiedAt: Date?
         /// The note's own creation date, when its frontmatter states one.
         ///
         /// Without this every imported note took `Date()`, so a 500-note vault arrived with 500
@@ -73,6 +79,7 @@ enum MarkdownImport {
         var title: String?
         var tags: [String] = []
         var createdAt: Date?
+        var modifiedAt: Date?
         var properties: [String: PropertyValue] = [:]
 
         // Only when the block is plausibly YAML. `MarkdownFrontmatter.parse` takes any `---` pair
@@ -86,6 +93,7 @@ enum MarkdownImport {
             title = scalar(parsed.fields["title"])
             tags = list(parsed.fields["tags"])
             createdAt = creationDate(in: parsed.fields)
+            modifiedAt = modificationDate(in: parsed.fields)
             properties = importedProperties(from: parsed.fields)
         }
         // The heading is read whatever the frontmatter said, so a note carrying both
@@ -109,6 +117,7 @@ enum MarkdownImport {
             title: resolved.isEmpty ? "Imported Note" : resolved,
             body: body,
             tags: tags,
+            modifiedAt: modifiedAt,
             createdAt: createdAt,
             properties: properties
         )
@@ -158,6 +167,17 @@ enum MarkdownImport {
     /// often absent from drafts.
     private static let creationKeys = ["created", "created_at", "date_created", "ctime", "date"]
 
+    /// Keys naming a last-modified date.
+    private static let modificationKeys = ["modified", "updated", "last_modified", "mtime", "date_modified"]
+
+    private static func modificationDate(in fields: [String: FrontmatterValue]) -> Date? {
+        for key in modificationKeys {
+            guard let raw = scalar(fields[key]), let date = parsedDate(raw) else { continue }
+            return date
+        }
+        return nil
+    }
+
     private static func creationDate(in fields: [String: FrontmatterValue]) -> Date? {
         for key in creationKeys {
             guard let raw = scalar(fields[key]), let date = parsedDate(raw) else { continue }
@@ -174,7 +194,7 @@ enum MarkdownImport {
     /// which is the honest answer.
     static func parsedDate(_ raw: String) -> Date? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.isEmpty, looksLikeADate(trimmed) else { return nil }
 
         if let date = isoFormatter.date(from: trimmed) {
             return date
@@ -184,12 +204,37 @@ enum MarkdownImport {
         }
 
         for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd", "yyyy/MM/dd"] {
-            plainFormatter.dateFormat = format
-            if let date = plainFormatter.date(from: trimmed) {
+            // Built here rather than shared and mutated. `DateFormatter` is not thread-safe, and
+            // this is reachable from the detached import walk — a shared instance whose
+            // `dateFormat` is reassigned per call is a race waiting for a second concurrent import.
+            let formatter = DateFormatter()
+            // `en_US_POSIX` so a user's 24-hour or calendar settings cannot change how a file
+            // parses. Local time, because a note written `2024-03-15` means that day where the
+            // writer was.
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = format
+            if let date = formatter.date(from: trimmed) {
                 return date
             }
         }
         return nil
+    }
+
+    /// Whether a scalar is shaped like a date at all, before any formatter sees it.
+    ///
+    /// `DateFormatter` is far more permissive than its format string suggests: with `yyyy-MM-dd`
+    /// it accepts `1.2.3` and returns the year 1. So `version: 1.2.3` became a date property,
+    /// which `MarkdownDocumentFile` wrote back to the file as `0001-02-03T00:00:00Z` — the
+    /// original string unrecoverable. And the same file already in the folder reads `1.2.3` as
+    /// text, so one file got two answers depending on how it arrived.
+    ///
+    /// Four leading digits and a `-` or `/` separator is what every format here starts with.
+    private static func looksLikeADate(_ raw: String) -> Bool {
+        let leading = raw.prefix(4)
+        guard leading.count == 4, leading.allSatisfy(\.isNumber) else { return false }
+
+        guard let fifth = raw.dropFirst(4).first else { return true }
+        return fifth == "-" || fifth == "/"
     }
 
     private static let isoFormatter: ISO8601DateFormatter = {
@@ -204,17 +249,9 @@ enum MarkdownImport {
         return formatter
     }()
 
-    /// Local time, because a note written `2024-03-15` means that day where the writer was.
-    /// `en_US_POSIX` so a user's 24-hour or calendar settings cannot change how a file parses.
-    private static let plainFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
-
     /// Frontmatter keys this importer consumes itself, so they do not also become properties.
     private static var consumedKeys: Set<String> {
-        Set(["title", "tags", MarkdownDocumentFile.identifierKey] + creationKeys)
+        Set(["title", "tags", MarkdownDocumentFile.identifierKey] + creationKeys + modificationKeys)
     }
 
     /// Everything else in the block, as document properties.
@@ -304,6 +341,23 @@ enum MarkdownImport {
         return key.lowercased()
     }
 
+    /// Caps a title, breaking at a word boundary and marking that it was cut.
+    ///
+    /// A hard `prefix` left a title ending mid-word with nothing to say it had been shortened —
+    /// a long first line of prose imported as a title that simply stopped. Falls back to a hard
+    /// cut when there is no space to break on, which is what a single very long token gives.
+    private static func truncated(_ title: String) -> String {
+        guard title.count > maxTitleLength else { return title }
+
+        let cut = String(title.prefix(maxTitleLength - 1))
+        guard let lastSpace = cut.lastIndex(of: " "),
+              cut.distance(from: cut.startIndex, to: lastSpace) > maxTitleLength / 2
+        else {
+            return cut + "\u{2026}"
+        }
+        return cut[cut.startIndex ..< lastSpace] + "\u{2026}"
+    }
+
     /// Bidirectional overrides and isolates. `Cf` is kept as a class because that is what
     /// saves the zero-width joiner in emoji, but these particular ones let a title render
     /// reversed — "Invoice \u{202E}gpj.exe" reads as an image in the sidebar.
@@ -357,6 +411,6 @@ enum MarkdownImport {
         if cleaned.isEmpty, raw != fallback {
             return sanitisedTitle(fallback, fallback: fallback)
         }
-        return String(cleaned.prefix(maxTitleLength))
+        return truncated(cleaned)
     }
 }

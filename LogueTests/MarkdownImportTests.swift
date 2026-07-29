@@ -347,6 +347,43 @@ struct MarkdownImportTests {
         #expect(doc.properties.isEmpty)
     }
 
+    /// `DateFormatter` is far looser than its format string suggests: with `yyyy-MM-dd` it
+    /// accepted `1.2.3` and returned year 1. So `version: 1.2.3` became a date property, which the
+    /// renderer wrote back as `0001-02-03T00:00:00Z` — the original string gone for good.
+    @Test("Version-like scalars are not read as dates", arguments: ["1.2.3", "1-2-3", "2/3/4", "2024.03.15"])
+    func versionsAreNotDates(raw: String) throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md", contents: "---\ntitle: T\nversion: \(raw)\n---\nBody."
+        )
+        #expect(doc.properties["version"] == .text(raw))
+        #expect(doc.createdAt == nil)
+    }
+
+    /// Without this a note created in 2019 and edited last week imported as modified in 2019,
+    /// with the real value visible only as a stray property.
+    @Test("A frontmatter modified date is carried through")
+    func modifiedDateIsCarried() throws {
+        let doc = try MarkdownImport.document(
+            fileName: "n.md",
+            contents: "---\ntitle: T\ncreated: 2019-03-01\nupdated: 2024-06-05\n---\nBody."
+        )
+        #expect(doc.createdAt != nil)
+        #expect(doc.modifiedAt != nil)
+        #expect(doc.modifiedAt != doc.createdAt)
+        #expect(doc.properties["updated"] == nil)
+    }
+
+    /// A hard `prefix` left a long title stopping mid-word with nothing to say it was cut.
+    @Test("A long title is cut at a word boundary and marked")
+    func longTitleBreaksOnAWord() throws {
+        let words = Array(repeating: "alpha", count: 60).joined(separator: " ")
+        let doc = try MarkdownImport.document(fileName: "n.md", contents: "# \(words)\nBody.")
+
+        #expect(doc.title.count <= MarkdownImport.maxTitleLength)
+        #expect(doc.title.hasSuffix("\u{2026}"))
+        #expect(!doc.title.contains("alph\u{2026}"))
+    }
+
     // MARK: - Agreement With the Folder Path
 
     /// The failure `ImportedDocument`'s own documentation warns about: one file, two answers,
