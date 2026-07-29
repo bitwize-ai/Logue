@@ -137,6 +137,18 @@ extension DocumentStore {
         persist(documentTypes, to: documentTypesURL)
     }
 
+    /// Moves every document carrying `oldName` onto `newName`.
+    func retypeDocuments(from oldName: String, to newName: String) {
+        guard oldName != newName else { return }
+
+        for (index, document) in documents.enumerated() where document.typeName == oldName {
+            documents[index].setProperty(PropertyKey.type.rawValue, value: .text(newName))
+            documents[index].modifiedAt = Date()
+            saveDocument(id: documents[index].id)
+        }
+        invalidateCaches()
+    }
+
     /// Applies a type to a document and saves it.
     func applyType(_ type: DocumentType, to documentID: UUID) {
         guard let index = documentIndex(for: documentID) else { return }
@@ -163,6 +175,92 @@ extension DocumentStore {
         documents[index].isOrganised = true
         saveDocument(id: id)
         return next
+    }
+
+    // MARK: - Changes made outside the app
+
+    /// Applies what a scan of the markdown folder found.
+    ///
+    /// **Nothing is written back.** In markdown mode the file is the document, so the file is
+    /// already correct by definition — and a write here would produce an event, which would
+    /// produce a scan, which would produce a write. The one exception is trashing, because a
+    /// trashed document has no file and has to be kept somewhere.
+    func applyExternalChanges(_ plan: ExternalChangePlan) {
+        guard !plan.isEmpty else { return }
+
+        for content in plan.updated {
+            guard let index = documentIndex(for: content.id) else { continue }
+            // Derived state is kept: the AI caches belong to the document, not to the file,
+            // and an edit outside the app does not invalidate them any more than one inside it.
+            documents[index] = WritingDocument(content: content, derived: documents[index].derived)
+        }
+
+        for content in plan.inserted where documentIndex(for: content.id) == nil {
+            // Inserted at the front to match `createDocument`, so a note dropped into the
+            // folder shows up where a new note would.
+            documents.insert(WritingDocument(content: content, derived: nil), at: 0)
+        }
+
+        rebuildIndexMap()
+
+        // A file the user deleted outside the app goes to trash rather than vanishing:
+        // deleting a file is easy to do by accident, and Logue's own trash is the one place
+        // they can get it back from.
+        for id in plan.trashed {
+            deleteDocument(id: id)
+        }
+
+        invalidateCaches()
+    }
+
+    /// Replaces the whole document set, used after a storage-mode switch.
+    ///
+    /// Writes each document so the new backing store holds them all, rather than
+    /// assuming the previous mode's files are still authoritative.
+    func replaceAll(with documents: [WritingDocument]) {
+        self.documents = documents
+        rebuildIndexMap()
+        for document in documents {
+            saveDocument(id: document.id)
+        }
+        pruneStoredDocuments(keeping: Set(documents.map(\.id)))
+    }
+
+    /// Takes on the documents read back from the markdown folder when markdown storage is
+    /// turned off.
+    ///
+    /// Trash lives in the app rather than in the folder — a deleted document should not sit
+    /// in `~/Logue` waiting to be noticed — so trashed documents have no file to import.
+    /// They are carried over from the encrypted copies that were never deleted, which is
+    /// also why `replaceAll` can prune safely afterwards: by then they are in `documents`.
+    func adoptAfterStorageSwitch(_ imported: [WritingDocument]) async {
+        var restored = imported
+
+        do {
+            let stored = try await Self.readEncryptedDocuments(in: encryptedDocumentsDirectory)
+            restored = Self.merging(imported: imported, carryingTrashFrom: stored)
+        } catch {
+            // The folder's documents are the ones that matter; losing the trash view is a
+            // degraded result, not a failed switch.
+            Self.logger.error(
+                "Could not read trashed documents during storage switch: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+
+        replaceAll(with: restored)
+    }
+
+    /// The rule for combining folder documents with the encrypted trash.
+    ///
+    /// Pure and separate from the I/O so it can be tested: getting it wrong either loses
+    /// the trash or resurrects a document the folder no longer has. Imported documents win
+    /// on collision — the folder is the truth for anything that has a file.
+    nonisolated static func merging(
+        imported: [WritingDocument],
+        carryingTrashFrom stored: [WritingDocument]
+    ) -> [WritingDocument] {
+        let importedIDs = Set(imported.map(\.id))
+        return imported + stored.filter { $0.isTrashed && !importedIDs.contains($0.id) }
     }
 
     // MARK: - Bulk actions

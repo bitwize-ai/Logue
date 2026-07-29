@@ -1,7 +1,10 @@
 # Security Policy
 
 Logue is a privacy-first application: all AI inference, transcription, and data
-processing runs on-device, and user data is encrypted at rest (AES-256-GCM). We
+processing runs on-device, and user data is encrypted at rest (AES-256-GCM) — with one
+opt-in exception: turning on plain markdown storage stores your *documents* as unencrypted
+`.md` files in `~/Logue`, which the app warns about and asks you to confirm. Meetings,
+transcripts and audio are always encrypted. We
 take security reports seriously.
 
 ## Supported versions

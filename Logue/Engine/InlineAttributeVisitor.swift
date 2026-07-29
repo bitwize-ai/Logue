@@ -96,9 +96,15 @@ struct InlineAttributeVisitor: MarkupWalker {
             .underlineStyle: NSUnderlineStyle.single.rawValue,
         ], range: range)
 
+        // Measured in UTF-16 units, because that is what an `NSRange.length` is.
+        // `String.distance(from:to:)` counts `Character`s, so a link whose *text* contains an emoji,
+        // a ZWJ sequence, a flag or an NFD accent produced an offset short of the real one — leaving
+        // the `](url)` part visible and handing `addAttribute` a range that can split a surrogate
+        // pair. Same defect as the one fixed in `MarkdownStyler`, in the other place it lived.
         let linkText = (string as NSString).substring(with: range)
-        if let closeBracket = linkText.range(of: "](") {
-            let prefixEnd = linkText.distance(from: linkText.startIndex, to: closeBracket.lowerBound)
+        let closeBracketRange = (linkText as NSString).range(of: "](")
+        if closeBracketRange.location != NSNotFound {
+            let prefixEnd = closeBracketRange.location
             collectedDelimiterRanges.append(NSRange(location: range.location, length: 1))
             let urlPartStart = range.location + prefixEnd
             let urlPartLen = range.length - prefixEnd

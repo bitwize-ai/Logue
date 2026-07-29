@@ -102,7 +102,7 @@ extension DocumentListPane {
 
     func renameType(_ type: DocumentType, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, trimmed != type.name else { return }
 
         // The filter tracks types by name, so it has to follow the rename or the list empties.
         if activeTypeName == type.name {
@@ -112,6 +112,13 @@ extension DocumentListPane {
         var updated = type
         updated.name = trimmed
         store.updateDocumentType(updated)
+
+        // The documents too. A document stores its type as a text property written when the type was
+        // applied, and the filter compares that string — so renaming a type left every document of
+        // that type matching nothing, and unreachable by type filter for good, since the old name is
+        // no longer offered anywhere. This is the same rename-breaks-references bug `applyTitle`
+        // fixed for titles.
+        store.retypeDocuments(from: type.name, to: trimmed)
     }
 
     func deleteType(_ type: DocumentType) {

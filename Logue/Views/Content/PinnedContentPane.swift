@@ -26,9 +26,17 @@ struct PinnedContentPane: View {
         return (docs + meetings).sorted { $0.modifiedAt > $1.modifiedAt }
     }
 
+    /// Both stores, because this pane mixes documents and meetings: showing "nothing here"
+    /// while either is still reading would be wrong about half the content.
+    private var isLoaded: Bool {
+        documentStore.isLoaded && meetingStore.isLoaded
+    }
+
     var body: some View {
         Group {
-            if allItems.isEmpty {
+            if !isLoaded {
+                ContentLoadingView()
+            } else if allItems.isEmpty {
                 ContentUnavailableView {
                     Label("No Pinned Items", systemImage: "pin")
                 } description: {

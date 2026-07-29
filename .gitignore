@@ -104,4 +104,7 @@ __pycache__/
 *.pyc
 
 # Internal planning docs (not for public repo)
-docs/CAPABILITY-ROADMAP.md
+docs/
+!docs/dev-setup.md
+!docs/RELEASE_SETUP.md
+!docs/SPARKLE_UPDATE_FLOW.md

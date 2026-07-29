@@ -298,12 +298,27 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
     }
 
     func renameMeeting(id: UUID, newTitle: String) {
-        guard let index = meetingIndex(for: id) else { return }
+        applyTitle(newTitle, to: id)
+    }
+
+    /// The single place a meeting's title changes.
+    ///
+    /// Mirrors `DocumentStore.applyTitle`: trim, deduplicate, save, repair inbound links. The AI
+    /// title paths in `+AI` assigned `title` directly, so a *generated* meeting title broke every
+    /// `[[link]]` pointing at that meeting — and `regenerateAITitle` had no deduplication either, so
+    /// it could mint a duplicate that then won link resolution by first-writer-wins.
+    ///
+    /// Extension-visible: +AI
+    @discardableResult
+    func applyTitle(_ newTitle: String, to id: UUID) -> String? {
+        guard let index = meetingIndex(for: id) else { return nil }
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let otherTitles = activeMeetings.filter { $0.id != id }.map(\.title)
+        guard !trimmed.isEmpty else { return nil }
+
         let oldTitle = meetings[index].title
-        let resolved = uniqueTitle(trimmed, among: otherTitles)
+        let resolved = uniqueTitle(trimmed, among: activeMeetings.filter { $0.id != id }.map(\.title))
+        guard resolved != oldTitle else { return oldTitle }
+
         meetings[index].title = resolved
         meetings[index].modifiedAt = Date()
         invalidateCaches()
@@ -311,6 +326,7 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
 
         // A meeting is a link target, so renaming one breaks every `[[link]]` pointing at it.
         DocumentStore.shared.repairInboundLinks(from: oldTitle, to: resolved, renamedID: nil)
+        return resolved
     }
 
     /// Retargets `[[wikilinks]]` inside meeting summaries after something they link to is renamed.
