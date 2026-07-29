@@ -111,4 +111,39 @@ struct EditorLayoutModeTests {
     func unknownRawValue() {
         #expect(EditorLayoutMode(rawValue: "splitScreenTriptych") == nil)
     }
+
+    /// The regression this rule exists for. SwiftUI echoes the split view's visibility back
+    /// through the binding right after a menu item sets a mode, and the echo arrives while the
+    /// binding still reads the previous mode. If a "list is visible" report were allowed to
+    /// name a mode, that stale read is what it would name it from — which is how every ⌘3
+    /// pressed from editor-only used to land on editor-and-list.
+    @Test("A report that the list is visible never changes the mode")
+    func visibleListReportIsIgnored() {
+        #expect(EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: true) == nil)
+    }
+
+    /// Specifically: from every mode, including the one whose stale `showsInspector` caused the
+    /// bug, a visible-list report must leave the stored mode alone.
+    @Test("No mode is rewritten by a visible-list report", arguments: EditorLayoutMode.allCases)
+    func visibleListReportPreservesEveryMode(mode: EditorLayoutMode) {
+        let reported = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: true)
+        #expect(reported == nil, "\(mode) would have been overwritten by a visible-list report")
+    }
+
+    /// The one direction that *is* inferred: the user dragging the sidebar shut is recorded, so
+    /// a collapsed sidebar does not come back on the next launch.
+    @Test("A collapse is recorded as editor-only")
+    func collapseReportIsRecorded() {
+        #expect(EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false) == .editorOnly)
+    }
+
+    /// Recording a collapse has to be idempotent, because the split view echoes our own
+    /// `.detailOnly` straight back at us.
+    @Test("Recording a collapse twice is stable")
+    func collapseIsIdempotent() {
+        let first = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false)
+        #expect(first == .editorOnly)
+        #expect(first?.showsList == false)
+        #expect(EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: first?.showsList ?? true) == .editorOnly)
+    }
 }

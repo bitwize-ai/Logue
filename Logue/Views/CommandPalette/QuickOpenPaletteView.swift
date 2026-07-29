@@ -22,27 +22,10 @@ struct QuickOpenPaletteView: View {
 
     /// Documents and meetings, most recently modified first.
     ///
-    /// The order matters: `QuickOpenMatcher` is stable within a rank, so the caller's ordering
-    /// is what breaks ties — recency, here. Trashed items are excluded by `activeDocuments`
-    /// and `activeMeetings`.
+    /// The raw arrays go in rather than `activeDocuments` / `activeMeetings`, so that excluding
+    /// trashed items is `QuickOpenItem.candidates`' job and therefore a tested one.
     private var candidates: [QuickOpenItem] {
-        let documents = documentStore.activeDocuments.map {
-            (modifiedAt: $0.modifiedAt, item: QuickOpenItem(
-                id: $0.id,
-                title: $0.title.isEmpty ? AppConstants.defaultDocumentTitle : $0.title,
-                kind: .document
-            ))
-        }
-        let meetings = meetingStore.activeMeetings.map {
-            (modifiedAt: $0.modifiedAt, item: QuickOpenItem(
-                id: $0.id,
-                title: $0.title.isEmpty ? AppConstants.defaultMeetingTitle : $0.title,
-                kind: .meeting
-            ))
-        }
-        return (documents + meetings)
-            .sorted { $0.modifiedAt > $1.modifiedAt }
-            .map(\.item)
+        QuickOpenItem.candidates(documents: documentStore.documents, meetings: meetingStore.meetings)
     }
 
     private var results: [QuickOpenItem] {

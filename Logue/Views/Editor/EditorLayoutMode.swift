@@ -31,6 +31,20 @@ enum EditorLayoutMode: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// The mode a split-view visibility report should store, or `nil` to leave the mode alone.
+    ///
+    /// Only a collapse is inferred, and that asymmetry is the whole point. SwiftUI echoes the
+    /// new visibility back through its `columnVisibility` binding immediately after a menu item
+    /// sets a mode, and the echo arrives while the binding still reads the previous mode —
+    /// `@AppStorage` caches, so a setter cannot see the write it is echoing. A rule that tried
+    /// to name the mode for a *re-appearing* list therefore read the old mode's
+    /// `showsInspector`, which is `false` in editor-only, and turned every ⌘3 pressed from
+    /// editor-only into editor-and-list. Nothing needs that direction inferred: every path that
+    /// shows the list again already names the mode it wants.
+    static func modeAfterVisibilityReport(listIsVisible: Bool) -> EditorLayoutMode? {
+        listIsVisible ? nil : .editorOnly
+    }
+
     /// The persisted layout, read straight from `UserDefaults`.
     ///
     /// Exists so a `@State` property can be initialised from the stored mode — a property

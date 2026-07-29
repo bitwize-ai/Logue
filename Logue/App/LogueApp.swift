@@ -9,6 +9,11 @@ extension Notification.Name {
     static let openResourceUsageWindow = Notification.Name("openResourceUsageWindow")
     static let openReportBugWindow = Notification.Name("openReportBugWindow")
 
+    /// `Cmd+P` — open quick-open. A menu item rather than only an in-window key handler,
+    /// because a main-menu key equivalent fires whatever holds focus inside the window,
+    /// including the editor's text view.
+    static let openQuickOpenPalette = Notification.Name("openQuickOpenPalette")
+
     /// Phase A: chat-first shortcuts.
     /// `Cmd+L` — start a new chat (and switch sidebar to Ask Logue).
     static let chatNewConversation = Notification.Name("chatNewConversation")
@@ -62,6 +67,13 @@ struct LogueApp: App {
                     NotificationCenter.default.post(name: .chatFocusInput, object: nil)
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+            }
+
+            CommandGroup(after: .newItem) {
+                Button("Quick Open…") {
+                    NotificationCenter.default.post(name: .openQuickOpenPalette, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: .command)
             }
 
             CommandGroup(after: .importExport) {
