@@ -13,6 +13,7 @@ extension DocumentStore {
         let body: String
         let tags: [String]
         let createdAt: Date?
+        let modifiedAt: Date?
         let properties: [String: PropertyValue]
     }
 
@@ -25,13 +26,17 @@ extension DocumentStore {
         body: String = "",
         tags: [String] = [],
         createdAt: Date? = nil,
+        modifiedAt: Date? = nil,
         properties: [String: PropertyValue] = [:],
         inSpace spaceID: UUID? = nil,
         select: Bool = true
     ) -> WritingDocument {
+        let item = DocumentDraft(
+            title: title, body: body, tags: tags,
+            createdAt: createdAt, modifiedAt: modifiedAt, properties: properties
+        )
         let doc = draft(
-            title: uniqueTitle(title, among: activeDocuments.map(\.title)),
-            body: body, tags: tags, createdAt: createdAt, properties: properties, spaceID: spaceID
+            item, titled: uniqueTitle(title, among: activeDocuments.map(\.title)), spaceID: spaceID
         )
         documents.insert(doc, at: 0)
         rebuildIndexMap()
@@ -45,27 +50,27 @@ extension DocumentStore {
     /// A document that has not been inserted yet. Shared so the batch path below cannot drift
     /// from the single-document one.
     private func draft(
-        title: String,
-        body: String,
-        tags: [String],
-        createdAt: Date?,
-        properties: [String: PropertyValue],
-        spaceID: UUID?
+        _ item: DocumentDraft, titled title: String, spaceID: UUID?
     ) -> WritingDocument {
         var doc = WritingDocument()
         doc.title = title
-        doc.body = body
-        doc.tags = tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        doc.body = item.body
+        doc.tags = item.tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         doc.spaceID = spaceID
-        if !properties.isEmpty {
-            doc.properties = properties
+        if !item.properties.isEmpty {
+            doc.properties = item.properties
         }
-        if let createdAt {
+        if let createdAt = item.createdAt {
             doc.createdAt = createdAt
             // A note older than today did not arrive edited. Leaving `modifiedAt` at `Date()`
             // would put every imported note at the top of "recently modified" forever.
             doc.modifiedAt = createdAt
+        }
+        // The file's own modified date wins over that fallback when it states one, so a note
+        // written in 2019 and edited last week does not import as last modified in 2019.
+        if let modifiedAt = item.modifiedAt {
+            doc.modifiedAt = modifiedAt
         }
         return doc
     }
@@ -78,9 +83,11 @@ extension DocumentStore {
     /// it wrote a single file. Here the title set is carried across the batch and the index is
     /// rebuilt once.
     ///
-    /// Saving still happens per document, because each one is a separate file.
+    /// Saving still happens per document, because each one is a separate file. It yields between
+    /// batches of them: each save is real file I/O on the main actor, so a flat 500-file import
+    /// was one uninterrupted turn even after the O(N) work collapsed.
     @discardableResult
-    func createDocuments(_ drafts: [DocumentDraft], inSpace spaceID: UUID?) -> [UUID] {
+    func createDocuments(_ drafts: [DocumentDraft], inSpace spaceID: UUID?) async -> [UUID] {
         guard !drafts.isEmpty else { return [] }
 
         var taken = Set(activeDocuments.map(\.title))
@@ -90,17 +97,28 @@ extension DocumentStore {
         for item in drafts {
             let title = uniqueTitle(item.title, among: taken)
             taken.insert(title)
-            created.append(draft(
-                title: title, body: item.body, tags: item.tags,
-                createdAt: item.createdAt, properties: item.properties, spaceID: spaceID
-            ))
+            created.append(draft(item, titled: title, spaceID: spaceID))
         }
 
         documents.insert(contentsOf: created, at: 0)
         rebuildIndexMap()
-        for doc in created {
+        // Tags set in `draft` rather than through `addTag`, which is what stopped the per-tag save
+        // — but `addTag` was also the only thing dropping the cached tag list. Without this, tags
+        // imported from a vault are missing from the filter chips and from autocomplete until some
+        // unrelated edit happens to invalidate it.
+        invalidateCaches()
+
+        for (index, doc) in created.enumerated() {
+            if index > 0, index.isMultiple(of: Self.savesPerYield) {
+                await Task.yield()
+            }
+            guard !Task.isCancelled else { break }
             saveDocument(id: doc.id)
         }
         return created.map(\.id)
     }
+
+    /// How many documents are written between yields. Small enough that the window stays alive,
+    /// large enough that the yields themselves are not the cost.
+    private static let savesPerYield = 20
 }

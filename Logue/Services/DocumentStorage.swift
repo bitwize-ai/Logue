@@ -52,7 +52,7 @@ final class DocumentStorage {
     /// for it succeeds, or the document is trashed.
     ///
     /// Extension-visible: +Rescan
-    private(set) var unwritableDocuments: Set<UUID> {
+    @ObservationIgnored private(set) var unwritableDocuments: Set<UUID> {
         didSet {
             guard unwritableDocuments != oldValue else { return }
             UserDefaults.standard.set(
@@ -96,6 +96,28 @@ final class DocumentStorage {
         cachedSpaceFolders = nil
     }
 
+    /// Fills whichever of the two caches is cold, from a **single** traversal.
+    ///
+    /// They were built independently, each calling its own `snapshot()`, so a cold cache cost two
+    /// full walks — and every walk opens every `.md` in the library. The doc comments on both
+    /// already claimed one walk; this is what makes that true. It matters most during a vault
+    /// import, where creating each folder invalidates both and the next save re-reads a tree that
+    /// is still growing.
+    private func folderCaches(
+        using migrator: MarkdownStorageMigrator, in spaces: [Space]
+    ) -> (files: [UUID: URL], folders: SpaceFolderMap) {
+        if let cachedFileIndex, let cachedSpaceFolders {
+            return (cachedFileIndex, cachedSpaceFolders)
+        }
+
+        let snapshot = migrator.snapshot()
+        let files = cachedFileIndex ?? migrator.fileIndex(using: snapshot)
+        let folders = cachedSpaceFolders ?? migrator.spaceFolderMap(in: spaces, using: snapshot)
+        cachedFileIndex = files
+        cachedSpaceFolders = folders
+        return (files, folders)
+    }
+
     private func fileIndex(using migrator: MarkdownStorageMigrator) -> [UUID: URL] {
         if let cachedFileIndex {
             return cachedFileIndex
@@ -103,15 +125,6 @@ final class DocumentStorage {
         let index = migrator.fileIndex()
         cachedFileIndex = index
         return index
-    }
-
-    private func spaceFolders(using migrator: MarkdownStorageMigrator, in spaces: [Space]) -> SpaceFolderMap {
-        if let cachedSpaceFolders {
-            return cachedSpaceFolders
-        }
-        let folders = migrator.spaceFolderMap(in: spaces)
-        cachedSpaceFolders = folders
-        return folders
     }
 
     /// What the last scan of the folder found, for the rescan button's tooltip.
@@ -235,6 +248,25 @@ final class DocumentStorage {
     /// Both directions matter. Forgetting to clear leaves a document permanently exempt from the
     /// deletion check, so removing its file in Finder would stop working — silently, which is the
     /// worst way for a folder-is-the-library promise to break.
+    /// Forgets every recorded failure.
+    ///
+    /// Called wherever the folder stops being the library — turning markdown storage off, erasing
+    /// or clearing the folder. In encrypted mode `save` returns before it could ever clear one, so
+    /// without this an id recorded in markdown mode survives the switch and stays exempt from the
+    /// deletion check for good.
+    ///
+    /// Extension-visible: +Rescan
+    func clearUnwritableDocuments() {
+        unwritableDocuments = []
+    }
+
+    /// Forgets recorded failures for documents that now have a file, or no longer exist.
+    ///
+    /// Extension-visible: +Rescan
+    func clearUnwritable(_ ids: some Sequence<UUID>) {
+        unwritableDocuments.subtract(ids)
+    }
+
     private func setUnwritable(_ isUnwritable: Bool, for id: UUID) {
         if isUnwritable {
             unwritableDocuments.insert(id)
@@ -309,6 +341,10 @@ final class DocumentStorage {
         }
 
         mode = .markdown
+        // `reconcile` just wrote a file for every document, so nothing is outstanding. Without
+        // this an id recorded in an earlier markdown session stays exempt from the deletion check
+        // even though its file is right there.
+        clearUnwritableDocuments()
         invalidateFileIndex()
         startWatchingIfNeeded()
         logger.info("Switched document storage to plain markdown")
@@ -391,6 +427,10 @@ final class DocumentStorage {
             )
         }
 
+        // The folder is no longer the library, so a record of which documents it failed to hold
+        // means nothing — and `save` returns early in encrypted mode, so nothing else could ever
+        // clear it. Left set, it would still be exempt from the deletion check on the way back.
+        clearUnwritableDocuments()
         mode = .encrypted
         invalidateFileIndex()
 
@@ -410,6 +450,8 @@ final class DocumentStorage {
         let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
         try migrator.retireRoot()
         try migrator.prepareRoot()
+        // The folder these ids referred to is gone, so the record refers to nothing.
+        clearUnwritableDocuments()
         invalidateFileIndex()
         logger.info("Emptied the documents folder")
     }
@@ -422,6 +464,10 @@ final class DocumentStorage {
     func eraseMarkdownFolder() throws {
         stopWatching()
         try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        // The folder is no longer the library, so a record of which documents it failed to hold
+        // means nothing — and `save` returns early in encrypted mode, so nothing else could ever
+        // clear it. Left set, it would still be exempt from the deletion check on the way back.
+        clearUnwritableDocuments()
         mode = .encrypted
         invalidateFileIndex()
         logger.info("Erased the plain markdown folder and returned to encrypted storage")
@@ -490,14 +536,14 @@ final class DocumentStorage {
         }
 
         let migrator = liveMigrator
-        var index = fileIndex(using: migrator)
+        // One traversal fills both. Asking for them separately meant a cold cache walked the tree
+        // twice, and each walk reads the contents of every `.md` in the library.
+        var (index, folders) = folderCaches(using: migrator, in: spaces)
         let result = migrator.export(
             documents: [document.content],
             spaces: spaces,
             reusing: index,
-            // The cached map, not a fresh walk. Without it `export` read every `_space.md` in the
-            // library to work out one directory, on every save.
-            folders: spaceFolders(using: migrator, in: spaces),
+            folders: folders,
             // Only this document's space needs its identity rewritten. Rewriting every space's
             // `_space.md` on every save was N writes per keystroke batch for no gain.
             identitiesFor: spaces.filter { $0.id == document.spaceID }
@@ -532,6 +578,9 @@ final class DocumentStorage {
     /// used to erase live files outright. It should cost the user a trip to the Trash, not their
     /// text.
     func removeFile(for id: UUID) {
+        // Before the mode guard: a document being deleted has nothing left to write, so keeping it
+        // recorded as unwritable would only make the set grow for the life of the install.
+        clearUnwritable([id])
         guard mode.isMarkdown else { return }
 
         let migrator = liveMigrator
