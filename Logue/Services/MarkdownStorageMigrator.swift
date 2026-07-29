@@ -554,6 +554,15 @@ struct MarkdownStorageMigrator {
         content.title = fields.title
         content.body = fields.body
         content.tags = fields.tags
+        // Carried through because the render below writes back over the user's file: a `created:`
+        // or a `status:` this dropped would not just be missing from the library, it would be gone
+        // from disk.
+        if let createdAt = fields.createdAt {
+            content.createdAt = createdAt
+        }
+        if !fields.properties.isEmpty {
+            content.properties = fields.properties
+        }
         content.spaceID = spaceFolderMap(in: knownSpaces).spaceID(
             forComponents: directoryComponents(of: url), in: knownSpaces
         )

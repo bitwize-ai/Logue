@@ -173,14 +173,47 @@ enum MarkdownFrontmatter {
     /// storing the literal text `[]`.
     private static func flowSequence(_ value: String) -> [String]? {
         guard value.hasPrefix("["), value.hasSuffix("]"), value.count >= 2 else { return nil }
+        // A wikilink is not a sequence. `[[Home]]` would otherwise unwrap to `[Home]` and be
+        // stored as a one-item list, so an Obsidian note with `parent: [[Home]]` came back with
+        // the link broken — and if the key happens to be a relationship key, each round trip
+        // wraps it again into `[[[Home]]]`.
+        guard !value.hasPrefix("[[") else { return nil }
 
         let inner = value.dropFirst().dropLast().trimmingCharacters(in: .whitespaces)
         guard !inner.isEmpty else { return [] }
 
-        return inner
-            .split(separator: ",", omittingEmptySubsequences: false)
+        return splitOnCommas(inner)
             .map { unquoted($0.trimmingCharacters(in: .whitespaces)) }
             .filter { !$0.isEmpty }
+    }
+
+    /// Splits on commas that are not inside quotes.
+    ///
+    /// A plain `split(separator: ",")` tore `["a, b", c]` into `"a`, `b"` and `c` — the quoting
+    /// was there precisely to say that first comma is part of the value.
+    private static func splitOnCommas(_ text: String) -> [String] {
+        var items: [String] = []
+        var current = ""
+        var quote: Character?
+
+        for character in text {
+            if let open = quote {
+                if character == open {
+                    quote = nil
+                }
+                current.append(character)
+            } else if character == "\"" || character == "'" {
+                quote = character
+                current.append(character)
+            } else if character == "," {
+                items.append(current)
+                current = ""
+            } else {
+                current.append(character)
+            }
+        }
+        items.append(current)
+        return items
     }
 
     /// Strips one matching pair of surrounding quotes.
