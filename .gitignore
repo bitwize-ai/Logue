@@ -104,7 +104,11 @@ __pycache__/
 *.pyc
 
 # Internal planning docs (not for public repo)
-docs/
+# `docs/*` rather than `docs/`: git does not descend into an excluded directory, so a
+# blanket `docs/` makes every negation below unreachable and drops new specs silently.
+docs/*
 !docs/dev-setup.md
 !docs/RELEASE_SETUP.md
 !docs/SPARKLE_UPDATE_FLOW.md
+# Design and spec documents are reviewed on their pull request, so they are tracked.
+!docs/specs/
