@@ -223,7 +223,8 @@ final class RecordingSessionManager {
         }
 
         do {
-            let locale = TranscriptionLanguage(rawValue: meeting.transcriptionLanguage ?? "auto")?.locale
+            let language = TranscriptionLanguage(rawValue: meeting.transcriptionLanguage ?? "auto") ?? .auto
+            let locale = language.locale
             recordingLocale = locale
             try await engine.setup(locale: locale)
         } catch {

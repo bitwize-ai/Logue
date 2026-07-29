@@ -3,7 +3,9 @@ import Foundation
 import os.log
 import Speech
 
-/// Manages real-time transcription using Apple's SpeechTranscriber API (macOS 26+).
+/// Manages real-time transcription via Apple Speech (macOS 26+).
+/// Prefers `SpeechTranscriber` when the locale is supported; otherwise falls back to
+/// `DictationTranscriber` (needed for languages like Russian that Speech long-form omits).
 /// Streams audio buffers directly — no chunking, no deduplication, no gap issues.
 @Observable
 @MainActor
@@ -36,11 +38,17 @@ final class SpeechTranscriberEngine {
 
     // MARK: - Internals
 
+    private enum ActiveModule {
+        case speech(SpeechTranscriber)
+        case dictation(DictationTranscriber)
+    }
+
     private let converter = BufferConverter()
-    private var transcriber: SpeechTranscriber?
+    private var activeModule: ActiveModule?
     private var analyzer: SpeechAnalyzer?
     private var analyzerFormat: AVAudioFormat?
     private var recognizerTask: Task<Void, any Error>?
+    private var reservedLocale: Locale?
 
     private let inputSequence: AsyncStream<AnalyzerInput>
     private let inputBuilder: AsyncStream<AnalyzerInput>.Continuation
@@ -53,16 +61,11 @@ final class SpeechTranscriberEngine {
     private var totalFramesStreamed: Int64 = 0
     private var streamSampleRate: Double = 0
 
-    // MARK: - Locale Configuration
-
-    private static let fallbackLocales: [Locale] = [
-        Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates)),
-        Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedKingdom)),
-        Locale(components: .init(languageCode: .english, script: nil, languageRegion: .canada)),
-        Locale(components: .init(languageCode: .english, script: nil, languageRegion: .australia)),
+    /// Last-resort English Speech locales only when neither module supports the preferred locale.
+    private static let englishSpeechFallbacks: [Locale] = [
         Locale(identifier: "en-US"),
+        Locale(identifier: "en-GB"),
         Locale(identifier: "en"),
-        Locale.current,
     ]
 
     // MARK: - Init
@@ -76,107 +79,14 @@ final class SpeechTranscriberEngine {
     // MARK: - Setup
 
     /// Set up the transcriber with the given locale and start listening for results.
-    /// - Parameter locale: The locale for transcription, or `nil` to use en-US default.
+    /// - Parameter locale: The locale for transcription, or `nil` to use the system preferred language.
     func setup(locale: Locale? = nil) async throws {
-        let targetLocale = locale ?? Locale(
-            components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates)
-        )
+        let preferred = locale ?? TranscriptionLanguage.systemPreferredLocale
+        logger.info("Selecting live speech module for locale: \(preferred.identifier, privacy: .public)")
 
-        logger.info("Setting up SpeechTranscriber for locale: \(targetLocale.identifier)")
-
-        transcriber = SpeechTranscriber(
-            locale: targetLocale,
-            transcriptionOptions: [],
-            reportingOptions: [.volatileResults],
-            attributeOptions: [.audioTimeRange]
-        )
-
-        guard let transcriber else {
-            logger.error("Failed to create SpeechTranscriber")
-            throw SpeechTranscriberError.failedToSetup
-        }
-
-        analyzer = SpeechAnalyzer(modules: [transcriber])
-
-        try await ensureModel(transcriber: transcriber, locale: targetLocale)
-
-        analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
-            compatibleWith: [transcriber]
-        )
-
-        guard analyzerFormat != nil else {
-            logger.error("No compatible audio format found")
-            throw SpeechTranscriberError.invalidAudioFormat
-        }
-
-        sessionStartDate = Date()
-        lastSegmentEndTime = 0
-
-        // Cancel any previous recognizer task to prevent leaks on repeated setup() calls.
-        recognizerTask?.cancel()
-        let audioDriven = useAudioDrivenTiming
-        recognizerTask = Task {
-            await self.consumeResults(from: transcriber, audioDriven: audioDriven)
-        }
-
-        do {
-            try await analyzer?.start(inputSequence: inputSequence)
-            logger.info("SpeechAnalyzer started successfully")
-        } catch {
-            // Clean up all resources on setup failure to prevent zombie tasks
-            recognizerTask?.cancel()
-            _ = await recognizerTask?.result // Wait for cancellation to complete
-            recognizerTask = nil
-            self.transcriber = nil
-            analyzer = nil
-            analyzerFormat = nil
-            logger.error("Failed to start SpeechAnalyzer: \(error.localizedDescription, privacy: .public)")
-            throw error
-        }
-    }
-
-    /// C-N5: Explicitly @MainActor — accesses actor-isolated state (onFinalSegment, volatileText, etc.)
-    @MainActor
-    private func consumeResults(from transcriber: SpeechTranscriber, audioDriven: Bool) async {
-        do {
-            for try await case let result in transcriber.results {
-                let rawText = String(result.text.characters)
-                if result.isFinal {
-                    let elapsed: TimeInterval
-                    if audioDriven {
-                        elapsed = streamSampleRate > 0
-                            ? Double(totalFramesStreamed) / streamSampleRate
-                            : 0
-                    } else {
-                        let now = Date()
-                        if sessionStartDate == nil {
-                            logger.warning("sessionStartDate is nil during consumeResults — using 0")
-                        }
-                        elapsed = sessionStartDate.map { now.timeIntervalSince($0) } ?? 0
-                    }
-
-                    let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { continue }
-
-                    let segment = TranscriptSegment(
-                        text: trimmed,
-                        startTime: lastSegmentEndTime,
-                        endTime: elapsed,
-                        speakerLabel: nil,
-                        confidence: 1.0
-                    )
-                    lastSegmentEndTime = elapsed
-
-                    onFinalSegment?(segment)
-                    volatileText = ""
-                } else {
-                    volatileText = rawText
-                }
-            }
-            logger.info("Recognition task completed")
-        } catch {
-            logger.error("Speech recognition failed: \(error.localizedDescription, privacy: .public)")
-        }
+        let selection = try await selectModule(for: preferred)
+        try await configure(selection: selection)
+        try await startAnalyzer(audioDriven: useAudioDrivenTiming)
     }
 
     // MARK: - Stream Audio
@@ -186,7 +96,6 @@ final class SpeechTranscriberEngine {
     func streamAudio(_ buffer: AVAudioPCMBuffer) {
         guard let analyzerFormat else { return }
 
-        // Track audio-driven timing (frame count + sample rate)
         if useAudioDrivenTiming {
             if streamSampleRate == 0 {
                 streamSampleRate = buffer.format.sampleRate
@@ -196,8 +105,7 @@ final class SpeechTranscriberEngine {
 
         do {
             let converted = try converter.convertBuffer(buffer, to: analyzerFormat)
-            let input = AnalyzerInput(buffer: converted)
-            inputBuilder.yield(input)
+            inputBuilder.yield(AnalyzerInput(buffer: converted))
         } catch {
             logger.error("Buffer conversion failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -216,7 +124,6 @@ final class SpeechTranscriberEngine {
             logger.error("Finalize failed: \(error.localizedDescription, privacy: .public)")
         }
 
-        // Bug-6: Wait for recognizer with a timeout to prevent hang if results never terminate.
         if let task = recognizerTask {
             let timeoutTask = Task {
                 try? await Task.sleep(for: AppConstants.Delays.recognizerFinalizationTimeout)
@@ -225,8 +132,14 @@ final class SpeechTranscriberEngine {
             _ = await task.result
             timeoutTask.cancel()
         }
+
+        if let reservedLocale {
+            _ = await AssetInventory.release(reservedLocale: reservedLocale)
+            self.reservedLocale = nil
+        }
+
         recognizerTask = nil
-        transcriber = nil
+        activeModule = nil
         analyzer = nil
         analyzerFormat = nil
         volatileText = ""
@@ -237,62 +150,220 @@ final class SpeechTranscriberEngine {
         logger.info("Transcription session cleaned up")
     }
 
+    // MARK: - Module Selection
+
+    private enum ModuleSelection {
+        case speech(Locale)
+        case dictation(Locale)
+    }
+
+    private func selectModule(for preferred: Locale) async throws -> ModuleSelection {
+        if let speechLocale = await resolvedSpeechLocale(preferred) {
+            logger.info("Using SpeechTranscriber for \(speechLocale.identifier, privacy: .public)")
+            return .speech(speechLocale)
+        }
+        if let dictationLocale = await resolvedDictationLocale(preferred) {
+            logger.info(
+                "SpeechTranscriber unsupported — using DictationTranscriber for \(dictationLocale.identifier, privacy: .public)"
+            )
+            return .dictation(dictationLocale)
+        }
+        for fallback in Self.englishSpeechFallbacks {
+            if let speechLocale = await resolvedSpeechLocale(fallback) {
+                logger.warning(
+                    "Preferred locale unsupported by Speech/Dictation — last-resort Speech \(speechLocale.identifier, privacy: .public)"
+                )
+                return .speech(speechLocale)
+            }
+        }
+        throw SpeechTranscriberError.localeNotSupported
+    }
+
+    private func resolvedSpeechLocale(_ preferred: Locale) async -> Locale? {
+        let supported = await SpeechTranscriber.supportedLocales
+        if let equivalent = await SpeechTranscriber.supportedLocale(equivalentTo: preferred),
+           localeMatches(equivalent, in: supported)
+        {
+            return equivalent
+        }
+        if localeMatches(preferred, in: supported) {
+            return preferred
+        }
+        return nil
+    }
+
+    private func resolvedDictationLocale(_ preferred: Locale) async -> Locale? {
+        let supported = await DictationTranscriber.supportedLocales
+        if let equivalent = await DictationTranscriber.supportedLocale(equivalentTo: preferred),
+           localeMatches(equivalent, in: supported)
+        {
+            return equivalent
+        }
+        if localeMatches(preferred, in: supported) {
+            return preferred
+        }
+        return nil
+    }
+
+    private func localeMatches(_ locale: Locale, in supported: [Locale]) -> Bool {
+        let bcp47 = locale.identifier(.bcp47)
+        return supported.contains { candidate in
+            candidate.identifier == locale.identifier
+                || candidate.identifier(.bcp47) == bcp47
+        }
+    }
+
+    // MARK: - Configure + Start
+
+    private func configure(selection: ModuleSelection) async throws {
+        switch selection {
+        case let .speech(locale):
+            let module = SpeechTranscriber(
+                locale: locale,
+                transcriptionOptions: [],
+                reportingOptions: [.volatileResults],
+                attributeOptions: [.audioTimeRange]
+            )
+            try await ensureAssets(for: module, locale: locale)
+            activeModule = .speech(module)
+            analyzer = SpeechAnalyzer(modules: [module])
+            analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [module])
+
+        case let .dictation(locale):
+            // Explicit options: volatile live captions + frequent finals work better for meetings
+            // than the short phrase presets. farField helps when capturing room / system audio.
+            let module = DictationTranscriber(
+                locale: locale,
+                contentHints: [.farField],
+                transcriptionOptions: [.punctuation],
+                reportingOptions: [.volatileResults, .frequentFinalization],
+                attributeOptions: [.audioTimeRange]
+            )
+            try await ensureAssets(for: module, locale: locale)
+            activeModule = .dictation(module)
+            analyzer = SpeechAnalyzer(modules: [module])
+            analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [module])
+        }
+
+        guard analyzerFormat != nil else {
+            logger.error("No compatible audio format found")
+            throw SpeechTranscriberError.invalidAudioFormat
+        }
+
+        sessionStartDate = Date()
+        lastSegmentEndTime = 0
+    }
+
+    private func startAnalyzer(audioDriven: Bool) async throws {
+        recognizerTask?.cancel()
+        recognizerTask = Task {
+            await self.consumeActiveModuleResults(audioDriven: audioDriven)
+        }
+
+        do {
+            try await analyzer?.start(inputSequence: inputSequence)
+            logger.info("SpeechAnalyzer started successfully")
+        } catch {
+            recognizerTask?.cancel()
+            _ = await recognizerTask?.result
+            recognizerTask = nil
+            activeModule = nil
+            analyzer = nil
+            analyzerFormat = nil
+            logger.error("Failed to start SpeechAnalyzer: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    // MARK: - Results
+
+    private func consumeActiveModuleResults(audioDriven: Bool) async {
+        switch activeModule {
+        case let .speech(module):
+            await consumeSpeechResults(from: module, audioDriven: audioDriven)
+        case let .dictation(module):
+            await consumeDictationResults(from: module, audioDriven: audioDriven)
+        case nil:
+            logger.error("No active speech module when starting result consumption")
+        }
+    }
+
+    private func consumeSpeechResults(from module: SpeechTranscriber, audioDriven: Bool) async {
+        do {
+            for try await result in module.results {
+                handleRecognitionText(
+                    String(result.text.characters),
+                    isFinal: result.isFinal,
+                    audioDriven: audioDriven
+                )
+            }
+            logger.info("SpeechTranscriber recognition completed")
+        } catch {
+            logger.error("SpeechTranscriber recognition failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func consumeDictationResults(from module: DictationTranscriber, audioDriven: Bool) async {
+        do {
+            for try await result in module.results {
+                handleRecognitionText(
+                    String(result.text.characters),
+                    isFinal: result.isFinal,
+                    audioDriven: audioDriven
+                )
+            }
+            logger.info("DictationTranscriber recognition completed")
+        } catch {
+            logger.error("DictationTranscriber recognition failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func handleRecognitionText(_ rawText: String, isFinal: Bool, audioDriven: Bool) {
+        if isFinal {
+            let elapsed = currentElapsedTime(audioDriven: audioDriven)
+            let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+
+            let segment = TranscriptSegment(
+                text: trimmed,
+                startTime: lastSegmentEndTime,
+                endTime: elapsed,
+                speakerLabel: nil,
+                confidence: 1.0
+            )
+            lastSegmentEndTime = elapsed
+            onFinalSegment?(segment)
+            volatileText = ""
+        } else {
+            volatileText = rawText
+        }
+    }
+
+    private func currentElapsedTime(audioDriven: Bool) -> TimeInterval {
+        if audioDriven {
+            return streamSampleRate > 0
+                ? Double(totalFramesStreamed) / streamSampleRate
+                : 0
+        }
+        if sessionStartDate == nil {
+            logger.warning("sessionStartDate is nil during recognition — using 0")
+        }
+        return sessionStartDate.map { Date().timeIntervalSince($0) } ?? 0
+    }
+
     // MARK: - Model Management
 
-    private func ensureModel(transcriber: SpeechTranscriber, locale: Locale) async throws {
+    private func ensureAssets(for module: any SpeechModule, locale: Locale) async throws {
         logger.info("Checking model availability for locale: \(locale.identifier)")
 
-        // Download if needed
-        if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+        if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
             logger.info("Ensuring speech model is installed...")
             downloadProgress = downloader.progress
             try await downloader.downloadAndInstall()
             logger.info("Speech model ready")
         }
 
-        // Check supported locales
-        let supportedLocales = await SpeechTranscriber.supportedLocales
-
-        if supportedLocales.isEmpty {
-            logger.warning("No supported locales found — trying fallbacks")
-            for fallback in Self.fallbackLocales {
-                do {
-                    try await reserveLocale(fallback)
-                    logger.info("Fallback locale reserved: \(fallback.identifier)")
-                    return
-                } catch {
-                    continue
-                }
-            }
-            throw SpeechTranscriberError.localeNotSupported
-        }
-
-        // Find a supported locale
-        var localeToUse = locale
-        if await !isSupported(locale: locale) {
-            logger.info("Preferred locale not supported, trying fallbacks...")
-            var found = false
-            for fallback in Self.fallbackLocales where await isSupported(locale: fallback) {
-                localeToUse = fallback
-                found = true
-                break
-            }
-            guard found else {
-                throw SpeechTranscriberError.localeNotSupported
-            }
-        }
-
-        try await reserveLocale(localeToUse)
-    }
-
-    // B2: Fixed — removed incorrect en-US fallback that made this always return true
-    private func isSupported(locale: Locale) async -> Bool {
-        let supported = await SpeechTranscriber.supportedLocales
-        let bcp47 = locale.identifier(.bcp47)
-        return supported.contains { supportedLocale in
-            supportedLocale.identifier == locale.identifier
-                || supportedLocale.identifier(.bcp47) == bcp47
-        }
+        try await reserveLocale(locale)
     }
 
     private func reserveLocale(_ locale: Locale) async throws {
@@ -300,10 +371,12 @@ final class SpeechTranscriberEngine {
         let bcp47 = locale.identifier(.bcp47)
 
         if allocated.contains(where: { $0.identifier(.bcp47) == bcp47 }) {
+            reservedLocale = locale
             return
         }
 
         try await AssetInventory.reserve(locale: locale)
+        reservedLocale = locale
         logger.info("Locale reserved: \(locale.identifier)")
     }
 }
@@ -311,13 +384,11 @@ final class SpeechTranscriberEngine {
 // MARK: - Errors
 
 enum SpeechTranscriberError: Error, LocalizedError {
-    case failedToSetup
     case invalidAudioFormat
     case localeNotSupported
 
     var errorDescription: String? {
         switch self {
-        case .failedToSetup: "Failed to set up speech recognizer."
         case .invalidAudioFormat: "No compatible audio format found."
         case .localeNotSupported: "Selected language is not supported for transcription."
         }

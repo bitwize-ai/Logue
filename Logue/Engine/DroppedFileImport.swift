@@ -21,66 +21,25 @@ enum DroppedFileImport {
 
         let parsed = MarkdownFrontmatter.parse(fileContents)
         var tags: [String] = []
-        switch parsed.fields["tags"] {
-        case let .list(parsedTags):
+        if case let .list(parsedTags) = parsed.fields["tags"] ?? .list([]) {
             tags = parsedTags
-        case let .scalar(single):
-            // A single tag is legitimately written `tags: work`. Reading only `.list` dropped it.
-            tags = [single].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        case nil:
-            break
-        }
-
-        // The same heading rule as `MarkdownImport`, and for the same reason it exists there: a
-        // note whose first line is `# Title` should not open with its title repeated as body text.
-        // The two paths giving one file two different titles is the failure this type's own
-        // documentation warns about, and they did — menu import promoted the heading, dropping the
-        // file into the folder left it in the body.
-        let explicit = explicitTitle(in: parsed.fields)
-        var body = parsed.body
-        var title = explicit
-
-        if let heading = leadingHeading(in: body) {
-            if explicit == nil {
-                title = heading.title
-                body = heading.remainder
-            } else if heading.title.compare(explicit ?? "", options: [.caseInsensitive]) == .orderedSame {
-                body = heading.remainder
-            }
         }
 
         return Fields(
-            title: title ?? filenameTitle(filename),
-            body: body,
+            title: title(from: parsed.fields, filename: filename),
+            body: parsed.body,
             tags: tags
         )
     }
 
-    /// Uses a `# Heading` as the title when it is the first non-empty line.
-    private static func leadingHeading(in text: String) -> (title: String, remainder: String)? {
-        let lines = text.components(separatedBy: "\n")
-        guard let index = lines.firstIndex(where: {
-            !$0.trimmingCharacters(in: .whitespaces).isEmpty
-        })
-        else { return nil }
+    /// Prefers an explicit `title:`, falling back to the filename without its extension.
+    private static func title(from fields: [String: FrontmatterValue], filename: String) -> String {
+        if case let .scalar(explicit)? = fields["title"],
+           !explicit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return explicit
+        }
 
-        let line = lines[index].trimmingCharacters(in: .whitespaces)
-        guard line.hasPrefix("# ") else { return nil }
-        let heading = String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-        guard !heading.isEmpty else { return nil }
-
-        return (heading, lines[(index + 1)...].joined(separator: "\n"))
-    }
-
-    private static func explicitTitle(in fields: [String: FrontmatterValue]) -> String? {
-        guard case let .scalar(explicit)? = fields["title"],
-              !explicit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return nil }
-        return explicit
-    }
-
-    /// The filename without its extension, for a file that names itself no other way.
-    private static func filenameTitle(_ filename: String) -> String {
         let name = filename.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // A name that is nothing but an extension — ".md" — has no stem to use. Foundation reads

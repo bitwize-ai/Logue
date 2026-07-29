@@ -31,7 +31,6 @@ enum AppConstants {
         static let editorZoomScale = "editorZoomScale"
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
-        static let unwritableDocuments = "unwritableDocuments"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"

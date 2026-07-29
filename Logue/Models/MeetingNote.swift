@@ -392,25 +392,45 @@ enum TranscriptionLanguage: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Returns the Locale for SpeechTranscriber, or nil for auto-detect (uses system default).
-    var locale: Locale? {
+    /// User's system preferred language from macOS settings.
+    /// Do not use `Locale.current` here — for an English-only app bundle it often stays `en`
+    /// even when the system language is Russian.
+    static var systemPreferredLocale: Locale {
+        if let identifier = Locale.preferredLanguages.first {
+            return Locale(identifier: identifier)
+        }
+        return .current
+    }
+
+    /// Locale passed to live speech modules.
+    /// Auto uses the Mac's preferred language list: if the language code matches a known case
+    /// (e.g. `ru` → `ru-RU`), that mapped locale is used; otherwise the system preferred locale.
+    var locale: Locale {
         switch self {
-        case .auto: nil
-        case .english: Locale(identifier: "en-US")
-        case .spanish: Locale(identifier: "es-ES")
-        case .french: Locale(identifier: "fr-FR")
-        case .german: Locale(identifier: "de-DE")
-        case .italian: Locale(identifier: "it-IT")
-        case .portuguese: Locale(identifier: "pt-BR")
-        case .dutch: Locale(identifier: "nl-NL")
-        case .japanese: Locale(identifier: "ja-JP")
-        case .chinese: Locale(identifier: "zh-CN")
-        case .korean: Locale(identifier: "ko-KR")
-        case .arabic: Locale(identifier: "ar-SA")
-        case .hindi: Locale(identifier: "hi-IN")
-        case .russian: Locale(identifier: "ru-RU")
-        case .turkish: Locale(identifier: "tr-TR")
-        case .polish: Locale(identifier: "pl-PL")
+        case .auto:
+            let system = Self.systemPreferredLocale
+            if let code = system.language.languageCode?.identifier,
+               let match = TranscriptionLanguage(rawValue: code),
+               match != .auto
+            {
+                return match.locale
+            }
+            return system
+        case .english: return Locale(identifier: "en-US")
+        case .spanish: return Locale(identifier: "es-ES")
+        case .french: return Locale(identifier: "fr-FR")
+        case .german: return Locale(identifier: "de-DE")
+        case .italian: return Locale(identifier: "it-IT")
+        case .portuguese: return Locale(identifier: "pt-BR")
+        case .dutch: return Locale(identifier: "nl-NL")
+        case .japanese: return Locale(identifier: "ja-JP")
+        case .chinese: return Locale(identifier: "zh-CN")
+        case .korean: return Locale(identifier: "ko-KR")
+        case .arabic: return Locale(identifier: "ar-SA")
+        case .hindi: return Locale(identifier: "hi-IN")
+        case .russian: return Locale(identifier: "ru-RU")
+        case .turkish: return Locale(identifier: "tr-TR")
+        case .polish: return Locale(identifier: "pl-PL")
         }
     }
 }

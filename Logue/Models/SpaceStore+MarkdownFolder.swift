@@ -24,9 +24,6 @@ extension SpaceStore {
     /// Creates the folder for a newly made space.
     func createFolder(for space: Space) {
         guard storage.mode.isMarkdown else { return }
-        // Every one of these moves the paths the folder caches record, and a stale map places a
-        // document's file by where its space used to be.
-        storage.invalidateFileIndex()
         do {
             try storage.liveMigrator.createFolder(for: space, in: spaces)
         } catch {
@@ -45,7 +42,6 @@ extension SpaceStore {
               let space = spaces.first(where: { $0.id == spaceID })
         else { return }
 
-        storage.invalidateFileIndex()
         do {
             try storage.liveMigrator.moveFolder(from: previousComponents, for: space, in: spaces)
         } catch {
@@ -63,7 +59,6 @@ extension SpaceStore {
     /// from the store and their paths can no longer be derived.
     func retireFolder(for spaceID: UUID, at paths: [[String]]) {
         guard storage.mode.isMarkdown else { return }
-        storage.invalidateFileIndex()
         let migrator = storage.liveMigrator
 
         for components in paths {
@@ -89,7 +84,6 @@ extension SpaceStore {
         guard storage.mode.isMarkdown,
               let space = spaces.first(where: { $0.id == spaceID })
         else { return }
-        storage.invalidateFileIndex()
         storage.liveMigrator.writeSpaceIdentities(spaces: [space], among: spaces)
     }
 }

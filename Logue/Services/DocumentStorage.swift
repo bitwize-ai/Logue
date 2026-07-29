@@ -38,30 +38,6 @@ final class DocumentStorage {
         }
     }
 
-    /// Documents that belong in the folder but have no file there, because writing one failed.
-    ///
-    /// Falling back to encrypted storage — which `save` does by returning `false` — is only half an
-    /// answer on its own. In markdown mode the folder is the library: `loadDocuments` reads it and
-    /// takes nothing else from encrypted storage but the trash, and a scan reads "no file" as a
-    /// deletion. So a document whose write failed was written somewhere nothing reads, then trashed
-    /// by the next scan for being missing from the folder. This set is what tells both of those
-    /// apart from a real deletion.
-    ///
-    /// Persisted, because the failure outlives the launch that hit it — a full disk or a folder on
-    /// an unmounted drive is still there tomorrow. An identifier leaves the set the moment a write
-    /// for it succeeds, or the document is trashed.
-    ///
-    /// Extension-visible: +Rescan
-    private(set) var unwritableDocuments: Set<UUID> {
-        didSet {
-            guard unwritableDocuments != oldValue else { return }
-            UserDefaults.standard.set(
-                unwritableDocuments.map(\.uuidString),
-                forKey: AppConstants.UserDefaultsKeys.unwritableDocuments
-            )
-        }
-    }
-
     /// Extension-visible: +Rescan
     @ObservationIgnored var watcher: MarkdownFolderWatcher?
 
@@ -80,20 +56,9 @@ final class DocumentStorage {
     /// Extension-visible: +Rescan
     @ObservationIgnored var cachedFileIndex: [UUID: URL]?
 
-    /// Which folder each space occupies, remembered between saves.
-    ///
-    /// The same walk as `cachedFileIndex` and the same reason, a level up: `export` needs it to
-    /// place a file, so an uncached one read every `_space.md` in the library on every save. That
-    /// is what made a bulk import quadratic in wall-clock — 500 notes each walking a 250-file tree.
-    ///
-    /// Cached and invalidated together with the file index, because both are derived from one walk
-    /// and anything that stales one stales the other.
-    @ObservationIgnored private var cachedSpaceFolders: SpaceFolderMap?
-
-    /// Extension-visible: +Rescan, SpaceStore+MarkdownFolder
+    /// Extension-visible: +Rescan
     func invalidateFileIndex() {
         cachedFileIndex = nil
-        cachedSpaceFolders = nil
     }
 
     private func fileIndex(using migrator: MarkdownStorageMigrator) -> [UUID: URL] {
@@ -103,15 +68,6 @@ final class DocumentStorage {
         let index = migrator.fileIndex()
         cachedFileIndex = index
         return index
-    }
-
-    private func spaceFolders(using migrator: MarkdownStorageMigrator, in spaces: [Space]) -> SpaceFolderMap {
-        if let cachedSpaceFolders {
-            return cachedSpaceFolders
-        }
-        let folders = migrator.spaceFolderMap(in: spaces)
-        cachedSpaceFolders = folders
-        return folders
     }
 
     /// What the last scan of the folder found, for the rescan button's tooltip.
@@ -225,22 +181,6 @@ final class DocumentStorage {
     private init() {
         let raw = UserDefaults.standard.string(forKey: AppConstants.UserDefaultsKeys.documentStorageMode)
         mode = DocumentStorageMode(rawValue: raw ?? "") ?? .encrypted
-
-        let stored = UserDefaults.standard.stringArray(forKey: AppConstants.UserDefaultsKeys.unwritableDocuments)
-        unwritableDocuments = Set((stored ?? []).compactMap(UUID.init(uuidString:)))
-    }
-
-    /// Records that a document has no file in the folder, or that it has one again.
-    ///
-    /// Both directions matter. Forgetting to clear leaves a document permanently exempt from the
-    /// deletion check, so removing its file in Finder would stop working — silently, which is the
-    /// worst way for a folder-is-the-library promise to break.
-    private func setUnwritable(_ isUnwritable: Bool, for id: UUID) {
-        if isUnwritable {
-            unwritableDocuments.insert(id)
-        } else {
-            unwritableDocuments.remove(id)
-        }
     }
 
     // MARK: - Switching
@@ -453,16 +393,8 @@ final class DocumentStorage {
             // copy still marked trashed, and two entries for one id put the *trashed* one last —
             // where `rebuildIndexMap` lets it win every lookup, so the next save would take the
             // trashed branch and remove the user's file.
-            // Documents whose write failed come back too. They are the encrypted fallback `save`
-            // takes when the folder cannot be written to, and without this the fallback wrote to
-            // somewhere nothing ever read — the document was simply gone at the next launch.
             let fromFolderIDs = Set(fromFolder.map(\.id))
-            let recovered = stored.filter {
-                ($0.isTrashed || unwritableDocuments.contains($0.id)) && !fromFolderIDs.contains($0.id)
-            }
-            // Anything that reappeared in the folder is no longer missing a file.
-            unwritableDocuments.subtract(fromFolderIDs)
-            return fromFolder + recovered
+            return fromFolder + stored.filter { $0.isTrashed && !fromFolderIDs.contains($0.id) }
         } catch {
             logger.error("Could not load trashed documents: \(error.localizedDescription, privacy: .public)")
             return fromFolder
@@ -482,10 +414,6 @@ final class DocumentStorage {
 
         if document.isTrashed {
             removeFile(for: document.id)
-            // A trashed document is *meant* to have no file, and it is read back from encrypted
-            // storage on its own. Leaving it marked would exempt it from the deletion check
-            // forever, including after it is restored.
-            setUnwritable(false, for: document.id)
             return false
         }
 
@@ -495,13 +423,13 @@ final class DocumentStorage {
             documents: [document.content],
             spaces: spaces,
             reusing: index,
-            // The cached map, not a fresh walk. Without it `export` read every `_space.md` in the
-            // library to work out one directory, on every save.
-            folders: spaceFolders(using: migrator, in: spaces),
             // Only this document's space needs its identity rewritten. Rewriting every space's
             // `_space.md` on every save was N writes per keystroke batch for no gain.
             identitiesFor: spaces.filter { $0.id == document.spaceID }
         )
+        if !result.isSuccess {
+            logger.error("Could not write a document to the markdown folder")
+        }
         // Kept current rather than dropped: the file this document now occupies is exactly what the
         // export just told us, so the next save does not have to read the folder again.
         if let written = result.writtenFiles[document.id] {
@@ -511,17 +439,6 @@ final class DocumentStorage {
             invalidateFileIndex()
         }
         saveDerived(document.derived)
-
-        // Reporting a failed write as handled left the document in memory with no file *and* no
-        // encrypted copy, because the caller takes this as "stored, nothing more to do". The next
-        // scan then found it absent from the folder and trashed it. Saying so lets the caller fall
-        // back to encrypted storage, which is the whole point of returning a Bool.
-        guard result.isSuccess else {
-            logger.error("Could not write a document to the markdown folder — falling back to encrypted storage")
-            setUnwritable(true, for: document.id)
-            return false
-        }
-        setUnwritable(false, for: document.id)
         return true
     }
 

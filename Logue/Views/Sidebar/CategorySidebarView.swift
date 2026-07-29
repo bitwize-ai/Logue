@@ -1,6 +1,4 @@
-import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Sidebar with unified space tree for the 2-column Notion-style layout.
 /// Shows Overview, Spaces (recursive tree with mixed content), All Documents, All Meetings, Trash, and Settings.
@@ -632,11 +630,6 @@ private struct SpaceTreeRow: View {
         } label: {
             Label("New Sub-Space", systemImage: "folder.badge.plus")
         }
-        Button {
-            presentImportPanel()
-        } label: {
-            Label("Import Files…", systemImage: "square.and.arrow.down")
-        }
 
         Divider()
 
@@ -648,113 +641,6 @@ private struct SpaceTreeRow: View {
         } label: {
             Label("Delete Space", systemImage: "trash")
         }
-    }
-
-    /// Presents an open panel and imports the chosen files into this space.
-    /// Import runs entirely on-device (issue #28) — files are read locally and
-    /// become documents; nothing is uploaded anywhere.
-    private func presentImportPanel() {
-        let panel = NSOpenPanel()
-        // Filtered by extension rather than `allowedContentTypes`, which matches by
-        // conformance: `.swift`, `.csv`, `.py` and `.sh` all conform to
-        // `public.plain-text`, so the panel would enable files the importer then
-        // rejects. The delegate is retained by the completion closure below.
-        let fileFilter = ImportFileFilter()
-        panel.delegate = fileFilter
-        panel.allowsMultipleSelection = true
-        // A vault is a tree. With this off you could navigate into a folder but never choose one,
-        // and `NSOpenPanel` will not multi-select across directories — so migrating a 40-folder
-        // vault was 40 rounds of this panel, each landing flat in one space with the hierarchy
-        // gone. Choosing the vault itself now imports it whole, subfolders becoming sub-spaces.
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = true
-        panel.title = "Import into \(String(space.name.prefix(60)))"
-        panel.message = """
-        Choose markdown or text files, or a folder to import a whole vault — \
-        its subfolders become spaces.
-        """
-
-        // The panel outlives this call, so read `space.id` now rather than through
-        // `space` later. `selection` is a Binding to state owned further up the
-        // tree, so writing it from the completion handler still lands correctly.
-        let spaceID = space.id
-        let store = documentStore
-        let spaces = spaceStore
-        panel.begin { @MainActor response in
-            _ = fileFilter // Retain the delegate until the panel is done with it.
-            guard response == .OK, !panel.urls.isEmpty else { return }
-
-            // The panel is modeless, so the space can be deleted while it is open.
-            // Importing into a deleted space would file the documents under an ID
-            // with no sidebar row, reachable only through All Documents.
-            guard spaces.space(for: spaceID) != nil else {
-                presentAlert(
-                    title: "Nothing was imported",
-                    message: "The space these files were headed for no longer exists."
-                )
-                return
-            }
-
-            let urls = panel.urls
-            Task { @MainActor in
-                let outcome = await store.importFiles(at: urls, into: spaceID)
-
-                // Reveal the results without stealing the user's place: reveal the
-                // space in the tree, but leave the selection where it is.
-                // `DocumentStore+Import` makes the same promise for documents.
-                if outcome.imported > 0 {
-                    spaces.expandPath(to: spaceID)
-                }
-
-                // Always reported, not only when something was skipped. A clean import
-                // otherwise showed nothing at all beyond a count badge, which reads as
-                // "that did nothing" — and running it again produces a second copy of
-                // every note, with no bulk undo.
-                //
-                // Deferred so the panel has finished dismissing and SwiftUI has
-                // committed this turn's state before a modal run loop starts.
-                //
-                // The name is resolved after the import, not before, so it names where
-                // the documents actually landed — `importFiles` makes the same re-check
-                // and files at the top level if the space went away mid-read.
-                let summary = outcome
-                let name = spaces.space(for: spaceID).map { String($0.name.prefix(60)) } ?? "Documents"
-                DispatchQueue.main.async { reportOutcome(summary, destination: name) }
-            }
-        }
-    }
-
-    /// Reports what an import did, grouped by reason.
-    ///
-    /// Listing the first ten filenames was close to useless at the scale this is for: skip 200
-    /// of 500 and the user gets ten names and a count, in text they cannot select or scroll.
-    /// The causes are almost always systematic — one folder of images, one oversized export —
-    /// so counting them by reason says the useful thing in one line each.
-    private func reportOutcome(_ outcome: DocumentStore.ImportOutcome, destination: String) {
-        let title = outcome.imported > 0
-            ? "Imported \(outcome.imported) \(outcome.imported == 1 ? "document" : "documents") into \(destination)"
-            : "Nothing was imported"
-
-        var lines: [String] = []
-        if !outcome.skipped.isEmpty {
-            lines.append("Skipped \(outcome.skipped.count):")
-            let byReason = Dictionary(grouping: outcome.skipped, by: \.reason)
-            for reason in byReason.keys.sorted() {
-                guard let files = byReason[reason] else { continue }
-                lines.append(files.count == 1
-                    ? "  \(files[0].file) — \(reason)"
-                    : "  \(files.count) files — \(reason)")
-            }
-        }
-        presentAlert(title: title, message: lines.joined(separator: "\n"))
-    }
-
-    private func presentAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = title
-        alert.informativeText = message
-        alert.runModal()
     }
 
     // MARK: - Drop Handling
@@ -776,20 +662,5 @@ private struct SpaceTreeRow: View {
             }
         }
         return handled
-    }
-}
-
-/// Restricts an open panel to the extensions the importer accepts.
-///
-/// `NSOpenPanel.allowedContentTypes` matches by UTI conformance, and `.swift`,
-/// `.csv`, `.py` and `.sh` all conform to `public.plain-text` — so a type-based
-/// filter enables files `MarkdownImport` then rejects. Matching the extension
-/// directly keeps the panel and the importer agreeing on what is importable.
-private final class ImportFileFilter: NSObject, NSOpenSavePanelDelegate {
-    func panel(_: Any, shouldEnable url: URL) -> Bool {
-        if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-            return true
-        }
-        return MarkdownImport.allowedExtensions.contains(url.pathExtension.lowercased())
     }
 }
