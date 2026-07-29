@@ -42,6 +42,35 @@ enum MarkdownImport {
         let properties: [String: PropertyValue]
     }
 
+    /// Why a file is being read, which decides how much of this is sanitising and how much is
+    /// merely deriving.
+    ///
+    /// The distinction exists because one caller **writes the result back over the file**.
+    /// `MarkdownStorageMigrator.adopt` renders what it derived and saves it, so every rule here is
+    /// a rule that rewrites files in `~/Logue` — and rules written to make a foreign file safe to
+    /// bring in are the wrong rules to apply to a file the user already owns and put there.
+    enum Purpose {
+        /// A file the user picked to bring in from elsewhere. Refused if it is too large or
+        /// empty, title capped, body trimmed.
+        case bringingAFileIn
+        /// A file already sitting in the storage folder. The file *is* the document, so nothing
+        /// is refused and nothing is reshaped — this only reads it.
+        case readingAFileWeAlreadyHold
+
+        /// Whether a file may be turned away. In the folder there is no dialog to explain a
+        /// refusal, and a file that is silently un-adoptable is re-read on every scan forever.
+        var refusesUnreasonableFiles: Bool {
+            self == .bringingAFileIn
+        }
+
+        /// Whether the body and title may be reshaped to fit. The title cap exists because
+        /// imported titles go into LLM prompts; applying it to a file the user owns truncates
+        /// their text on disk with no way back.
+        var reshapesContent: Bool {
+            self == .bringingAFileIn
+        }
+    }
+
     enum ImportError: Error, Equatable {
         case emptyFile
         case unsupportedExtension(String)
@@ -53,13 +82,17 @@ enum MarkdownImport {
     /// Title precedence: YAML frontmatter `title:` → leading `# ` heading → filename.
     /// Whichever source supplies the title is removed from the body so the imported
     /// document does not open with its own title duplicated as the first line.
-    static func document(fileName: String, contents rawContents: String) throws -> ImportedDocument {
+    static func document(
+        fileName: String, contents rawContents: String, purpose: Purpose = .bringingAFileIn
+    ) throws -> ImportedDocument {
         let ext = (fileName as NSString).pathExtension.lowercased()
         guard allowedExtensions.contains(ext) else {
             throw ImportError.unsupportedExtension(ext)
         }
-        guard rawContents.utf8.count <= maxFileBytes else {
-            throw ImportError.fileTooLarge(bytes: rawContents.utf8.count)
+        if purpose.refusesUnreasonableFiles {
+            guard rawContents.utf8.count <= maxFileBytes else {
+                throw ImportError.fileTooLarge(bytes: rawContents.utf8.count)
+            }
         }
         // Normalise line endings first and parse only the result. `CharacterSet
         // .whitespaces` is Zs plus tab — it does not contain `\r` — so a Windows
@@ -71,8 +104,10 @@ enum MarkdownImport {
 
         // Nothing to import. Checked against the raw contents rather than the
         // parsed body, so a heading-only file still imports as a titled note.
-        guard !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ImportError.emptyFile
+        if purpose.refusesUnreasonableFiles {
+            guard !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ImportError.emptyFile
+            }
         }
 
         var body = contents
@@ -94,7 +129,7 @@ enum MarkdownImport {
             tags = list(parsed.fields["tags"])
             createdAt = creationDate(in: parsed.fields)
             modifiedAt = modificationDate(in: parsed.fields)
-            properties = importedProperties(from: parsed.fields)
+            properties = importedProperties(from: parsed.fields, purpose: purpose)
         }
         // The heading is read whatever the frontmatter said, so a note carrying both
         // — the common Obsidian shape — does not open with its title twice. It only
@@ -109,9 +144,14 @@ enum MarkdownImport {
             }
         }
 
-        body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Trimmed only for a file being brought in. For one already in the folder this rewrites
+        // the user's own file, and a note opening with an indented code block came back as a
+        // paragraph — the indentation is content there, not stray whitespace.
+        if purpose.reshapesContent {
+            body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         let fallback = (fileName as NSString).deletingPathExtension
-        let resolved = sanitisedTitle(title ?? fallback, fallback: fallback)
+        let resolved = sanitisedTitle(title ?? fallback, fallback: fallback, purpose: purpose)
 
         return ImportedDocument(
             title: resolved.isEmpty ? "Imported Note" : resolved,
@@ -250,17 +290,27 @@ enum MarkdownImport {
     }()
 
     /// Frontmatter keys this importer consumes itself, so they do not also become properties.
-    private static var consumedKeys: Set<String> {
-        Set(["title", "tags", MarkdownDocumentFile.identifierKey] + creationKeys + modificationKeys)
+    private static func consumedKeys(for purpose: Purpose) -> Set<String> {
+        var keys = Set(["title", "tags", MarkdownDocumentFile.identifierKey] + creationKeys)
+        // Only consumed where there is somewhere to put the value. `DocumentContent` has no
+        // modified date, so on the adopt path consuming these deleted `modified:` from the file
+        // rather than moving it — the key was taken out of properties and then dropped.
+        if purpose == .bringingAFileIn {
+            keys.formUnion(modificationKeys)
+        }
+        return keys
     }
 
     /// Everything else in the block, as document properties.
     ///
     /// Keys go through `PropertyKey.sanitisedKey`, which is what refuses underscore-prefixed
     /// names — so a file cannot claim an app-owned field by writing one in its frontmatter.
-    private static func importedProperties(from fields: [String: FrontmatterValue]) -> [String: PropertyValue] {
+    private static func importedProperties(
+        from fields: [String: FrontmatterValue], purpose: Purpose
+    ) -> [String: PropertyValue] {
+        let consumed = consumedKeys(for: purpose)
         var properties: [String: PropertyValue] = [:]
-        for (rawKey, value) in fields where !consumedKeys.contains(rawKey.lowercased()) {
+        for (rawKey, value) in fields where !consumed.contains(rawKey.lowercased()) {
             guard let key = PropertyKey.sanitisedKey(rawKey) else { continue }
             switch value {
             case let .list(items):
@@ -400,7 +450,9 @@ enum MarkdownImport {
     /// `CharacterSet.controlCharacters`, which also covers `Cf`. Judging a whole
     /// grapheme by its scalars deleted any emoji built with a zero-width joiner —
     /// `👩‍💻` vanished, and a title that was only `👨‍👩‍👧‍👦` was lost entirely.
-    private static func sanitisedTitle(_ raw: String, fallback: String) -> String {
+    private static func sanitisedTitle(
+        _ raw: String, fallback: String, purpose: Purpose = .bringingAFileIn
+    ) -> String {
         // `Cc` already covers newlines and tabs; the separators do not fall under it.
         let stripped: Set<Unicode.GeneralCategory> = [.control, .lineSeparator, .paragraphSeparator]
         let scalars = raw.unicodeScalars.filter {
@@ -409,8 +461,11 @@ enum MarkdownImport {
         let cleaned = String(String.UnicodeScalarView(scalars))
             .trimmingCharacters(in: .whitespaces)
         if cleaned.isEmpty, raw != fallback {
-            return sanitisedTitle(fallback, fallback: fallback)
+            return sanitisedTitle(fallback, fallback: fallback, purpose: purpose)
         }
-        return truncated(cleaned)
+        // Control characters and bidi overrides come out either way — a reversed title is a
+        // spoof, and the title reaches LLM prompts on both paths. The length cap does not: it
+        // would rewrite a 250-character title in the user's own file down to 115.
+        return purpose.reshapesContent ? truncated(cleaned) : cleaned
     }
 }

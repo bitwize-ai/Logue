@@ -32,7 +32,11 @@ enum DroppedFileImport {
 
         do {
             let document = try MarkdownImport.document(
-                fileName: usableName(filename), contents: fileContents
+                fileName: usableName(filename),
+                contents: fileContents,
+                // This path writes its result back over the file, so it reads rather than
+                // sanitises: nothing refused, nothing reshaped.
+                purpose: .readingAFileWeAlreadyHold
             )
             return Fields(
                 title: document.title,
