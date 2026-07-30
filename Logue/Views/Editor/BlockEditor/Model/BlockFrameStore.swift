@@ -29,13 +29,20 @@ final class BlockFrameStore: @unchecked Sendable {
     /// Hit-tests which block sits at the given point.
     ///
     /// Vertical-only: blocks span the full content width, so the x coordinate carries no
-    /// information. Ties are impossible in practice because block frames don't overlap
-    /// vertically, but a deterministic answer still beats an arbitrary one, so the topmost
-    /// match wins.
+    /// information.
+    ///
+    /// The bounds are inclusive at both ends, so any two frames that touch or overlap both
+    /// contain the point on their shared edge. The editor's current layout does not produce
+    /// that case — its `VStack` spacing leaves a measured 4pt gap between consecutive row
+    /// frames, and a point inside a gap matches nothing — but the store cannot assume a
+    /// caller's frames are disjoint, and dropping that spacing to zero would create a tie at
+    /// every boundary. Resolving to the topmost match keeps the answer stable either way;
+    /// picking whichever key dictionary iteration happened to yield first would not.
     func blockID(at point: CGPoint) -> BlockID? {
         lock.lock()
         defer { lock.unlock() }
-        return frames
+        // `lazy` so the filter doesn't build an intermediate dictionary on every hit test.
+        return frames.lazy
             .filter { point.y >= $0.value.minY && point.y <= $0.value.maxY }
             .min { $0.value.minY < $1.value.minY }?
             .key
