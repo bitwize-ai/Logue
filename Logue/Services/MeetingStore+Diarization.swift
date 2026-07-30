@@ -3,68 +3,57 @@ import Foundation
 // MARK: - Speaker Diarization
 
 extension MeetingStore {
+    /// Persists diarization output and attributes transcript segments to speakers.
+    ///
+    /// Labelling is delegated to `SpeakerAlignment`, which decides by time overlap and may split a
+    /// transcript segment that spans two speakers. Segments already carrying a label are left alone,
+    /// preserving "You" attribution and any correction the user made by hand.
     func updateSpeakerData(for meetingID: UUID, speakers: [Speaker], speakerSegments: [SpeakerSegment]) {
         guard let index = meetingIndex(for: meetingID) else { return }
         meetings[index].speakers = speakers
         meetings[index].speakerSegments = speakerSegments
         meetings[index].hasSpeakerData = !speakerSegments.isEmpty
 
-        // Only label transcript segments that don't already have a speaker label.
-        // This preserves labels from previous recording sessions and periodic diarization.
-        let speakerMap = Dictionary(uniqueKeysWithValues: speakers.map { ($0.id, $0.name) })
-        let sortedSpeakerSegs = speakerSegments.sorted { $0.startTime < $1.startTime }
-        // Pre-extract startTimes for binary search (O(n log n) vs O(n²))
-        let startTimes = sortedSpeakerSegs.map(\.startTime)
-
-        guard !sortedSpeakerSegs.isEmpty else { return }
-
-        for (segIdx, segment) in meetings[index].segments.enumerated() {
-            guard segment.speakerLabel == nil else { continue }
-
-            let midpoint = (segment.startTime + segment.endTime) / 2
-
-            // Binary search for the insertion point of midpoint in sorted speaker segments.
-            // lo ends up as the first index where startTime > midpoint.
-            var lo = 0, hi = startTimes.count
-            while lo < hi {
-                let mid = (lo + hi) / 2
-                if startTimes[mid] <= midpoint {
-                    lo = mid + 1
-                } else {
-                    hi = mid
-                }
-            }
-            var matchedName: String?
-            var bestDistance = Double.greatestFiniteMagnitude
-            let searchRange = max(0, lo - 2) ... min(sortedSpeakerSegs.count - 1, lo + 1)
-
-            for i in searchRange {
-                let ss = sortedSpeakerSegs[i]
-                if midpoint >= ss.startTime, midpoint <= ss.endTime {
-                    matchedName = speakerMap[ss.speakerId]
-                    break
-                }
-                let distance = min(abs(midpoint - ss.startTime), abs(midpoint - ss.endTime))
-                if distance < bestDistance, distance <= AppConstants.Diarization.speakerLabelTolerance {
-                    bestDistance = distance
-                    matchedName = speakerMap[ss.speakerId]
-                }
-            }
-
-            if let name = matchedName {
-                meetings[index].segments[segIdx].speakerLabel = name
-            }
-        }
+        meetings[index].segments = SpeakerAlignment.align(
+            segments: meetings[index].segments,
+            speakerSegments: speakerSegments,
+            speakerNamesByID: Dictionary(
+                speakers.map { ($0.id, $0.name) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        )
 
         meetings[index].modifiedAt = Date()
         saveMeeting(id: meetingID)
     }
 
-    /// Replace all transcript segments with the output of batch ASR (Parakeet TDT).
-    /// Called after recording stops to upgrade streaming transcript quality.
-    func replaceTranscript(for meetingID: UUID, with segments: [TranscriptSegment]) {
+    /// Replace this recording session's transcript segments with the output of batch ASR
+    /// (Parakeet TDT). Called after recording stops to upgrade streaming transcript quality.
+    ///
+    /// `sessionStart` is the meeting timeline offset the session began at. Batch ASR timings are
+    /// relative to the session's own audio buffer, so they are shifted onto the meeting timeline and
+    /// only segments from this session are replaced — otherwise resuming a recording would discard
+    /// every earlier session's transcript.
+    ///
+    /// Required deliberately: a default of `0` would filter for segments starting below zero, find
+    /// none, and silently go back to replacing the whole array — the exact data loss this argument
+    /// exists to prevent, in the one scenario least likely to be exercised while developing.
+    func replaceTranscript(
+        for meetingID: UUID,
+        with segments: [TranscriptSegment],
+        sessionStart: TimeInterval
+    ) {
         guard let index = meetingIndex(for: meetingID) else { return }
-        meetings[index].segments = segments.sorted { $0.startTime < $1.startTime }
+
+        let shifted = segments.map { segment in
+            var moved = segment
+            moved.startTime += sessionStart
+            moved.endTime += sessionStart
+            return moved
+        }
+        let earlierSessions = meetings[index].segments.filter { $0.startTime < sessionStart }
+
+        meetings[index].segments = (earlierSessions + shifted).sorted { $0.startTime < $1.startTime }
         meetings[index].modifiedAt = Date()
         saveMeeting(id: meetingID)
     }
