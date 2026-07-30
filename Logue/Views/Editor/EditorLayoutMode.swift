@@ -41,6 +41,13 @@ enum EditorLayoutMode: String, CaseIterable, Codable, Sendable {
     /// `showsInspector`, which is `false` in editor-only, and turned every ⌘3 pressed from
     /// editor-only into editor-and-list. Nothing needs that direction inferred: every path that
     /// shows the list again already names the mode it wants.
+    ///
+    /// A consequence worth stating, because it is chosen rather than accidental: dragging the
+    /// sidebar shut while in `allPanels` lands on `editorOnly`, which hides the inspector too.
+    /// There is no editor-plus-inspector mode to land on — the three modes are a progression, so
+    /// "no list" can only mean the narrowest one. Someone dragging the divider for more room may
+    /// not expect to lose the inspector, and the honest fix for that is a fourth case rather than
+    /// a special case here. ⌘3 brings both back in one keystroke.
     static func modeAfterVisibilityReport(listIsVisible: Bool) -> EditorLayoutMode? {
         listIsVisible ? nil : .editorOnly
     }

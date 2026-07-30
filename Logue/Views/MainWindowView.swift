@@ -273,6 +273,11 @@ struct MainWindowView: View {
         // needs Shift is a chord the menu never matches — so the unshifted key in the same
         // physical position is handled here instead. It cannot be a second menu item: see
         // the comment on the zoom group in `LogueApp`.
+        //
+        // The exact `==` is load-bearing, not a stylistic difference from the `.contains` used
+        // for ⌘K below. On a US layout ⌘⇧= *is* ⌘+, which the View menu already binds; with
+        // `.contains(.command)` that one chord would fire the menu item and this handler both,
+        // and zoom would jump two steps.
         .onKeyPress(keys: [KeyEquivalent("=")], phases: .down) { keyPress in
             guard keyPress.modifiers == .command else { return .ignored }
             EditorZoom.mutatePersisted { $0.zoomIn() }

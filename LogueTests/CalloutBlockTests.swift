@@ -6,6 +6,11 @@ import Testing
 /// document in plain-storage mode — a lossy serialize rewrites the user's file on the next
 /// save. The unrecognised-type cases matter for the same reason: anything we cannot name has
 /// to survive as the block quote it already was.
+///
+/// "Exactly" holds for a recognised callout on its own. Two shapes do not come back
+/// byte-for-byte — an unquoted line straight after a callout, and an unrecognised type's line
+/// breaks — and both are pinned in `CalloutRoundTripEdgeTests` rather than left implied by the
+/// absence of a test here.
 @Suite("CalloutBlocks")
 struct CalloutBlockTests {
     // MARK: - Parse

@@ -137,6 +137,18 @@ struct EditorLayoutModeTests {
         #expect(EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false) == .editorOnly)
     }
 
+    /// Collapsing from `allPanels` lands on `editorOnly`, hiding the inspector as well as the
+    /// list. That is the only mode "no list" can mean — the three are a progression with no
+    /// editor-plus-inspector rung — so it is asserted rather than left as an accident of the
+    /// implementation.
+    @Test("Collapsing from all-panels also gives up the inspector")
+    func collapseFromAllPanelsDropsTheInspector() {
+        #expect(EditorLayoutMode.allPanels.showsInspector)
+        let afterCollapse = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false)
+        #expect(afterCollapse == .editorOnly)
+        #expect(afterCollapse?.showsInspector == false)
+    }
+
     /// Recording a collapse has to be idempotent, because the split view echoes our own
     /// `.detailOnly` straight back at us.
     @Test("Recording a collapse twice is stable")

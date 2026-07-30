@@ -123,6 +123,23 @@ enum BlockSerializer {
     /// Anything that is not one of the five recognised types — `> [!BANANA]`, or a plain
     /// `> quote` — is left in the markdown run untouched, so cmark parses it as the block
     /// quote it is.
+    ///
+    /// **A recognised callout round-trips byte-exactly. One shape does not, and it matters in
+    /// markdown storage mode, where the file is the document and opening it rewrites it.** An
+    /// unquoted line immediately after a callout gains a blank line before it:
+    ///
+    ///     in   > [!NOTE]\n> Body\nRegular paragraph
+    ///     out  > [!NOTE]\n> Body\n\nRegular paragraph
+    ///
+    /// That is CommonMark lazy continuation: the unquoted line is part of the quote, and ending
+    /// the callout at the last `>` separates it instead of absorbing it. The separation is
+    /// deliberate — the alternative is what cmark did before this existed, which was to fold the
+    /// whole thing into `> [!NOTE] Body Regular paragraph` and lose the paragraph entirely — but
+    /// the rewrite is real, so it is written down rather than left to be discovered.
+    ///
+    /// An unrecognised type folds its line breaks (`> [!BANANA]\n> Body` becomes
+    /// `> [!BANANA] Body`) because it degrades to a block quote, and block quotes have always
+    /// done that. `CalloutRoundTripEdgeTests` pins both down.
     private static func calloutSegments(in markdown: String) -> [CalloutSegment] {
         guard markdown.contains("[!") else { return [.markdown(markdown)] }
 
@@ -510,8 +527,8 @@ enum BlockSerializer {
     /// Writes a callout back as `> [!TYPE] title` plus quoted body lines.
     ///
     /// An empty body line serializes as a bare `>` rather than `"> "`, which is what it was
-    /// read from — a trailing space there is the one thing that would stop the round-trip
-    /// being byte-exact.
+    /// read from — a trailing space there would be enough on its own to stop a callout coming
+    /// back byte-for-byte. For the two shapes that still do not, see `calloutSegments`.
     private static func serializeCallout(kind: CalloutKind, title: String, body: String) -> String {
         var lines = ["> [!\(kind.rawValue)]" + (title.isEmpty ? "" : " \(title)")]
         // A callout with no body is a single header line, not a header plus an empty quote.
