@@ -90,8 +90,15 @@ enum SortformerTimeline {
 
     // MARK: - Continuity
 
-    /// Removes overlaps and oversized gaps so the timeline reads as one continuous conversation.
-    /// A segment entirely swallowed by its predecessor is dropped rather than inverted.
+    /// Removes overlaps, and closes gaps narrow enough to be model jitter, so the timeline reads as
+    /// one continuous conversation. A segment entirely swallowed by its predecessor is dropped
+    /// rather than inverted.
+    ///
+    /// A silence wider than `maxClosableGap` is left exactly as it is: closing it would move the
+    /// later speaker's start back across time nobody was confidently speaking in, and alignment
+    /// compares true transcript times against these adjusted ones. A stray cough or a missed word
+    /// in that window would then be labelled with full confidence instead of honestly falling
+    /// outside every speaker.
     private static func enforceContinuity(
         _ updates: [SortformerSpeakerUpdate]
     ) -> [SortformerSpeakerUpdate] {
@@ -104,10 +111,13 @@ enum SortformerTimeline {
                 continue
             }
 
+            let gap = update.startTime - last.endTime
             var start = update.startTime
-            if start < last.endTime {
+            if gap < 0 {
                 start = last.endTime
-            } else if start - last.endTime > AppConstants.Diarization.timelineMaxGap {
+            } else if gap > AppConstants.Diarization.timelineMaxGap,
+                      gap <= AppConstants.Diarization.maxClosableGap
+            {
                 start = last.endTime + AppConstants.Diarization.timelineMaxGap
             }
             guard update.endTime > start else { continue }
@@ -119,8 +129,12 @@ enum SortformerTimeline {
                 endTime: update.endTime
             )
 
-            // Clamping can bring two same-speaker segments flush together.
-            if last.speakerIndex == adjusted.speakerIndex {
+            // Clamping can bring two same-speaker segments flush together. Only merge when they
+            // genuinely are: a silence left open above must not be swallowed by joining the speaker
+            // to themselves across it.
+            if last.speakerIndex == adjusted.speakerIndex,
+               adjusted.startTime - last.endTime <= AppConstants.Diarization.timelineMaxGap
+            {
                 fixed[fixed.count - 1] = SortformerSpeakerUpdate(
                     speakerIndex: last.speakerIndex,
                     speakerName: last.speakerName,

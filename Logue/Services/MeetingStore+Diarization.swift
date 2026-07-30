@@ -34,10 +34,14 @@ extension MeetingStore {
     /// relative to the session's own audio buffer, so they are shifted onto the meeting timeline and
     /// only segments from this session are replaced — otherwise resuming a recording would discard
     /// every earlier session's transcript.
+    ///
+    /// Required deliberately: a default of `0` would filter for segments starting below zero, find
+    /// none, and silently go back to replacing the whole array — the exact data loss this argument
+    /// exists to prevent, in the one scenario least likely to be exercised while developing.
     func replaceTranscript(
         for meetingID: UUID,
         with segments: [TranscriptSegment],
-        sessionStart: TimeInterval = 0
+        sessionStart: TimeInterval
     ) {
         guard let index = meetingIndex(for: meetingID) else { return }
 

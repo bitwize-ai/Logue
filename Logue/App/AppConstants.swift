@@ -154,6 +154,11 @@ enum AppConstants {
         static let alternationWindowSeconds: TimeInterval = 0.8
         /// Largest silence left between normalized speaker segments before it is closed up
         static let timelineMaxGap: TimeInterval = 0.5
+        /// Widest silence worth closing at all. Beyond this the pause is real conversation rhythm,
+        /// not model jitter, and pulling the next speaker back over it would hand them time they
+        /// were audibly not speaking for — which alignment would then read as confident overlap for
+        /// anything transcribed in that window. Long silences are left as silence.
+        static let maxClosableGap: TimeInterval = 2.0
 
         // MARK: Transcript alignment
 

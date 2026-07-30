@@ -93,6 +93,43 @@ struct SortformerTimelineTests {
         #expect(result[0].endTime <= result[1].startTime)
     }
 
+    @Test("A gap narrow enough to be model jitter is closed")
+    func closesJitterGap() throws {
+        let result = SortformerTimeline.normalize([
+            update(0, 0, 10),
+            update(1, 11, 20),
+        ])
+
+        try #require(result.count == 2)
+        #expect(result[1].startTime == 10 + AppConstants.Diarization.timelineMaxGap)
+    }
+
+    @Test("A long silence is left as silence rather than given to the next speaker")
+    func doesNotCloseLongSilence() throws {
+        // Closing this would start Speaker 2 at 10.5 and hand them 19.5s they were not speaking for.
+        // Alignment compares true transcript times against these, so anything transcribed in the
+        // silence would be labelled Speaker 2 with full confidence.
+        let result = SortformerTimeline.normalize([
+            update(0, 0, 10),
+            update(1, 30, 40),
+        ])
+
+        try #require(result.count == 2)
+        #expect(result[1].startTime == 30)
+    }
+
+    @Test("The same speaker either side of a long silence is not joined across it")
+    func doesNotMergeSameSpeakerAcrossLongSilence() throws {
+        let result = SortformerTimeline.normalize([
+            update(0, 0, 10),
+            update(0, 30, 40),
+        ])
+
+        try #require(result.count == 2)
+        #expect(result[0].endTime == 10)
+        #expect(result[1].startTime == 30)
+    }
+
     @Test("Output is ordered by start time")
     func outputIsSorted() {
         let result = SortformerTimeline.normalize([

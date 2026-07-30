@@ -68,6 +68,32 @@ struct SpeakerAlignmentTests {
         #expect(result.map(\.speakerLabel) == ["Bob"])
     }
 
+    @Test("One speaker on both sides of an interjection is not their own runner-up")
+    func interjectionDoesNotCreateFalseAmbiguity() {
+        // Alice holds 1.8s of the second segment across two turns (1.0 then 0.8), Bob 0.2s in
+        // between. Ranking speaker *segments* rather than speakers made Alice her own runner-up, so
+        // 0.8 against 1.0 read as too close to call and continuity handed the whole sentence to Bob
+        // — the interjection failure this type exists to fix, arriving by another route.
+        //
+        // The 0.2s middle is below `minSplitPartDuration`, so splitting correctly declines and the
+        // vote decides the segment on its own.
+        let result = SpeakerAlignment.align(
+            segments: [
+                transcript("hello there", 0, 1.0),
+                transcript("this is a longer sentence", 1.0, 3.0),
+            ],
+            speakerSegments: [
+                speakerSegment("b", 0, 1.0),
+                speakerSegment("a", 1.0, 2.0),
+                speakerSegment("b", 2.0, 2.2),
+                speakerSegment("a", 2.2, 3.1),
+            ],
+            speakerNamesByID: names
+        )
+
+        #expect(result.map(\.speakerLabel) == ["Bob", "Alice"])
+    }
+
     @Test("A decisive overlap still switches speakers")
     func decisiveOverlapSwitches() {
         let result = SpeakerAlignment.align(
@@ -254,6 +280,26 @@ struct SpeakerAlignmentTests {
         )
 
         #expect(result.map(\.speakerLabel) == ["Alice", "Bob", "Alice"])
+    }
+
+    @Test("Smoothing does not undo a split made at a speaker boundary")
+    func smoothingLeavesSplitPartsAlone() {
+        // The middle part is 0.6s — long enough to be created, short enough to look like flapping to
+        // smoothing, and flanked by the same speaker on both sides. The split boundary came from the
+        // speaker timeline and outranks a guess made from the neighbours.
+        let result = SpeakerAlignment.align(
+            segments: [transcript("one two three four five six", 0, 3.0)],
+            speakerSegments: [
+                speakerSegment("a", 0, 1.2),
+                speakerSegment("b", 1.2, 1.8),
+                speakerSegment("a", 1.8, 3.0),
+            ],
+            speakerNamesByID: names
+        )
+
+        #expect(result.count == 3)
+        #expect(result.map(\.speakerLabel) == ["Alice", "Bob", "Alice"])
+        #expect(result.map(\.text).joined(separator: " ") == "one two three four five six")
     }
 
     // MARK: - Fallback window

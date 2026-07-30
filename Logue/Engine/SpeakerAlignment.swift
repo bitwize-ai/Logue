@@ -37,6 +37,15 @@ enum SpeakerAlignment {
             speakerNamesByID: speakerNamesByID
         )
 
+        // Split parts arrive already labelled and with fresh IDs, so they are exactly the segments
+        // carrying a label that were not protected on the way in. Smoothing must leave them alone:
+        // a part between `minSplitPartDuration` and `maxSmoothedIslandDuration` flanked by the same
+        // speaker looks like flapping, and relabelling it would discard a boundary taken from the
+        // speaker timeline in favour of a guess made from its neighbours.
+        let splitPartIDs = Set(
+            output.filter { $0.speakerLabel != nil && !protectedIDs.contains($0.id) }.map(\.id)
+        )
+
         var previousLabel: String?
         for index in output.indices {
             guard output[index].speakerLabel == nil else {
@@ -54,7 +63,7 @@ enum SpeakerAlignment {
             previousLabel = label
         }
 
-        return smoothIslands(output, protectedIDs: protectedIDs)
+        return smoothIslands(output, protectedIDs: protectedIDs.union(splitPartIDs))
     }
 
     // MARK: - Overlap voting
@@ -96,13 +105,13 @@ enum SpeakerAlignment {
             chunkStart = chunkEnd
         }
 
-        let ranked = votes.sorted { $0.value > $1.value }
+        let ranked = rank(votes)
         guard let best = ranked.first else { return nil }
-        let runnerUp = ranked.dropFirst().first?.value ?? 0
-        if isTooCloseToCall(best: best.value, runnerUp: runnerUp), let previousLabel {
+        let runnerUp = ranked.dropFirst().first?.overlap ?? 0
+        if isTooCloseToCall(best: best.overlap, runnerUp: runnerUp), let previousLabel {
             return previousLabel
         }
-        return best.key
+        return best.name
     }
 
     /// Greatest-overlap speaker for one interval, falling back to the nearest speaker within
@@ -114,9 +123,7 @@ enum SpeakerAlignment {
         speakerNamesByID: [String: String],
         previousLabel: String?
     ) -> String? {
-        var bestName: String?
-        var bestOverlap: TimeInterval = 0
-        var runnerUpOverlap: TimeInterval = 0
+        var overlapByName: [String: TimeInterval] = [:]
         var nearestName: String?
         var nearestDistance = TimeInterval.greatestFiniteMagnitude
 
@@ -126,13 +133,13 @@ enum SpeakerAlignment {
             }
             guard let name = speakerNamesByID[speakerSegment.speakerId] else { continue }
 
+            // Totalled per speaker, not per speaker segment. A speaker interrupted and resumed holds
+            // two segments of this interval, and ranking segments would make them their own
+            // runner-up — reading as an ambiguous interval when it is the opposite, and handing the
+            // segment to `previousLabel`. That is the interjection case this type exists to fix.
             let overlap = min(end, speakerSegment.endTime) - max(start, speakerSegment.startTime)
-            if overlap > bestOverlap {
-                runnerUpOverlap = bestOverlap
-                bestOverlap = overlap
-                bestName = name
-            } else if overlap > runnerUpOverlap {
-                runnerUpOverlap = overlap
+            if overlap > 0 {
+                overlapByName[name, default: 0] += overlap
             }
 
             let distance = distanceBetween(start: start, end: end, speakerSegment: speakerSegment)
@@ -142,13 +149,25 @@ enum SpeakerAlignment {
             }
         }
 
-        guard bestOverlap > 0 else {
+        let ranked = rank(overlapByName)
+        guard let best = ranked.first else {
             return nearestDistance <= AppConstants.Diarization.labelFallbackTolerance ? nearestName : nil
         }
-        if isTooCloseToCall(best: bestOverlap, runnerUp: runnerUpOverlap), let previousLabel {
+        let runnerUp = ranked.dropFirst().first?.overlap ?? 0
+        if isTooCloseToCall(best: best.overlap, runnerUp: runnerUp), let previousLabel {
             return previousLabel
         }
-        return bestName
+        return best.name
+    }
+
+    /// Speakers ordered by how much of the interval they hold, name breaking exact ties so the same
+    /// input always produces the same label — dictionary iteration order does not.
+    private static func rank(
+        _ overlapByName: [String: TimeInterval]
+    ) -> [(name: String, overlap: TimeInterval)] {
+        overlapByName
+            .map { (name: $0.key, overlap: $0.value) }
+            .sorted { $0.overlap == $1.overlap ? $0.name < $1.name : $0.overlap > $1.overlap }
     }
 
     /// A runner-up this close to the winner means the interval genuinely spans both speakers, so
@@ -288,7 +307,8 @@ enum SpeakerAlignment {
     ///
     /// Bounded to islands shorter than `maxSmoothedIslandDuration`: a two-second turn is somebody
     /// speaking, and overriding it would delete a real contribution. Only brief islands are treated
-    /// as diarization flapping. Protected segments are never rewritten.
+    /// as diarization flapping. Protected segments — pre-labelled ones and the parts of a segment
+    /// split at a speaker boundary — are never rewritten.
     private static func smoothIslands(
         _ segments: [TranscriptSegment],
         protectedIDs: Set<UUID>

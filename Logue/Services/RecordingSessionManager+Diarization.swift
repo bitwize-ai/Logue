@@ -45,7 +45,7 @@ extension RecordingSessionManager {
     func processDiarization(
         for meetingID: UUID,
         diarizer: DiarizationManager,
-        sessionStart: TimeInterval = 0
+        sessionStart: TimeInterval
     ) async {
         isDiarizing = true
         diarizationStage = "Identifying speakers…"
@@ -291,7 +291,7 @@ extension RecordingSessionManager {
     func mergeDiarizationResult(
         _ result: DiarizationResult,
         into meeting: MeetingNote,
-        sessionStart: TimeInterval = 0
+        sessionStart: TimeInterval
     ) -> (speakers: [Speaker], speakerSegments: [SpeakerSegment]) {
         var speakers = meeting.speakers
         var speakerSegments = meeting.speakerSegments
@@ -327,7 +327,7 @@ extension RecordingSessionManager {
     func applySortformerUpdates(
         _ updates: [SortformerSpeakerUpdate],
         for meetingID: UUID,
-        sessionStart: TimeInterval = 0
+        sessionStart: TimeInterval
     ) {
         let store = MeetingStore.shared
         guard let meeting = store.meetings.first(where: { $0.id == meetingID }) else { return }
