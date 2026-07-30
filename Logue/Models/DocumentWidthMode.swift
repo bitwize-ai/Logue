@@ -34,4 +34,17 @@ enum DocumentWidthMode: String, Codable, CaseIterable, Sendable {
         case .wide: "rectangle"
         }
     }
+
+    /// The app-wide default a newly created document starts at, from Settings → General.
+    ///
+    /// Read straight from `UserDefaults` rather than through `@AppStorage` because the
+    /// caller is `DocumentStore`, not a view. An unset or unrecognised value reads as
+    /// `normal`, which is also what an unset per-document value means.
+    static var appDefault: DocumentWidthMode {
+        guard let raw = UserDefaults.standard.string(
+            forKey: AppConstants.UserDefaultsKeys.defaultDocumentWidthMode
+        )
+        else { return .normal }
+        return DocumentWidthMode(rawValue: raw) ?? .normal
+    }
 }

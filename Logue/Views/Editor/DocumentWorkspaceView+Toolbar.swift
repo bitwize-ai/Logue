@@ -89,6 +89,11 @@ extension DocumentWorkspaceView {
             Label("Rename", systemImage: "pencil")
         }
         Button {
+            showIconPicker = true
+        } label: {
+            Label(doc.icon == nil ? "Add Icon" : "Change Icon", systemImage: "face.smiling")
+        }
+        Button {
             showTagPopover = true
         } label: {
             Label("Add Tag", systemImage: "tag")
@@ -98,6 +103,17 @@ extension DocumentWorkspaceView {
         } label: {
             Label("Save as Template", systemImage: "doc.on.doc")
         }
+        exportMenu(doc: doc)
+        Divider()
+        Button(role: .destructive) {
+            store.deleteDocument(id: doc.id)
+        } label: {
+            Label("Delete Document", systemImage: "trash")
+        }
+    }
+
+    /// Split out of `moreMenuItems` only to keep that function within the body-length limit.
+    private func exportMenu(doc: WritingDocument) -> some View {
         Menu("Export") {
             Button {
                 PDFExportService.export(document: doc)
@@ -110,12 +126,6 @@ extension DocumentWorkspaceView {
                 Label("Export as Markdown", systemImage: "doc.plaintext")
             }
         }
-        Divider()
-        Button(role: .destructive) {
-            store.deleteDocument(id: doc.id)
-        } label: {
-            Label("Delete Document", systemImage: "trash")
-        }
     }
 
     func moreOptionsMenu(doc: WritingDocument) -> some View {
@@ -127,6 +137,15 @@ extension DocumentWorkspaceView {
         .help("More options")
         .popover(isPresented: $showTagPopover, arrowEdge: .bottom) {
             tagPopoverContent(doc: doc)
+        }
+        .popover(isPresented: $showIconPicker, arrowEdge: .bottom) {
+            DocumentIconPicker(currentIcon: doc.icon) { icon in
+                var updated = doc
+                // Already sanitised by the picker; `icon` is never raw input here.
+                updated.icon = icon
+                store.updateDocument(updated)
+                showIconPicker = false
+            }
         }
         .alert("Rename Document", isPresented: $showRenameAlert) {
             TextField("Title", text: $renameText)

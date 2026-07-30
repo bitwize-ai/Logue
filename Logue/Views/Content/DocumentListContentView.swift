@@ -298,9 +298,7 @@ struct DocumentListContentView: View {
         } content: { _ in
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Image(systemName: "doc.text")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
+                    DocumentIconLabel(icon: doc.icon)
                     Spacer()
                     if doc.isPinned {
                         Image(systemName: "pin.fill")
@@ -383,9 +381,7 @@ struct DocumentListContentView: View {
             accessibilityHint: "Opens document",
             content: { _ in
                 HStack(spacing: 12) {
-                    Image(systemName: "doc.text")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
+                    DocumentIconLabel(icon: doc.icon)
                         .frame(width: 28)
 
                     VStack(alignment: .leading, spacing: 3) {

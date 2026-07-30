@@ -48,6 +48,12 @@ enum Block: Identifiable {
     case mermaid(id: BlockID, source: String)
     /// A display-math block, stored as LaTeX between `$$` fences.
     case math(id: BlockID, latex: String)
+    /// A GitHub-style alert: `> [!NOTE] optional title` followed by quoted body lines.
+    ///
+    /// `title` is the optional text after the marker, empty when there is none — the
+    /// distinction is kept rather than defaulted so serialization can reproduce the original
+    /// markdown exactly either way.
+    case callout(id: BlockID, kind: CalloutKind, title: String, body: String)
 
     var id: BlockID {
         switch self {
@@ -61,7 +67,8 @@ enum Block: Identifiable {
              let .table(id, _),
              let .divider(id),
              let .mermaid(id, _),
-             let .math(id, _):
+             let .math(id, _),
+             let .callout(id, _, _, _):
             id
         }
     }
@@ -76,6 +83,8 @@ enum Block: Identifiable {
                 text
             case let .codeBlock(_, _, code):
                 code
+            case let .callout(_, _, _, body):
+                body
             default:
                 nil
             }
@@ -91,6 +100,8 @@ enum Block: Identifiable {
                 self = .blockQuote(id: id, text: newValue)
             case let .codeBlock(id, language, _):
                 self = .codeBlock(id: id, language: language, code: newValue)
+            case let .callout(id, kind, title, _):
+                self = .callout(id: id, kind: kind, title: title, body: newValue)
             default:
                 break
             }
@@ -98,9 +109,12 @@ enum Block: Identifiable {
     }
 
     /// Whether this block type contains editable text directly (not via list items).
+    ///
+    /// A callout counts: its body is edited in place like a quote's. That also puts it in the
+    /// "Turn into" menu, which is what lets a callout be demoted back to a plain quote.
     var isTextBlock: Bool {
         switch self {
-        case .paragraph, .heading, .blockQuote, .codeBlock:
+        case .paragraph, .heading, .blockQuote, .codeBlock, .callout:
             true
         default:
             false
@@ -133,6 +147,8 @@ enum Block: Identifiable {
             source.isEmpty ? [] : [source]
         case let .math(_, latex):
             latex.isEmpty ? [] : [latex]
+        case let .callout(_, _, title, body):
+            [title, body].filter { !$0.isEmpty }
         default:
             []
         }
@@ -163,6 +179,9 @@ enum Block: Identifiable {
             source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case let .math(_, latex):
             latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case let .callout(_, _, title, body):
+            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 }
@@ -194,6 +213,8 @@ extension Block: Equatable {
             lid == rid && ls == rs
         case let (.math(lid, ll), .math(rid, rl)):
             lid == rid && ll == rl
+        case let (.callout(lid, lk, lt, lb), .callout(rid, rk, rt, rb)):
+            lid == rid && lk == rk && lt == rt && lb == rb
         default:
             false
         }
@@ -245,6 +266,12 @@ extension Block {
 
     static func emptyMath() -> Block {
         .math(id: UUID(), latex: "")
+    }
+
+    /// A new callout with no title, so the row shows the kind's default heading and the
+    /// serialized markdown is the bare `> [!NOTE]` form.
+    static func emptyCallout(kind: CalloutKind = .note) -> Block {
+        .callout(id: UUID(), kind: kind, title: "", body: "")
     }
 
     /// The first list item ID for list-type blocks, nil for others.
