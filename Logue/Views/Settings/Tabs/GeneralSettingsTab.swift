@@ -45,6 +45,7 @@ struct GeneralSettingsTab: View {
     @State private var showClearConfirmation = false
     @State private var showLoadConfirmation = false
     @State private var showWelcomeTour = false
+    @State private var showWhatsNew = false
 
     var body: some View {
         Form {
@@ -65,6 +66,12 @@ struct GeneralSettingsTab: View {
                     showWelcomeTour = true
                 } label: {
                     Label("Show welcome tour", systemImage: "sparkles")
+                }
+                .buttonStyle(.borderless)
+                Button {
+                    showWhatsNew = true
+                } label: {
+                    Label(UICopy.WhatsNew.settingsButton, systemImage: "gift")
                 }
                 .buttonStyle(.borderless)
             }
@@ -199,6 +206,9 @@ struct GeneralSettingsTab: View {
         .formStyle(.grouped)
         .sheet(isPresented: $showWelcomeTour) {
             OnboardingV2View()
+        }
+        .sheet(isPresented: $showWhatsNew, onDismiss: { WhatsNewGate.markSeen() }) {
+            WhatsNewView(mode: .latestNotes)
         }
         .onAppear { applyAppearance() }
         .confirmationDialog(

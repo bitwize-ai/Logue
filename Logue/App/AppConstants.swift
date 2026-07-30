@@ -23,6 +23,12 @@ enum AppConstants {
 
         static let hasClearedSeedData = "hasClearedSeedData"
 
+        /// Newest release whose notes the user has been shown, as a marketing version
+        /// string ("1.1.0"). Absent means either a fresh install or an install predating
+        /// this feature — `WhatsNewGate` tells those apart by whether onboarding is done,
+        /// and survives "Reset Application Data" so a reset does not replay the notes.
+        static let lastSeenWhatsNewVersion = "lastSeenWhatsNewVersion"
+
         static let documentSortOrder = "documentSortOrder"
         static let meetingSortOrder = "meetingSortOrder"
         static let actionItemSortOrder = "actionItemSortOrder"
@@ -256,6 +262,13 @@ enum AppConstants {
         static let suggestionHighlightCleanup: Duration = .milliseconds(500)
         /// Brief pause before auto-advancing onboarding page after model ready
         static let onboardingAutoAdvance: Duration = .milliseconds(800)
+
+        /// Gap between dismissing one sheet and presenting the next, used when the
+        /// feature tour follows onboarding.
+        ///
+        /// AppKit refuses a sheet while the previous one is still animating out and
+        /// fails silently, so the tour simply never appeared without this wait.
+        static let sheetHandoff: Duration = .milliseconds(600)
 
         /// -- Navigation --
         /// Brief yield to let sidebar expand before selecting a space

@@ -8,6 +8,8 @@ extension Notification.Name {
     static let openKeyboardShortcutsWindow = Notification.Name("openKeyboardShortcutsWindow")
     static let openResourceUsageWindow = Notification.Name("openResourceUsageWindow")
     static let openReportBugWindow = Notification.Name("openReportBugWindow")
+    /// Asked for by name from the Help menu, rather than offered after an update.
+    static let showWhatsNew = Notification.Name("showWhatsNew")
 
     /// Phase A: chat-first shortcuts.
     /// `Cmd+L` — start a new chat (and switch sidebar to Ask Logue).
@@ -96,6 +98,10 @@ struct LogueApp: App {
             }
 
             CommandGroup(replacing: .help) {
+                Button(UICopy.WhatsNew.menuItem) { HelpMenuActions.showWhatsNew() }
+
+                Divider()
+
                 Button("Documentation") { HelpMenuActions.openDocumentation() }
                 Button("Keyboard Shortcuts") { HelpMenuActions.openKeyboardShortcuts() }
 
@@ -141,10 +147,21 @@ struct LogueApp: App {
 
 // MARK: - Themed Root Views
 
+/// Identifies a pending What's New sheet.
+///
+/// The sheet is item-driven rather than boolean-driven because it carries which
+/// releases to show, and because two boolean `.sheet` modifiers on one view do not
+/// reliably both present.
+private struct WhatsNewSheetItem: Identifiable {
+    let id = UUID()
+    let mode: WhatsNewView.Mode
+}
+
 /// Wraps the main window, injects all environments, follows system appearance.
 private struct AppRootView: View {
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage(AppConstants.UserDefaultsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @Environment(\.openSettings) private var openSettings
+    @State private var whatsNew: WhatsNewSheetItem?
 
     var body: some View {
         MainWindowView()
@@ -155,6 +172,9 @@ private struct AppRootView: View {
                 SettingsNavigator.shared.pendingTab = .about
                 SettingsNavigator.shared.pendingCheckForUpdates = true
                 openSettings()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showWhatsNew)) { _ in
+                whatsNew = WhatsNewSheetItem(mode: .latestNotes)
             }
             .environment(ModelManager.shared)
             .environment(DocumentStore.shared)
@@ -176,6 +196,28 @@ private struct AppRootView: View {
                 }
                 .environment(ModelManager.shared)
                 .interactiveDismissDisabled()
+            }
+            .task {
+                // The tour belongs to a fresh install and waits for the wizard; only
+                // release notes are owed to someone who has been here before.
+                guard hasCompletedOnboarding else { return }
+                if case let .whatsNew(releases) = WhatsNewGate.presentationForLaunch() {
+                    whatsNew = WhatsNewSheetItem(mode: .whatsNew(releases))
+                }
+            }
+            .onChange(of: hasCompletedOnboarding) { wasCompleted, isCompleted in
+                // False to true happens once, when a new install finishes the wizard —
+                // nothing else sets this, and a data reset deliberately preserves it.
+                guard !wasCompleted, isCompleted else { return }
+                Task {
+                    // AppKit drops a sheet requested while the previous one is still
+                    // animating away, silently.
+                    try? await Task.sleep(for: AppConstants.Delays.sheetHandoff)
+                    whatsNew = WhatsNewSheetItem(mode: .discover)
+                }
+            }
+            .sheet(item: $whatsNew, onDismiss: { WhatsNewGate.markSeen() }) { item in
+                WhatsNewView(mode: item.mode)
             }
     }
 }

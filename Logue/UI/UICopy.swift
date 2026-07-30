@@ -172,4 +172,30 @@ enum UICopy {
         static let card3Subtitle = "Press ⌥Space from any app to ask Logue. You can change this in Settings."
         static let card3Continue = "Let's go"
     }
+
+    // MARK: - What's New / feature tour
+
+    enum WhatsNew {
+        /// Fresh install, after the onboarding wizard.
+        static let discoverTitle = "Discover Logue"
+        /// One or more releases the user has not seen yet.
+        static let updatedTitle = "What's New"
+
+        static let back = "Back"
+        static let next = "Continue"
+        static let skip = "Skip"
+        /// Last card of the first-run tour.
+        static let finishTour = "Start using Logue"
+        /// Last card of a release's notes.
+        static let finishNotes = "Done"
+
+        /// Badge on a notes card, so a user catching up across releases can tell
+        /// which version brought what.
+        static func versionBadge(_ version: String) -> String { "New in \(version)" }
+
+        /// Help menu. Named for the app because it sits among app-wide items.
+        static let menuItem = "What's New in Logue"
+        /// Settings → General, beside "Show welcome tour".
+        static let settingsButton = "What's New"
+    }
 }
