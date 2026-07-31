@@ -209,3 +209,20 @@ nothing to reconcile. Rules that follow from that, all of which have bitten:
 | `Engine/MarkdownDocumentFile.swift` | The `.md` file format for a document (frontmatter + body) |
 | `Engine/SpaceFile.swift` | `_space.md` — a folder's space identity, and the prose the user may add below it |
 | `App/AppConstants.swift` | All constants: `LLMDefaults`, `Audio`, `Diarization`, `Delays` |
+| `App/AppVersion.swift` | `CFBundleShortVersionString` parsed so releases can be ordered |
+| `Services/WhatsNewCatalog.swift` | What shipped in which release — one block per version |
+| `Services/WhatsNewGate.swift` | Whether a launch shows the tour, the release notes, or nothing |
+
+## Releasing
+
+Tagging `vX.Y.Z` runs `.github/workflows/release.yml`, which builds, signs, notarizes,
+publishes, and opens a PR updating `appcast.xml`. Two things must be done by hand first,
+because nothing can infer them:
+
+- **Move `## [Unreleased]` in `CHANGELOG.md` into `## [X.Y.Z] - <date>`.** The workflow
+  extracts that section for both Sparkle's release-notes pane and the GitHub Release body.
+  Forgetting falls back to `[Unreleased]`, which ships whatever is sitting there — including
+  things not in the tag.
+- **Append a matching block to `WhatsNewCatalog.releases`** for anything users should be
+  told about in-app. The catalog is bounded by the running build, so a block for a version
+  that has not been tagged stays invisible until it is.

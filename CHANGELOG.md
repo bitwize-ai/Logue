@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkbox — and named links between documents, editable in a side panel.
 - **Saved views and an inbox.** Save any filter as a sidebar entry, and triage unfiled
   documents with keyboard-driven bulk actions.
+- **What's New after an update.** Logue now says what a release changed, showing only the
+  versions you have not already seen — several at once if you skipped some. A first install
+  gets a short tour of what Logue does instead, after the setup wizard rather than inside it.
+  Both are reachable any time from Help → What's New and from Settings → General.
 - Initial public open-source release of Logue under the MIT License.
 
 ### Fixed
@@ -30,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Update prompts now say what the update contains. Sparkle's release-notes pane had been
+  empty since 1.0.0 because the appcast carried no description; it and the GitHub Release
+  body are now both generated from this file at tag time.
 - The README no longer claims release builds are sandboxed. They are not, and deliberately so:
   a sandboxed process cannot be an Accessibility API client, which disables the inline
   assistant, global hotkeys and Command Center. Hardened Runtime and notarization are on.
