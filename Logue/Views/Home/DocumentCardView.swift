@@ -57,9 +57,12 @@ struct DocumentCardView: View {
             // Footer
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Image(systemName: "doc.text.fill")
-                        .font(.caption2)
-                        .foregroundColor(AppThemeConstants.accent)
+                    DocumentIconLabel(
+                        icon: document.icon,
+                        fallbackSymbol: "doc.text.fill",
+                        font: .caption2,
+                        fallbackStyle: AppThemeConstants.accent
+                    )
                     Text(document.title)
                         .font(.subheadline.weight(.medium))
                         .lineLimit(1)

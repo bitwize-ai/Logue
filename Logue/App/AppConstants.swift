@@ -35,6 +35,12 @@ enum AppConstants {
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
+        /// Width mode newly created documents start at. Per-document values still win.
+        static let defaultDocumentWidthMode = "defaultDocumentWidthMode"
+        /// Which panes the main window shows — see `EditorLayoutMode`.
+        static let editorLayoutMode = "editorLayoutMode"
+        /// Language last chosen in a code block, used as the default for the next one.
+        static let lastCodeBlockLanguage = "lastCodeBlockLanguage"
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
         static let unwritableDocuments = "unwritableDocuments"

@@ -29,6 +29,8 @@ struct GeneralSettingsTab: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("editorFontSize") private var editorFontSize: Double = 15
+    @AppStorage(AppConstants.UserDefaultsKeys.defaultDocumentWidthMode) private var defaultDocumentWidthRaw =
+        DocumentWidthMode.normal.rawValue
     @AppStorage(AppConstants.UserDefaultsKeys.autoSortCheckedItems) private var autoSortCheckedItems = false
     @AppStorage(AppConstants.UserDefaultsKeys.groupByDate) private var groupByDate = true
     @AppStorage(AppConstants.UserDefaultsKeys.hasClearedSeedData) private var hasClearedSeedData = false
@@ -117,6 +119,18 @@ struct GeneralSettingsTab: View {
                 } maximumValueLabel: {
                     Text("24").font(.caption)
                 }
+
+                Picker("Default Document Width", selection: Binding(
+                    get: { DocumentWidthMode(rawValue: defaultDocumentWidthRaw) ?? .normal },
+                    set: { defaultDocumentWidthRaw = $0.rawValue }
+                )) {
+                    ForEach(DocumentWidthMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                Text("Applies to documents you create from now on. Existing documents keep their own width.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Toggle(isOn: $autoSortCheckedItems) {
                     VStack(alignment: .leading, spacing: 2) {

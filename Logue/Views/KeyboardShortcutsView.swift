@@ -9,6 +9,14 @@ struct KeyboardShortcutsView: View {
             ("Ask Logue", shortcutManager.commandCenterShortcut.displayString),
             ("New Document", "⌘N"),
             ("New Meeting", "⇧⌘N"),
+            ("Command Palette", "⌘K"),
+            ("Quick Open", "⌘P"),
+            ("Zoom In", "⌘+ or ⌘="),
+            ("Zoom Out", "⌘-"),
+            ("Actual Size", "⌘0"),
+            (EditorLayoutMode.editorOnly.label, "⌘1"),
+            (EditorLayoutMode.editorAndList.label, "⌘2"),
+            (EditorLayoutMode.allPanels.label, "⌘3"),
             ("Export Meeting", "⌘E"),
             ("Settings", "⌘,"),
             ("Close Window", "⌘W"),
@@ -17,15 +25,17 @@ struct KeyboardShortcutsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(shortcuts, id: \.label) { item in
-                ShortcutListRow(label: item.label, shortcut: item.shortcut)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(shortcuts, id: \.label) { item in
+                    ShortcutListRow(label: item.label, shortcut: item.shortcut)
+                }
             }
-
-            Spacer()
+            .padding(AppThemeConstants.paddingXXLarge)
         }
-        .padding(AppThemeConstants.paddingXXLarge)
-        .frame(width: 380, height: 320)
+        // Scrolls rather than growing the window: the list is long enough now that a fixed
+        // height would clip the last rows on a short display.
+        .frame(width: 400, height: 420)
     }
 }
 

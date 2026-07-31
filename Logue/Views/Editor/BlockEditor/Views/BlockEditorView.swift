@@ -59,7 +59,9 @@ struct BlockEditorView: View {
 
     // Extension-visible: +Reorder
     @State var multiBlockSelection = MultiBlockSelectionState()
-    @State private var blockFrames: [BlockID: CGRect] = [:]
+    /// Block frames for drag hit-testing. Held in a store rather than in view state because
+    /// they change on every frame of a scroll — see `BlockFrameStore`.
+    @State private var blockFrameStore = BlockFrameStore()
     @State private var dragMonitor: Any?
     @State private var mouseUpMonitor: Any?
     @State private var isDraggingAcrossBlocks = false
@@ -113,8 +115,8 @@ struct BlockEditorView: View {
                         .padding(.vertical, AppThemeConstants.editorVerticalInset)
                     }
                     .coordinateSpace(name: "editorScroll")
-                    .onPreferenceChange(BlockFramePreferenceKey.self) { newFrames in
-                        blockFrames = newFrames
+                    .onPreferenceChange(BlockFramePreferenceKey.self) { [blockFrameStore] newFrames in
+                        blockFrameStore.replaceAll(with: newFrames)
                     }
                     .onScrollPhaseChange { _, newPhase in
                         // Dismiss floating selection toolbar when scrolling starts
@@ -763,16 +765,7 @@ extension BlockEditorView {
 
     /// Hit-tests which block is at the given point (in content view coordinates).
     private func blockAtPoint(_ point: CGPoint) -> BlockID? {
-        // Convert content view point to scroll coordinate space
-        // blockFrames are in the "editorScroll" coordinate space
-        // We need to find which block's frame contains the point
-        for (blockID, frame) in blockFrames {
-            // Use a vertical-only hit test (ignore X since blocks span full width)
-            if point.y >= frame.minY, point.y <= frame.maxY {
-                return blockID
-            }
-        }
-        return nil
+        blockFrameStore.blockID(at: point)
     }
 
     /// Selects all blocks in the contiguous range between two block IDs.

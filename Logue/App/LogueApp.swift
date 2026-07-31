@@ -11,6 +11,11 @@ extension Notification.Name {
     /// Asked for by name from the Help menu, rather than offered after an update.
     static let showWhatsNew = Notification.Name("showWhatsNew")
 
+    /// `Cmd+P` — open quick-open. A menu item rather than only an in-window key handler,
+    /// because a main-menu key equivalent fires whatever holds focus inside the window,
+    /// including the editor's text view.
+    static let openQuickOpenPalette = Notification.Name("openQuickOpenPalette")
+
     /// Phase A: chat-first shortcuts.
     /// `Cmd+L` — start a new chat (and switch sidebar to Ask Logue).
     static let chatNewConversation = Notification.Name("chatNewConversation")
@@ -22,10 +27,10 @@ extension Notification.Name {
 struct LogueApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    /// Editor zoom multiplier, shared with the editor through AppStorage so both
-    /// scenes stay in sync without a separate observable.
-    @AppStorage(AppConstants.UserDefaultsKeys.editorZoomScale) private var zoomScale: Double =
-        AppConstants.Editor.defaultZoom
+    /// Which panes the main window shows. Shared with `MainWindowView` through the same
+    /// AppStorage key, which is also what persists the choice across launches.
+    @AppStorage(AppConstants.UserDefaultsKeys.editorLayoutMode) private var layoutModeRaw =
+        EditorLayoutMode.allPanels.rawValue
 
     init() {
         // Must run before any store singleton resolves its Application Support
@@ -66,6 +71,13 @@ struct LogueApp: App {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
 
+            CommandGroup(after: .newItem) {
+                Button("Quick Open…") {
+                    NotificationCenter.default.post(name: .openQuickOpenPalette, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: .command)
+            }
+
             CommandGroup(after: .importExport) {
                 Button("Export Meeting…") {
                     NotificationCenter.default.post(name: .openMeetingExportPanel, object: nil)
@@ -88,12 +100,33 @@ struct LogueApp: App {
             }
 
             CommandGroup(after: .toolbar) {
-                Button("Zoom In") { applyZoom { $0.zoomIn() } }
+                // Only `⌘+` is bound here, and a key equivalent of `+` matches nothing but
+                // `⌘+` itself — measured, not assumed. On any layout where `+` needs Shift
+                // that is a chord the user may never reach, so `⌘=` — the unshifted key in
+                // the same physical position — is bound in `MainWindowView` instead. Not as
+                // a second menu item, because SwiftUI allows one shortcut per button and a
+                // second button would list "Zoom In" twice in the View menu.
+                Button("Zoom In") { EditorZoom.mutatePersisted { $0.zoomIn() } }
                     .keyboardShortcut("+", modifiers: .command)
-                Button("Zoom Out") { applyZoom { $0.zoomOut() } }
+                Button("Zoom Out") { EditorZoom.mutatePersisted { $0.zoomOut() } }
                     .keyboardShortcut("-", modifiers: .command)
-                Button("Actual Size") { applyZoom { $0.reset() } }
+                Button("Actual Size") { EditorZoom.mutatePersisted { $0.reset() } }
                     .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
+                // ⌘1 / ⌘2 / ⌘3. Each entry resolves its mode through
+                // `EditorLayoutMode(shortcutNumber:)` rather than restating the pairing here,
+                // so the menu cannot disagree with the model about which key means which layout.
+                ForEach(1 ... EditorLayoutMode.allCases.count, id: \.self) { number in
+                    if let mode = EditorLayoutMode(shortcutNumber: number),
+                       let key = "\(number)".first
+                    {
+                        Button(mode.label) { layoutModeRaw = mode.rawValue }
+                            .keyboardShortcut(KeyEquivalent(key), modifiers: .command)
+                    }
+                }
+
                 Divider()
             }
 
@@ -134,14 +167,6 @@ struct LogueApp: App {
         Settings {
             SettingsRootView()
         }
-    }
-
-    /// Applies a zoom mutation through `EditorZoom` so clamping lives in one place.
-    private func applyZoom(_ mutate: (inout EditorZoom) -> Void) {
-        var zoom = EditorZoom()
-        zoom.scale = zoomScale
-        mutate(&zoom)
-        zoomScale = zoom.scale
     }
 }
 
