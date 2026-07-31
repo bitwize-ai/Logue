@@ -77,7 +77,9 @@ enum WhatsNewGate {
     /// should cost a second showing, not swallow the release notes permanently.
     static func markSeen(upTo version: AppVersion? = AppVersion.current, defaults: UserDefaults = .standard) {
         guard let version else { return }
-        if let stored = storedVersion(in: defaults), stored >= version { return }
+        if let stored = storedVersion(in: defaults), stored >= version {
+            return
+        }
         defaults.set(version.description, forKey: AppConstants.UserDefaultsKeys.lastSeenWhatsNewVersion)
     }
 

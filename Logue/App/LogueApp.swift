@@ -241,9 +241,11 @@ private struct AppRootView: View {
                     whatsNew = WhatsNewSheetItem(mode: .discover)
                 }
             }
-            .sheet(item: $whatsNew, onDismiss: { WhatsNewGate.markSeen() }) { item in
-                WhatsNewView(mode: item.mode)
-            }
+            .sheet(
+                item: $whatsNew,
+                onDismiss: { WhatsNewGate.markSeen() },
+                content: { item in WhatsNewView(mode: item.mode) }
+            )
     }
 }
 

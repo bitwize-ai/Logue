@@ -80,7 +80,9 @@ struct WhatsNewView: View {
         return releases.first.map { "Version \($0.version)" }
     }
 
-    private var isLastPage: Bool { index >= pages.count - 1 }
+    private var isLastPage: Bool {
+        index >= pages.count - 1
+    }
 
     // MARK: - Body
 
@@ -110,7 +112,11 @@ struct WhatsNewView: View {
         .background(.regularMaterial)
         // An empty catalog would leave a blank sheet with no way to read it as anything
         // other than a bug. Nothing to say means nothing to show.
-        .onAppear { if pages.isEmpty { dismiss() } }
+        .onAppear {
+            if pages.isEmpty {
+                dismiss()
+            }
+        }
     }
 
     // MARK: - Header
@@ -136,7 +142,6 @@ struct WhatsNewView: View {
 
     // MARK: - Card
 
-    @ViewBuilder
     private func card(_ page: Page) -> some View {
         VStack(spacing: 16) {
             Spacer(minLength: 0)

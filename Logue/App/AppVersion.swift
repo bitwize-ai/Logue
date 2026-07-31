@@ -51,13 +51,17 @@ struct AppVersion: Comparable, Equatable, Sendable, CustomStringConvertible {
         (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)
     }
 
-    var description: String { "\(major).\(minor).\(patch)" }
+    var description: String {
+        "\(major).\(minor).\(patch)"
+    }
 
     // MARK: - This build
 
     /// The running app's marketing version, or nil if Info.plist carries something
     /// unparseable. Callers that gate behaviour must treat nil as "do nothing".
-    static var current: AppVersion? { AppVersion(currentString) }
+    static var current: AppVersion? {
+        AppVersion(currentString)
+    }
 
     /// The raw string, for display. Empty when absent — callers show it verbatim, and
     /// an empty version reads better in an About pane than a fabricated "0.0.0".

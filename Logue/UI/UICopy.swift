@@ -191,7 +191,9 @@ enum UICopy {
 
         /// Badge on a notes card, so a user catching up across releases can tell
         /// which version brought what.
-        static func versionBadge(_ version: String) -> String { "New in \(version)" }
+        static func versionBadge(_ version: String) -> String {
+            "New in \(version)"
+        }
 
         /// Help menu. Named for the app because it sits among app-wide items.
         static let menuItem = "What's New in Logue"
