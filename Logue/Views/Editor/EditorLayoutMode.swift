@@ -30,4 +30,38 @@ enum EditorLayoutMode: String, CaseIterable, Codable, Sendable {
         case .allPanels: "All Panels"
         }
     }
+
+    /// The mode a split-view visibility report should store, or `nil` to leave the mode alone.
+    ///
+    /// Only a collapse is inferred, and that asymmetry is the whole point. SwiftUI echoes the
+    /// new visibility back through its `columnVisibility` binding immediately after a menu item
+    /// sets a mode, and the echo arrives while the binding still reads the previous mode —
+    /// `@AppStorage` caches, so a setter cannot see the write it is echoing. A rule that tried
+    /// to name the mode for a *re-appearing* list therefore read the old mode's
+    /// `showsInspector`, which is `false` in editor-only, and turned every ⌘3 pressed from
+    /// editor-only into editor-and-list. Nothing needs that direction inferred: every path that
+    /// shows the list again already names the mode it wants.
+    ///
+    /// A consequence worth stating, because it is chosen rather than accidental: dragging the
+    /// sidebar shut while in `allPanels` lands on `editorOnly`, which hides the inspector too.
+    /// There is no editor-plus-inspector mode to land on — the three modes are a progression, so
+    /// "no list" can only mean the narrowest one. Someone dragging the divider for more room may
+    /// not expect to lose the inspector, and the honest fix for that is a fourth case rather than
+    /// a special case here. ⌘3 brings both back in one keystroke.
+    static func modeAfterVisibilityReport(listIsVisible: Bool) -> EditorLayoutMode? {
+        listIsVisible ? nil : .editorOnly
+    }
+
+    /// The persisted layout, read straight from `UserDefaults`.
+    ///
+    /// Exists so a `@State` property can be initialised from the stored mode — a property
+    /// initialiser cannot read another wrapper's value. Views that need to *react* to the
+    /// mode changing observe the `@AppStorage` key instead.
+    static var stored: EditorLayoutMode {
+        guard let raw = UserDefaults.standard.string(
+            forKey: AppConstants.UserDefaultsKeys.editorLayoutMode
+        )
+        else { return .allPanels }
+        return EditorLayoutMode(rawValue: raw) ?? .allPanels
+    }
 }

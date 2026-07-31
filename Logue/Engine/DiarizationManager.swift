@@ -396,95 +396,7 @@ final class DiarizationManager {
 
     // MARK: - Batch Fallback (used when Sortformer unavailable)
 
-    /// Start periodic batch processing (only used in fallback mode).
-    func startPeriodicProcessing(onUpdate: @escaping (DiarizationResult) -> Void) {
-        guard !isStreamingActive else { return } // Sortformer handles this
-
-        // Legacy periodic processing for batch fallback
-        let periodicTask = Task { [weak self] in
-            do { try await Task.sleep(for: AppConstants.Delays.batchDiarizationInitialDelay) } catch { return }
-            var interval: Duration = .seconds(15)
-            let maxInterval: Duration = .seconds(120)
-
-            while !Task.isCancelled {
-                if let result = await self?.processIncrementalChunk() {
-                    onUpdate(result)
-                }
-                interval = min(interval + .seconds(15), maxInterval)
-                do { try await Task.sleep(for: interval) } catch { break }
-            }
-        }
-        self.periodicTask = periodicTask
-    }
-
-    private var periodicTask: Task<Void, Never>?
-    private var lastProcessedSampleIndex: Int = 0
-    private var lastProcessedTime: TimeInterval = 0
-
-    func stopPeriodicProcessing() {
-        periodicTask?.cancel()
-        periodicTask = nil
-    }
-
-    private func processIncrementalChunk() async -> DiarizationResult? {
-        guard let diarizer = batchDiarizer else { return nil }
-        let currentCount = audioBuffer.count
-        let newSampleCount = currentCount - lastProcessedSampleIndex
-        let minChunkSamples = Int(sampleRate * 15)
-        guard newSampleCount >= minChunkSamples else { return nil }
-
-        let startIdx = lastProcessedSampleIndex
-        let chunkSamples = Array(audioBuffer[startIdx ..< currentCount])
-        let sr = Int(sampleRate)
-        let startTime = lastProcessedTime
-
-        lastProcessedSampleIndex = currentCount
-        lastProcessedTime += Double(newSampleCount) / Double(sampleRate)
-
-        let capturedLogger = logger
-        let result: DiarizationResult? = await Task.detached {
-            do {
-                return await try diarizer.performCompleteDiarization(chunkSamples, sampleRate: sr, atTime: startTime)
-            } catch {
-                capturedLogger.error("Incremental diarization failed: \(error.localizedDescription, privacy: .public)")
-                return nil
-            }
-        }.value
-
-        guard !Task.isCancelled, let result else { return nil }
-        return result
-    }
-
-    func processRemainingChunk() async -> DiarizationResult? {
-        guard let diarizer = batchDiarizer else { return nil }
-        let currentCount = audioBuffer.count
-        let newSampleCount = currentCount - lastProcessedSampleIndex
-        guard newSampleCount > 0 else { return nil }
-
-        let startIdx = lastProcessedSampleIndex
-        let chunkSamples = Array(audioBuffer[startIdx ..< currentCount])
-        let sr = Int(sampleRate)
-        let startTime = lastProcessedTime
-
-        lastProcessedSampleIndex = currentCount
-        lastProcessedTime += Double(newSampleCount) / Double(sampleRate)
-
-        let capturedLogger = logger
-        let result: DiarizationResult? = await Task.detached {
-            do {
-                return await try diarizer.performCompleteDiarization(chunkSamples, sampleRate: sr, atTime: startTime)
-            } catch {
-                capturedLogger.error("Remaining chunk diarization failed: \(error.localizedDescription, privacy: .public)")
-                return nil
-            }
-        }.value
-
-        guard let result else { return nil }
-        return result
-    }
-
     func finishProcessing() async -> DiarizationResult? {
-        stopPeriodicProcessing()
         guard isEnabled, isInitialized, !audioBuffer.isEmpty else { return nil }
         guard let diarizer = batchDiarizer else {
             audioBuffer.removeAll(keepingCapacity: false)
@@ -554,14 +466,11 @@ final class DiarizationManager {
     // MARK: - Reset
 
     func reset() {
-        stopPeriodicProcessing()
         sortformerDiarizer?.reset()
         audioBuffer.removeAll()
         lastError = nil
         resampler = nil
         resamplerInputFormat = nil
-        lastProcessedSampleIndex = 0
-        lastProcessedTime = 0
         samplesAccumulatedSinceLastProcess = 0
     }
 }

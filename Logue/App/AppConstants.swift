@@ -29,6 +29,12 @@ enum AppConstants {
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
+        /// Width mode newly created documents start at. Per-document values still win.
+        static let defaultDocumentWidthMode = "defaultDocumentWidthMode"
+        /// Which panes the main window shows — see `EditorLayoutMode`.
+        static let editorLayoutMode = "editorLayoutMode"
+        /// Language last chosen in a code block, used as the default for the next one.
+        static let lastCodeBlockLanguage = "lastCodeBlockLanguage"
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
         static let unwritableDocuments = "unwritableDocuments"
@@ -143,6 +149,44 @@ enum AppConstants {
         static let vadSpeechPadding: TimeInterval = 0.25
         /// VAD: hysteresis offset — once speech starts, stays triggered until prob drops this far below threshold
         static let vadNegativeThresholdOffset: Float = 0.25
+
+        // MARK: Timeline normalization
+
+        /// Sortformer segments shorter than this are treated as fragments and discarded
+        static let minSpeakerSegmentDuration: TimeInterval = 0.7
+        /// Consecutive segments from the same speaker within this gap are merged into one
+        static let sameSpeakerMergeGap: TimeInterval = 0.25
+        /// An A-B-A speaker alternation completing within this window is collapsed to the dominant speaker
+        static let alternationWindowSeconds: TimeInterval = 0.8
+        /// Largest silence left between normalized speaker segments before it is closed up
+        static let timelineMaxGap: TimeInterval = 0.5
+        /// Widest silence worth closing at all. Beyond this the pause is real conversation rhythm,
+        /// not model jitter, and pulling the next speaker back over it would hand them time they
+        /// were audibly not speaking for — which alignment would then read as confident overlap for
+        /// anything transcribed in that window. Long silences are left as silence.
+        static let maxClosableGap: TimeInterval = 2.0
+
+        // MARK: Transcript alignment
+
+        /// Transcript segments longer than this are chunked for weighted majority voting
+        static let chunkThresholdSeconds: TimeInterval = 2.0
+        /// Width of each voting chunk when a long transcript segment is subdivided
+        static let chunkDurationSeconds: TimeInterval = 1.5
+        /// A runner-up speaker holding at least this fraction of the winner's overlap makes the
+        /// segment too close to call, so the previous segment's speaker is preferred instead
+        static let ambiguityOverlapRatio: Double = 0.70
+        /// Nearest-speaker fallback window used only when nothing overlaps the segment at all.
+        /// Deliberately far tighter than `speakerLabelTolerance`, which governs text gathering.
+        static let labelFallbackTolerance: TimeInterval = 0.5
+        /// Minimum overlap that makes a second speaker worth splitting a transcript segment for
+        static let minSplitOverlap: TimeInterval = 0.15
+        /// Split parts shorter than this are not worth creating
+        static let minSplitPartDuration: TimeInterval = 0.4
+        /// Upper bound on the parts a single transcript segment may be split into
+        static let maxSplitParts = 5
+        /// A single-segment speaker island longer than this is a real turn, not flapping,
+        /// so smoothing leaves it alone
+        static let maxSmoothedIslandDuration: TimeInterval = 0.8
     }
 
     // A-N13: Default title strings
@@ -252,8 +296,9 @@ enum AppConstants {
         /// -- Diarization --
         /// Polling interval while waiting for Sortformer processing lock to release
         static let sortformerPollInterval: Duration = .milliseconds(10)
-        /// Initial delay before starting periodic batch diarization
-        static let batchDiarizationInitialDelay: Duration = .seconds(15)
+        /// How long stop-recording waits for diarization models to finish initializing before
+        /// giving up and letting post-recording AI proceed without Sortformer
+        static let diarizationInitStopWait: Duration = .seconds(10)
 
         /// -- Audio Device Retry (exponential backoff) --
         /// Initial retry delay for AudioDeviceStart (doubles each attempt)

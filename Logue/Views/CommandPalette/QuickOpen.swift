@@ -14,6 +14,37 @@ struct QuickOpenItem: Identifiable, Equatable, Sendable {
     let kind: Kind
 }
 
+// MARK: - Candidates
+
+extension QuickOpenItem {
+    /// Everything quick-open can jump to, most recently modified first.
+    ///
+    /// A function over plain arrays rather than something reading the stores, so the three rules
+    /// that matter here are testable without a `@MainActor` store: trashed items are excluded,
+    /// an untitled item still gets a name to match against, and the order is recency. That last
+    /// one is not cosmetic — `QuickOpenMatcher` is stable within a rank, so the order it is
+    /// handed is exactly what breaks ties between equally good matches.
+    static func candidates(documents: [WritingDocument], meetings: [MeetingNote]) -> [QuickOpenItem] {
+        let documentEntries = documents.lazy.filter { !$0.isTrashed }.map {
+            (modifiedAt: $0.modifiedAt, item: QuickOpenItem(
+                id: $0.id,
+                title: $0.title.isEmpty ? AppConstants.defaultDocumentTitle : $0.title,
+                kind: .document
+            ))
+        }
+        let meetingEntries = meetings.lazy.filter { !$0.isTrashed }.map {
+            (modifiedAt: $0.modifiedAt, item: QuickOpenItem(
+                id: $0.id,
+                title: $0.title.isEmpty ? AppConstants.defaultMeetingTitle : $0.title,
+                kind: .meeting
+            ))
+        }
+        return (Array(documentEntries) + Array(meetingEntries))
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .map(\.item)
+    }
+}
+
 // MARK: - Matcher
 
 /// Ranks quick-open candidates by title.

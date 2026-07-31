@@ -178,6 +178,12 @@ final class DocumentSearchState {
             case let .math(id, latex):
                 results += findMatches(in: latex, blockID: id, itemID: nil, options: searchOptions)
 
+            case let .callout(id, _, title, body):
+                // Title as well as body: the title is authored text, and find-in-document
+                // that skipped it would look broken to whoever wrote it.
+                results += findMatches(in: title, blockID: id, itemID: nil, options: searchOptions)
+                results += findMatches(in: body, blockID: id, itemID: nil, options: searchOptions)
+
             case .table, .divider:
                 break
             }
