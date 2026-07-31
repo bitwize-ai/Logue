@@ -47,7 +47,7 @@ struct WhatsNewView: View {
     private var pages: [Page] {
         switch mode {
         case .discover:
-            return WhatsNewCatalog.tourFeatures.map {
+            return WhatsNewCatalog.tour.map {
                 Page(id: $0.id, feature: $0, versionBadge: nil)
             }
         case let .whatsNew(releases):

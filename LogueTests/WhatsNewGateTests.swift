@@ -64,28 +64,28 @@ struct WhatsNewGateTests {
 
     // MARK: - Bootstrap (installs predating this feature)
 
-    @Test("An onboarded user with no stamp gets the delta, not the tour")
-    func unstampedOnboardedUserGetsDelta() {
-        // Someone who has run 1.0.0 for months. The tour would insult them; the notes
-        // for what 1.1.0 added are the point.
+    @Test("An onboarded user with no stamp is told everything, not nothing")
+    func unstampedOnboardedUserSeesEverything() {
+        // What's New did not exist in 1.0.0, so an install from then has been shown
+        // none of it. Assuming otherwise would silently skip every existing user.
         let presentation = WhatsNewGate.presentation(
             current: version(1, 1, 0),
             lastSeen: nil,
             hasCompletedOnboarding: true,
             releases: catalog
         )
-        #expect(versions(of: presentation) == [version(1, 1, 0)])
+        #expect(versions(of: presentation) == [version(1, 1, 0), version(1, 0, 0)])
     }
 
-    @Test("An onboarded user with no stamp on the oldest release sees nothing")
-    func unstampedOnboardedUserOnOldestReleaseSeesNothing() {
+    @Test("An unstamped user on the oldest release still sees that release")
+    func unstampedOnboardedUserOnOldestReleaseSeesIt() {
         let presentation = WhatsNewGate.presentation(
             current: version(1, 0, 0),
             lastSeen: nil,
             hasCompletedOnboarding: true,
             releases: catalog
         )
-        #expect(presentation == .none)
+        #expect(versions(of: presentation) == [version(1, 0, 0)])
     }
 
     // MARK: - Upgrades
@@ -217,38 +217,33 @@ struct WhatsNewGateTests {
         #expect(Set(versions.map(\.description)).count == versions.count)
     }
 
-    @Test("The oldest catalogued release is 1.0.0")
-    func catalogStartsAtFirstShippedRelease() {
-        // The gate uses this as the baseline for users who upgrade from before the
-        // feature existed. Dropping the 1.0.0 block would silently shift it and start
-        // announcing 1.0.0 features to people who have had them all along.
-        #expect(WhatsNewCatalog.releases.first?.version == AppVersion(major: 1, minor: 0, patch: 0))
-    }
-
     @Test("Every feature has a unique id and something to say")
     func catalogFeaturesAreWellFormed() {
-        let features = WhatsNewCatalog.releases.flatMap(\.features)
-        #expect(!features.isEmpty)
-        #expect(Set(features.map(\.id)).count == features.count)
-        for feature in features {
-            #expect(!feature.title.isEmpty)
-            #expect(!feature.detail.isEmpty)
-            #expect(!feature.symbol.isEmpty)
+        for features in WhatsNewCatalog.releases.map(\.features) + [WhatsNewCatalog.tour] {
+            #expect(!features.isEmpty)
+            // Within one list, a repeated feature would show the same card twice.
+            #expect(Set(features.map(\.id)).count == features.count)
+            for feature in features {
+                #expect(!feature.title.isEmpty)
+                #expect(!feature.detail.isEmpty)
+                #expect(!feature.symbol.isEmpty)
+            }
         }
     }
 
     @Test("The first-run tour is a highlights reel, not the whole catalog")
     func tourIsBounded() {
-        let tour = WhatsNewCatalog.tourFeatures
+        let tour = WhatsNewCatalog.tour
         #expect(!tour.isEmpty)
         // A fresh install has just finished the onboarding wizard; a long second
         // slideshow is how a tour gets skipped.
-        #expect(tour.count <= 8)
+        #expect(tour.count <= 6)
     }
 
     @Test("Every named screenshot is actually in the bundle")
     func catalogScreenshotsResolve() {
-        let features = WhatsNewCatalog.releases.flatMap(\.features).filter { $0.screenshot != nil }
+        let features = (WhatsNewCatalog.releases.flatMap(\.features) + WhatsNewCatalog.tour)
+            .filter { $0.screenshot != nil }
         #expect(!features.isEmpty)
         for feature in features {
             // A typo here degrades silently to a symbol-only card, so it needs a test.

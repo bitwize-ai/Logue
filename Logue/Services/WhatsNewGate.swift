@@ -42,15 +42,17 @@ enum WhatsNewGate {
         // waits for the wizard to finish — the caller sequences that, not this.
         guard hasCompletedOnboarding else { return .discoverTour }
 
-        // Onboarded but unstamped is an install from before this feature existed. Its
-        // baseline is the oldest release in the catalog, so the user gets what has
-        // changed since — not a tour of features they have been using for months.
-        guard let baseline = lastSeen ?? releases.first?.version else { return .none }
-
         let unseen = releases
-            // The upper bound matters on development builds, where the catalog routinely
-            // describes a version MARKETING_VERSION has not been bumped to yet.
-            .filter { $0.version > baseline && $0.version <= current }
+            .filter { release in
+                // The upper bound matters on development builds, where the catalog
+                // routinely describes a version MARKETING_VERSION has not been bumped to.
+                guard release.version <= current else { return false }
+                // No stamp means nothing has ever been announced to this user — What's
+                // New did not exist in 1.0.0, so an install from then has seen none of
+                // it. That is "seen nothing", not "seen everything up to now".
+                guard let lastSeen else { return true }
+                return release.version > lastSeen
+            }
             .sorted { $0.version > $1.version }
 
         return unseen.isEmpty ? .none : .whatsNew(unseen)
