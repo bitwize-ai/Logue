@@ -37,9 +37,7 @@ struct LongRecordingE2ETests {
 
         let totalSeconds = fixture.hours * 3600
         let capacitySeconds = Double(
-            AudioTimelineMixer.capacity(
-                forPhysicalMemory: ProcessInfo.processInfo.physicalMemory, sampleRate: 16000
-            )
+            AudioTimelineMixer.capacity(forPhysicalMemory: ProcessInfo.processInfo.physicalMemory)
         ) / 16000
 
         print(String(

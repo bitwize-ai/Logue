@@ -38,20 +38,23 @@ struct AudioTimelineMixer {
 
     // MARK: - Capacity
 
-    /// Timeline capacity for a machine with this much physical memory.
+    /// How many samples a machine with this much physical memory may hold.
     ///
     /// The buffer is held as Float32 and handed whole to Sortformer and Parakeet, so its ceiling is
     /// a memory question rather than a duration one — a fixed number of minutes is either wasteful
     /// on a large machine or reckless on a small one. A sixteenth of physical memory, floored and
     /// capped so neither end runs away, works out at roughly 2.3 hours on 8 GB and 4.6 hours from
-    /// 16 GB up.
-    static func capacity(forPhysicalMemory physicalMemory: UInt64, sampleRate: Double) -> Int {
+    /// 16 GB up at the 16 kHz the models take.
+    ///
+    /// The result is a count of samples, so the sample rate does not enter into it — how many fit in
+    /// a byte budget is the same number whatever they are played back at. It decides how many
+    /// *seconds* that is, which is the caller's business.
+    static func capacity(forPhysicalMemory physicalMemory: UInt64) -> Int {
         let share = physicalMemory / AppConstants.Diarization.audioBufferMemoryDivisor
         let bytes = min(
             max(share, AppConstants.Diarization.audioBufferMinBytes),
             AppConstants.Diarization.audioBufferMaxBytes
         )
-        guard sampleRate > 0 else { return 0 }
         return Int(bytes / UInt64(MemoryLayout<Float>.size))
     }
 

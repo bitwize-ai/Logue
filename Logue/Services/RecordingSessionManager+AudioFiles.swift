@@ -18,56 +18,101 @@ extension RecordingSessionManager {
         var systemPlacements: [CaptureSegmentTimeline.Placement] = []
         var micURL: URL?
         var micPlacements: [CaptureSegmentTimeline.Placement] = []
+
+        var isEmpty: Bool {
+            systemURL == nil && micURL == nil
+        }
+
+        /// The one source that recorded, with its placements, or nil when both or neither did.
+        var soleSource: (url: URL, placements: [CaptureSegmentTimeline.Placement])? {
+            switch (systemURL, micURL) {
+            case let (url?, nil): (url, systemPlacements)
+            case let (nil, url?): (url, micPlacements)
+            default: nil
+            }
+        }
+
+        /// Whether a raw file can be saved as it is, or whether it has to be laid out first.
+        ///
+        /// Untouched only when a single source ran once from the start of the meeting: then its file
+        /// already *is* the timeline. Two sources, a late join or a mute all mean it is not.
+        var needsComposing: Bool {
+            guard let sole = soleSource else { return !isEmpty }
+            return !CaptureSegmentTimeline.fileMatchesSessionTimeline(sole.placements)
+        }
+    }
+
+    /// What was saved, and whether its timings describe the meeting.
+    ///
+    /// The distinction is the whole point of returning this rather than letting callers work it out:
+    /// the long-recording pass reads this file back and stamps its results over the live transcript,
+    /// which is only safe when the file is the meeting's timeline. Working that out after the fact —
+    /// from a device clock, or from the file's length — gets it wrong precisely in the cases that
+    /// produce a misaligned file, because those are the same cases that disturb the clock.
+    enum SavedRecording {
+        /// The file is the meeting's timeline. Timings taken from it describe the meeting.
+        case onSessionTimeline(URL)
+        /// Audio was saved, but laying it out failed, so its timings may not line up.
+        case rawFallback(URL)
+        /// Nothing was saved.
+        case none
+
+        var url: URL? {
+            switch self {
+            case let .onSessionTimeline(url), let .rawFallback(url): url
+            case .none: nil
+            }
+        }
+
+        /// Whether the post-recording pass may treat this file as the whole session.
+        var describesSessionTimeline: Bool {
+            if case .onSessionTimeline = self {
+                return true
+            }
+            return false
+        }
     }
 
     // MARK: - Persisting
 
-    /// Saves the session's audio for playback on the meeting's own timeline.
-    ///
-    /// A single source that ran once from the start of the meeting is moved into place untouched —
-    /// the common case, and the only one where the raw file already is the timeline. Everything else
-    /// is composed, including a single source, because a mute or a late join means it is not.
-    func persistRecordingAudio(sources: CaptureSources, meetingID: UUID) async {
-        let system = sources.systemURL
-        let mic = sources.micURL
+    /// Saves the session's audio for playback on the meeting's own timeline, and reports whether it
+    /// managed to.
+    @discardableResult
+    func persistRecordingAudio(sources: CaptureSources, meetingID: UUID) async -> SavedRecording {
+        guard !sources.isEmpty else { return .none }
 
-        // Untouched only when there is one source and its file already lines up with the meeting.
-        let singleSource: (url: URL, placements: [CaptureSegmentTimeline.Placement])? =
-            switch (system, mic) {
-            case let (url?, nil): (url, sources.systemPlacements)
-            case let (nil, url?): (url, sources.micPlacements)
-            default: nil
-            }
-        if let singleSource, CaptureSegmentTimeline.fileMatchesSessionTimeline(singleSource.placements) {
-            moveIntoPlace(singleSource.url, meetingID: meetingID)
-            return
+        if let sole = sources.soleSource, !sources.needsComposing {
+            // The common case: one source, running throughout. Its file is already the timeline.
+            return moveIntoPlace(sole.url, meetingID: meetingID, describesTimeline: true)
         }
 
         if let composed = await composeRecording(sources: sources, meetingID: meetingID) {
             MeetingStore.shared.setAudioFileURL(composed, for: meetingID)
-            if let system, system != composed {
+            if let system = sources.systemURL, system != composed {
                 removeTemporary(system)
             }
             audioRecorder.clearTemporaryFile()
-            return
+            return .onSessionTimeline(composed)
         }
 
-        // Composition failed. Save a raw file rather than nothing — its timing may be off where a
-        // source was muted, but the audio itself is all there.
-        logger.warning("Audio composition failed — saving the raw capture instead")
-        if let url = system ?? mic {
-            moveIntoPlace(url, meetingID: meetingID)
-        }
+        // Composition failed. Save a raw file rather than nothing — the audio is all there, and it
+        // is better to have it misaligned than not at all. Reported as such so nothing downstream
+        // reads timings off it.
+        logger.warning("Audio composition failed — saving the raw capture, whose timings may not line up")
+        guard let url = sources.systemURL ?? sources.micURL else { return .none }
+        return moveIntoPlace(url, meetingID: meetingID, describesTimeline: false)
     }
 
-    private func moveIntoPlace(_ url: URL, meetingID: UUID) {
+    private func moveIntoPlace(_ url: URL, meetingID: UUID, describesTimeline: Bool) -> SavedRecording {
+        defer { audioRecorder.clearTemporaryFile() }
         do {
             let dest = try moveRecordingFile(from: url, meetingID: meetingID)
             MeetingStore.shared.setAudioFileURL(dest, for: meetingID)
+            return describesTimeline ? .onSessionTimeline(dest) : .rawFallback(dest)
         } catch {
             logger.error("Failed to persist recording file: \(error.localizedDescription, privacy: .public)")
+            return .none
         }
-        audioRecorder.clearTemporaryFile()
     }
 
     private func removeTemporary(_ url: URL) {

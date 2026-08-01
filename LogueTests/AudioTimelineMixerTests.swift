@@ -141,7 +141,7 @@ struct AudioTimelineMixerTests {
     func capacityScalesWithMemory() {
         let gb: UInt64 = 1024 * 1024 * 1024
         let seconds = { (memory: UInt64) -> Double in
-            Double(AudioTimelineMixer.capacity(forPhysicalMemory: memory, sampleRate: 16000)) / 16000
+            Double(AudioTimelineMixer.capacity(forPhysicalMemory: memory)) / 16000
         }
 
         // 8 GB → 512 MB → ~2.3 hours; 16 GB → the 1 GB cap → ~4.6 hours.

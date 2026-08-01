@@ -89,25 +89,33 @@ extension DiarizationManager {
             negativeThresholdOffset: AppConstants.Diarization.vadNegativeThresholdOffset
         )
         let rate = Double(sampleRate)
-        var regions: [(start: TimeInterval, end: TimeInterval)] = []
+        let chunkSeconds = AppConstants.Diarization.longRecordingChunkSeconds
+        let capturedLogger = logger
 
-        do {
-            // Stream the file rather than collecting it: awaiting VAD per chunk is exactly the case
-            // the reader is an iterator for.
-            var reader = try AudioFileChunkReader(
-                url: url,
-                chunkSeconds: AppConstants.Diarization.longRecordingChunkSeconds,
-                sampleRate: rate
-            )
-            while let chunk = try reader.next() {
-                let offset = TimeInterval(Double(chunk.offset) / rate)
-                let found = try await vad.segmentSpeech(chunk.samples, config: config)
-                regions.append(contentsOf: found.map { (offset + $0.startTime, offset + $0.endTime) })
+        // Off the MainActor: this reads and resamples the whole recording, hundreds of times over a
+        // long one. Left on the main thread it would hitch the UI for the entire post-recording pass,
+        // while the diarization pass running beside it is detached and does not.
+        let regions: [(start: TimeInterval, end: TimeInterval)]? = await Task.detached {
+            do {
+                var found: [(start: TimeInterval, end: TimeInterval)] = []
+                // Streamed rather than collected: awaiting VAD per chunk is exactly the case the
+                // reader is an iterator for.
+                var reader = try AudioFileChunkReader(url: url, chunkSeconds: chunkSeconds, sampleRate: rate)
+                while let chunk = try reader.next() {
+                    let offset = TimeInterval(Double(chunk.offset) / rate)
+                    let speech = try await vad.segmentSpeech(chunk.samples, config: config)
+                    found.append(contentsOf: speech.map { (offset + $0.startTime, offset + $0.endTime) })
+                }
+                return found
+            } catch {
+                capturedLogger.warning(
+                    "Long-recording VAD failed, returning unfiltered: \(error.localizedDescription, privacy: .public)"
+                )
+                return nil
             }
-        } catch {
-            logger.warning("Long-recording VAD failed, returning unfiltered: \(error.localizedDescription, privacy: .public)")
-            return segments
-        }
+        }.value
+
+        guard let regions else { return segments }
 
         guard !regions.isEmpty else { return segments }
         let filtered = segments.filter { segment in

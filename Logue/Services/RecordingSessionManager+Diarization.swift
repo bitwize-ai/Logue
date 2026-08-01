@@ -42,13 +42,13 @@ extension RecordingSessionManager {
     /// - Parameter sessionStart: Where this recording session begins on the meeting timeline. Both
     ///   diarizers time their output from the start of the session's own audio buffer, so their
     ///   timestamps need shifting by this much when a recording resumes into an existing meeting.
-    /// - Parameter sessionDuration: How long this recording session ran. The disk route checks the
-    ///   saved audio against it before trusting the file's timings.
+    /// - Parameter savedAudio: What was written to disk for this session, and whether its timings
+    ///   describe the meeting. The long-recording pass may only read a file that does.
     func processDiarization(
         for meetingID: UUID,
         diarizer: DiarizationManager,
         sessionStart: TimeInterval,
-        sessionDuration: TimeInterval
+        savedAudio: SavedRecording
     ) async {
         isDiarizing = true
         diarizationStage = "Identifying speakers…"
@@ -58,7 +58,7 @@ extension RecordingSessionManager {
             for: meetingID,
             diarizer: diarizer,
             sessionStart: sessionStart,
-            sessionDuration: sessionDuration
+            savedAudio: savedAudio
         ) {
             return
         }
@@ -127,21 +127,24 @@ extension RecordingSessionManager {
     /// stopped there. But the recording is already on disk for playback, and neither model needs it
     /// in one piece, so an overrun becomes a change of route rather than a loss.
     ///
-    /// The disk route is only taken when the saved file is long enough to *be* this session, checked
-    /// against `sessionDuration`. A file that falls short is a file whose timestamps do not describe
-    /// the meeting, and stamping its results over a correctly-timed live transcript would be worse
-    /// than keeping the live one.
+    /// The disk route is taken only for a file that persistence reported as being the meeting's
+    /// timeline. That fact is carried here rather than re-derived, because every way of working it
+    /// out after the fact — the file's length, the elapsed clock — is wrong in exactly the cases
+    /// that produce a misaligned file.
     private func runBatchPass(
-        for meetingID: UUID,
         diarizer: DiarizationManager,
-        sessionDuration: TimeInterval
+        savedAudio: SavedRecording
     ) async -> BatchPassResult {
         guard diarizer.heardDuration != nil else {
             // The whole session fitted in memory: the usual pass, on the buffer.
             return await inMemoryPass(diarizer: diarizer, heardDuration: nil)
         }
 
-        guard let audioURL = trustworthyRecordingFile(for: meetingID, sessionDuration: sessionDuration) else {
+        guard savedAudio.describesSessionTimeline,
+              let audioURL = savedAudio.url,
+              FileManager.default.fileExists(atPath: audioURL.path)
+        else {
+            logger.warning("Recording outgrew memory but its saved audio is not the session timeline")
             return await inMemoryPass(diarizer: diarizer, heardDuration: diarizer.heardDuration)
         }
 
@@ -182,8 +185,9 @@ extension RecordingSessionManager {
         if let heardDuration {
             logger.warning(
                 """
-                Audio buffer capped with no file to fall back on: heard \(String(format: "%.0f", heardDuration), privacy: .public)s \
-                of this session — keeping the live transcript beyond that point
+                Audio buffer capped with no usable file to fall back on: heard \
+                \(String(format: "%.0f", heardDuration), privacy: .public)s of this session — \
+                keeping the live transcript beyond that point
                 """
             )
         }
@@ -195,38 +199,6 @@ extension RecordingSessionManager {
         return BatchPassResult(segments: segments, speakers: speakers, heardDuration: heardDuration)
     }
 
-    /// The meeting's saved audio, but only if it is long enough to stand for this whole session.
-    ///
-    /// Everything the disk route concludes is timed from the start of this file, so a file that is
-    /// materially shorter than the session did not record all of it — a source muted for part of the
-    /// meeting, a composition that fell back to a raw capture, a stale file from an earlier session.
-    /// The results would be stamped at the wrong times over a live transcript that had them right.
-    private func trustworthyRecordingFile(
-        for meetingID: UUID,
-        sessionDuration: TimeInterval
-    ) -> URL? {
-        guard let url = MeetingStore.shared.meetings.first(where: { $0.id == meetingID })?.audioFileURL,
-              FileManager.default.fileExists(atPath: url.path)
-        else {
-            logger.warning("Recording outgrew memory but no saved audio file was found")
-            return nil
-        }
-        guard sessionDuration > 0 else { return url }
-
-        let fileDuration = AudioFileChunkReader.duration(of: url) ?? 0
-        let shortfall = sessionDuration - fileDuration
-        guard shortfall <= AppConstants.Diarization.recordingFileDurationTolerance else {
-            logger.warning(
-                """
-                Saved audio is \(String(format: "%.0f", shortfall), privacy: .public)s shorter than the \
-                session — its timings cannot describe this meeting, so the live transcript is kept
-                """
-            )
-            return nil
-        }
-        return url
-    }
-
     /// Primary diarization path: transcribes and diarizes the session, then aligns the transcript
     /// with the speaker segments.
     /// Returns `true` when it handled diarization (streaming was active); `false` to fall back to batch.
@@ -234,12 +206,12 @@ extension RecordingSessionManager {
         for meetingID: UUID,
         diarizer: DiarizationManager,
         sessionStart: TimeInterval,
-        sessionDuration: TimeInterval
+        savedAudio: SavedRecording
     ) async -> Bool {
         guard diarizer.isStreamingActive else { return false }
         logger.info("Starting parallel Sortformer + batch ASR for meeting \(meetingID)...")
 
-        let pass = await runBatchPass(for: meetingID, diarizer: diarizer, sessionDuration: sessionDuration)
+        let pass = await runBatchPass(diarizer: diarizer, savedAudio: savedAudio)
         let heardDuration = pass.heardDuration
         let sortformerUpdates = pass.speakers
         let batchSegments = pass.segments

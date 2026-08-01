@@ -154,9 +154,7 @@ struct AudioFileChunkReaderTests {
         defer { try? FileManager.default.removeItem(at: url) }
         try writeRamp(seconds: hours * 3600, sampleRate: rate, to: url)
 
-        let capacity = AudioTimelineMixer.capacity(
-            forPhysicalMemory: ProcessInfo.processInfo.physicalMemory, sampleRate: rate
-        )
+        let capacity = AudioTimelineMixer.capacity(forPhysicalMemory: ProcessInfo.processInfo.physicalMemory)
         let totalSamples = Int(hours * 3600 * rate)
         #expect(totalSamples > capacity) // the recording genuinely does not fit in memory
 

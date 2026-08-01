@@ -1,6 +1,15 @@
 import Foundation
 
 /// Identifies the audio source that produced a transcript segment.
+///
+/// FluidAudio declares a type of the same name, and the two are not interchangeable. Two things
+/// keep them apart, and neither is qualification — the module also declares a `FluidAudio` *struct*,
+/// which shadows its own module name, so `FluidAudio.AudioSource` does not compile.
+///
+/// A bare `AudioSource` resolves to this one, because a module's own declarations beat imported
+/// ones. A leading dot resolves against the parameter it is passed to, so `transcribe(source: .system)`
+/// is FluidAudio's. Both are what we want; the thing to avoid is assuming a value of one can stand
+/// in for the other, since their cases carry different raw values.
 enum AudioSource: String, Codable, Sendable, Equatable {
     case system // Remote participants (system audio tap)
     case microphone // Local user (mic)

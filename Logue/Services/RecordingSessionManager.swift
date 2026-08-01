@@ -178,14 +178,17 @@ final class RecordingSessionManager {
 
     // MARK: - Computed
 
+    /// How far into the meeting this recording is.
+    ///
+    /// Measured from when the session started, not from a capture device's clock. A device's clock
+    /// restarts at zero every time it is toggled — `SystemAudioCapture` zeroes its own outright — so
+    /// reading one of those meant a three-hour meeting whose system audio was switched off reported
+    /// an elapsed time of nothing. That figure is what gets saved as the meeting's duration and what
+    /// the post-recording pass measures its audio against, so it has to describe the meeting rather
+    /// than whichever device happens to be running.
     var elapsedTime: TimeInterval {
-        guard let meetingID = currentMeetingID else { return 0 }
-        let mode = MeetingStore.shared.meetings.first { $0.id == meetingID }?.recordingMode ?? .inPerson
-        let rawTime: TimeInterval = switch mode {
-        case .inPerson, .voiceNote: audioRecorder.currentTime
-        case .onlineMeeting: systemCapture.currentTime
-        }
-        return rawTime + timeOffset
+        guard currentMeetingID != nil else { return 0 }
+        return sessionElapsed + timeOffset
     }
 
     var audioLevel: Float {
@@ -452,7 +455,7 @@ final class RecordingSessionManager {
         sources.systemURL = systemAudioTempURL
         sources.micURL = audioRecorder.tempFileURL
         systemAudioTempURL = nil
-        await persistRecordingAudio(sources: sources, meetingID: meetingID)
+        let savedAudio = await persistRecordingAudio(sources: sources, meetingID: meetingID)
 
         MeetingStore.shared.updateDuration(finalElapsedTime, for: meetingID)
 
@@ -485,7 +488,7 @@ final class RecordingSessionManager {
                     for: meetingID,
                     diarizer: diarizer,
                     sessionStart: sessionStart,
-                    sessionDuration: finalElapsedTime - sessionStart
+                    savedAudio: savedAudio
                 )
             }
             guard let self else { return }
