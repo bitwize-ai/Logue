@@ -27,13 +27,13 @@ struct LongRecordingE2ETests {
         return diarizer
     }
 
-    @Test("A recording past the in-memory limit is transcribed and diarized to its last minute")
+    @Test(
+        "A recording past the in-memory limit is transcribed and diarized to its last minute",
+        .enabled(if: ProcessInfo.processInfo.environment["LOGUE_LONG_AUDIO"] != nil)
+    )
     @MainActor
     func longRecordingIsProcessedToTheEnd() async throws {
-        guard let fixture else {
-            print("LOGUE_LONG_AUDIO not set — skipping")
-            return
-        }
+        let fixture = try #require(fixture, "LOGUE_LONG_AUDIO / LOGUE_LONG_AUDIO_HOURS must both be set")
 
         let totalSeconds = fixture.hours * 3600
         let capacitySeconds = Double(

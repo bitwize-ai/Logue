@@ -66,17 +66,75 @@ extension DiarizationManager {
 
         let segments = segmentsFromTokenTimings(timings)
         logger.info("Long-recording ASR: \(segments.count) segments from \(timings.count) tokens")
-        return segments.isEmpty ? nil : segments
+        guard !segments.isEmpty else { return nil }
+        return await filterWithFileVAD(segments, url: url)
+    }
+
+    /// Drops transcript segments that fall outside any detected speech.
+    ///
+    /// The in-memory pass filters against Silero VAD, and skipping it here would leave the longest
+    /// recordings — the ones most likely to contain long stretches of silence for the model to
+    /// hallucinate into — as the only ones getting raw output. VAD runs over the file a chunk at a
+    /// time like everything else, each chunk's regions shifted onto the recording's timeline.
+    private func filterWithFileVAD(_ segments: [TranscriptSegment], url: URL) async -> [TranscriptSegment] {
+        guard let vad = await ensureVadManager() else {
+            logger.warning("VAD unavailable — returning the long-recording transcript unfiltered")
+            return segments
+        }
+
+        let config = VadSegmentationConfig(
+            minSpeechDuration: AppConstants.Diarization.vadMinSpeechDuration,
+            minSilenceDuration: AppConstants.Diarization.vadMinSilenceDuration,
+            speechPadding: AppConstants.Diarization.vadSpeechPadding,
+            negativeThresholdOffset: AppConstants.Diarization.vadNegativeThresholdOffset
+        )
+        let rate = Double(sampleRate)
+        var regions: [(start: TimeInterval, end: TimeInterval)] = []
+
+        do {
+            // Stream the file rather than collecting it: awaiting VAD per chunk is exactly the case
+            // the reader is an iterator for.
+            var reader = try AudioFileChunkReader(
+                url: url,
+                chunkSeconds: AppConstants.Diarization.longRecordingChunkSeconds,
+                sampleRate: rate
+            )
+            while let chunk = try reader.next() {
+                let offset = TimeInterval(Double(chunk.offset) / rate)
+                let found = try await vad.segmentSpeech(chunk.samples, config: config)
+                regions.append(contentsOf: found.map { (offset + $0.startTime, offset + $0.endTime) })
+            }
+        } catch {
+            logger.warning("Long-recording VAD failed, returning unfiltered: \(error.localizedDescription, privacy: .public)")
+            return segments
+        }
+
+        guard !regions.isEmpty else { return segments }
+        let filtered = segments.filter { segment in
+            regions.contains { $0.end > segment.startTime && $0.start < segment.endTime }
+        }
+        let removed = segments.count - filtered.count
+        if removed > 0 {
+            logger.info("Long-recording VAD removed \(removed) silence segment(s), \(filtered.count) kept")
+        }
+        // Guard against over-filtering: a VAD pass that rejects everything is wrong about the audio,
+        // not right about the transcript.
+        return filtered.isEmpty ? segments : filtered
     }
 
     // MARK: - Diarization
 
     /// Sortformer over the file, fed chunk by chunk through the streaming API.
     ///
-    /// This is the same model and the same state machine the whole-buffer call uses internally — it
-    /// too walks the audio in chunks, carrying speaker identity in `spkcache`/`fifo` rather than
-    /// re-deriving it per chunk. Feeding it the file in pieces therefore keeps speaker numbering
-    /// consistent from the first minute to the last; only the memory profile changes.
+    /// Speaker identity survives the chunking because it lives in the model's `spkcache`/`fifo`
+    /// state, carried from one chunk to the next, rather than being re-derived per chunk. Numbering
+    /// therefore stays consistent from the first minute to the last.
+    ///
+    /// It is not identical to the whole-buffer call: that one accumulates every chunk's predictions
+    /// and rebuilds the timeline from all of them at the end, where this commits each chunk as it
+    /// goes. Expect diarization on this route to be a little rougher at the seams. It is the route
+    /// for recordings the other one cannot process at all, so the comparison that matters is against
+    /// having no speaker labels for the second half of a meeting.
     private func diarizeRecordingFile(_ url: URL) async -> [SortformerSpeakerUpdate]? {
         guard let diarizer = streamingDiarizer else {
             logger.warning("Long-recording pass: Sortformer not initialized")

@@ -135,7 +135,22 @@ final class RecordingSessionManager {
     /// Where each stretch of the mic recording belongs on the meeting's timeline. The mic writes one
     /// file across every mute and unmute, with the muted stretches absent from it, so the playback
     /// mix has to lay each activation down separately or everything after the first mute plays early.
-    var micSegments = MicSegmentTimeline()
+    var micSegments = CaptureSegmentTimeline()
+
+    // Extension-visible: +AudioFiles
+    /// The same, for the system-audio tap. It can join a meeting already in progress, in which case
+    /// its file starts then and laying it down at zero would play the remote side early.
+    var systemSegments = CaptureSegmentTimeline()
+
+    /// Seconds written to the system-audio file, accumulated on the capture thread as each buffer
+    /// lands. Counted rather than read back from the file, which that thread is concurrently writing.
+    private let systemWrittenSeconds = OSAllocatedUnfairLock<TimeInterval>(initialState: 0)
+
+    // Extension-visible: +AudioFiles
+    /// Seconds of audio the system-audio file holds right now.
+    var systemRecordedDuration: TimeInterval {
+        systemWrittenSeconds.withLock { $0 }
+    }
 
     /// Open AVAudioFile for writing system audio in online meeting mode.
     /// Kept open during recording; set to nil in teardownAudioPipeline() to flush and close it.
@@ -264,7 +279,9 @@ final class RecordingSessionManager {
         )
         diarizationManager = diarizer
         sessionStartDate = Date()
-        micSegments = MicSegmentTimeline()
+        micSegments = CaptureSegmentTimeline()
+        systemSegments = CaptureSegmentTimeline()
+        systemWrittenSeconds.withLock { $0 = 0 }
 
         // Start audio capture IMMEDIATELY — don't wait for diarization models
         switch meeting.recordingMode {
@@ -322,7 +339,6 @@ final class RecordingSessionManager {
         // Mic permission already verified in startRecording() before engine setup
         startAudioBufferConsumer(engine: engine, diarizer: diarizer)
         diarizer.beginSource(.microphone, atSessionTime: 0)
-        micSegments.micStarted(atSessionTime: 0, fileDuration: 0)
         let continuation = audioBufferContinuation
         audioRecorder.onAudioBuffer = { buffer in
             continuation?.yield(CapturedAudio(buffer: buffer, source: .microphone))
@@ -332,6 +348,7 @@ final class RecordingSessionManager {
             try audioRecorder.startRecording()
             recordingState = .recording
             isMicActive = true
+            micSegments.sourceStarted(atSessionTime: 0, fileDuration: 0)
         } catch {
             errorMessage = RecordingError.micStartFailed(error.localizedDescription).localizedDescription
             logger.error("Mic start failed: \(error.localizedDescription, privacy: .public)")
@@ -378,12 +395,19 @@ final class RecordingSessionManager {
             startAudioBufferConsumer(engine: engine, diarizer: diarizer)
         }
         diarizer.beginSource(.system, atSessionTime: 0)
+        // Capture is already running by this point — startCapture() returned above.
+        systemSegments.sourceStarted(atSessionTime: 0, fileDuration: 0)
         let continuation = audioBufferContinuation
         let sysFileRef = systemAudioFile
+        let writtenLock = systemWrittenSeconds
         systemCapture.onAudioBuffer = { buffer in
             if let ref = sysFileRef {
                 do {
                     try ref.write(from: buffer)
+                    if buffer.format.sampleRate > 0 {
+                        let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
+                        writtenLock.withLock { $0 += seconds }
+                    }
                 } catch {
                     os_log(.error, "System audio file write failed: %{public}@", error.localizedDescription)
                 }
@@ -417,19 +441,18 @@ final class RecordingSessionManager {
         let meeting = MeetingStore.shared.meetings.first { $0.id == meetingID }
         let mode = meeting?.recordingMode ?? .inPerson
         let finalElapsedTime = elapsedTime
-        // The mic file's length has to be read while the file is still open: teardown closes it,
-        // and the playback mix needs to know how long the final activation ran.
-        let micPlacements = micSegments.finalized(fileDuration: audioRecorder.recordedDuration)
+        // Close every source's final activation while the counters still hold this session's totals;
+        // teardown resets them, and the saved file needs to know how long each one ran.
+        var sources = CaptureSources()
+        sources.micPlacements = micSegments.finalized(fileDuration: audioRecorder.recordedDuration)
+        sources.systemPlacements = systemSegments.finalized(fileDuration: systemRecordedDuration)
 
         await teardownAudioPipeline()
 
-        let systemTempURL = systemAudioTempURL
+        sources.systemURL = systemAudioTempURL
+        sources.micURL = audioRecorder.tempFileURL
         systemAudioTempURL = nil
-        await persistRecordingAudio(
-            systemTempURL: systemTempURL,
-            micPlacements: micPlacements,
-            meetingID: meetingID
-        )
+        await persistRecordingAudio(sources: sources, meetingID: meetingID)
 
         MeetingStore.shared.updateDuration(finalElapsedTime, for: meetingID)
 
@@ -458,7 +481,12 @@ final class RecordingSessionManager {
                 await self?.awaitDiarizationInit(capturedInitTask)
             }
             if let diarizer = capturedDiarizer {
-                await self?.processDiarization(for: meetingID, diarizer: diarizer, sessionStart: sessionStart)
+                await self?.processDiarization(
+                    for: meetingID,
+                    diarizer: diarizer,
+                    sessionStart: sessionStart,
+                    sessionDuration: finalElapsedTime - sessionStart
+                )
             }
             guard let self else { return }
             if mode == .onlineMeeting {
@@ -545,13 +573,20 @@ final class RecordingSessionManager {
 
         // Feed system audio to the transcription stream AND write to disk for playback.
         // It joins the diarization timeline where the meeting is now, not at its start.
-        diarizationManager?.beginSource(.system, atSessionTime: sessionElapsed)
+        let systemJoinedAt = sessionElapsed
+        diarizationManager?.beginSource(.system, atSessionTime: systemJoinedAt)
+        systemSegments.sourceStarted(atSessionTime: systemJoinedAt, fileDuration: systemRecordedDuration)
         let continuation = audioBufferContinuation
         let sysFileRef = systemAudioFile
+        let writtenLock = systemWrittenSeconds
         systemCapture.onAudioBuffer = { buffer in
             if let ref = sysFileRef {
                 do {
                     try ref.write(from: buffer)
+                    if buffer.format.sampleRate > 0 {
+                        let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
+                        writtenLock.withLock { $0 += seconds }
+                    }
                 } catch {
                     os_log(.error, "System audio file write failed (mid-recording): %{public}@", error.localizedDescription)
                 }
@@ -571,6 +606,7 @@ final class RecordingSessionManager {
     /// Disable system audio capture mid-recording.
     func disableSystemAudio() {
         guard isRecording, isCapturingSystemAudio else { return }
+        systemSegments.sourceStopped(fileDuration: systemRecordedDuration)
         systemCapture.stopCapture()
         systemCapture.onAudioBuffer = nil
         isCapturingSystemAudio = false
@@ -590,7 +626,6 @@ final class RecordingSessionManager {
         guard isRecording, !isMicActive else { return }
 
         let micJoinedAt = sessionElapsed
-        micSegments.micStarted(atSessionTime: micJoinedAt, fileDuration: audioRecorder.recordedDuration)
 
         if isCapturingSystemAudio {
             // Single-engine approach (Otter-style): feed mic audio to the SAME primary
@@ -646,6 +681,9 @@ final class RecordingSessionManager {
         do {
             try audioRecorder.startRecording()
             isMicActive = true
+            // Opened only now: everything above can fail, and an activation opened against a mic
+            // that never started would swallow the next successful one.
+            micSegments.sourceStarted(atSessionTime: micJoinedAt, fileDuration: audioRecorder.recordedDuration)
             // swiftformat:disable:next redundantSelf
             logger.info("Mic enabled mid-recording (single-engine: \(self.isCapturingSystemAudio))")
         } catch {
@@ -659,7 +697,7 @@ final class RecordingSessionManager {
         guard isRecording, isMicActive else { return }
         // Close this activation at the file's current length before the tap stops, so the playback
         // mix knows how much of the file belongs to the stretch of meeting just recorded.
-        micSegments.micStopped(fileDuration: audioRecorder.recordedDuration)
+        micSegments.sourceStopped(fileDuration: audioRecorder.recordedDuration)
         // stopTap() stops the engine and tap but keeps the audio file open so a subsequent
         // enableMic() → startRecording() can continue appending to the same file.
         audioRecorder.stopTap()

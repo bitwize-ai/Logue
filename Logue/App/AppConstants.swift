@@ -151,6 +151,10 @@ enum AppConstants {
         /// in-memory limit instead of stopping there. Big enough that per-chunk overhead is
         /// irrelevant, small enough that a chunk is a few megabytes.
         static let longRecordingChunkSeconds: Double = 30
+        /// How much shorter than the session the saved audio may be before the long-recording pass
+        /// stops trusting its timings. Covers the ordinary slack between when capture stops and when
+        /// the clock does; a real gap — a muted stretch, a stale file — is far larger than this.
+        static let recordingFileDurationTolerance: TimeInterval = 5
         /// Dedup tolerance for overlapping speaker segments in seconds
         static let segmentDedupTolerance: Double = 0.15
         /// Silero VAD model probability threshold — lowered from default 0.85 to catch quiet/distant speakers

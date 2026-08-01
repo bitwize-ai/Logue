@@ -102,6 +102,32 @@ struct AudioFileChunkReaderTests {
         #expect(total == 2 * 16000)
     }
 
+    @Test("The converter's tail is drained, so the end of a recording is not dropped")
+    func drainsConverterTail() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try writeRamp(seconds: 3, sampleRate: 44100, to: url)
+
+        var total = 0
+        try AudioFileChunkReader.read(url, chunkSeconds: 1, sampleRate: 16000) { samples, _ in
+            total += samples.count
+        }
+
+        // Within a few milliseconds of three seconds — the resampler's own edge, not a lost chunk.
+        #expect(abs(total - 3 * 16000) < 160)
+    }
+
+    @Test("Duration is reported without reading the audio")
+    func reportsDuration() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try writeRamp(seconds: 7, sampleRate: 16000, to: url)
+
+        let duration = try #require(AudioFileChunkReader.duration(of: url))
+        #expect(abs(duration - 7) < 0.01)
+        #expect(AudioFileChunkReader.duration(of: temporaryURL()) == nil)
+    }
+
     @Test("An empty file yields nothing rather than failing")
     func emptyFileYieldsNothing() throws {
         let url = temporaryURL()
@@ -114,7 +140,11 @@ struct AudioFileChunkReaderTests {
         #expect(chunks == 0)
     }
 
-    @Test("A recording far past the in-memory limit reads back whole, a chunk at a time")
+    /// Writes a multi-gigabyte fixture, so it is opt-in rather than part of every run.
+    @Test(
+        "A recording far past the in-memory limit reads back whole, a chunk at a time",
+        .enabled(if: ProcessInfo.processInfo.environment["LOGUE_RUN_MULTIHOUR_TESTS"] != nil)
+    )
     func multiHourRecordingReadsBackWhole() throws {
         // Six hours — beyond the in-memory timeline on any machine, which is the case that used to
         // stop being processed at all.

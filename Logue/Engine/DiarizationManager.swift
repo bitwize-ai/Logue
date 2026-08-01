@@ -282,6 +282,12 @@ final class DiarizationManager {
         mixer.take()
     }
 
+    /// Frees the accumulated audio without reading it, for when the recording is being processed
+    /// from its file instead and the buffer is only holding memory that the models are about to need.
+    func discardAudioBuffer() {
+        mixer.removeAll()
+    }
+
     /// Pre-warm Parakeet TDT ASR and Silero VAD models in the background during recording.
     /// Eliminates the model-load delay from the post-recording pipeline on every session.
     func prewarmModels() async {
