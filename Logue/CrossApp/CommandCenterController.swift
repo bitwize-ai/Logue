@@ -125,7 +125,13 @@ class CommandCenterController: ObservableObject {
 
     // MARK: - Public API
 
-    func showChatPanel() {
+    /// Summons the chat island, or dismisses it when it is already up, so the
+    /// activation shortcut is the same key that puts it away again.
+    func toggleChatPanel() {
+        if case .chat = currentMode, panel != nil {
+            dismissPanel()
+            return
+        }
         if panel != nil {
             dismissPanel()
         }
