@@ -500,36 +500,40 @@ class CommandCenterController: ObservableObject {
         }
     }
 
-    /// Shared cleanup after a panel closes. Resets panel state and optionally
-    /// tears down recording observers if no recording is actively running.
+    /// Gives up ownership of the showing panel and hands it to the caller to
+    /// animate away. Every piece of state describing it is cleared here, before
+    /// returning — a dismissal takes 150–300ms to animate, and for that whole
+    /// window anything reading `panel` or `currentMode` would otherwise be
+    /// answered about a panel that is already leaving. That stale answer is what
+    /// made the shortcut, a menu-bar click and the dismiss notification act on a
+    /// dying panel instead of presenting a new one (issue #46).
     ///
-    /// `dismissed` is the panel whose close animation just finished. Dismissal is
-    /// animated, so a new panel can be created before this runs — clearing state
-    /// then would strand the live panel with no reference to it, leaving it on
-    /// screen with nothing able to close it (issue #46).
-    private func finalizeDismiss(_ dismissed: CommandCenterPanel, preserveRecordingState: Bool = false) {
-        guard panel === dismissed else { return }
+    /// Returns `nil` when there is nothing showing.
+    private func relinquishPanel() -> CommandCenterPanel? {
+        guard let dismissed = panel else { return nil }
+
+        // Keep recording state if a recording is still running (allows re-show from menu)
+        let keepRecordingState = RecordingSessionManager.shared.isRecording && activeRecordingMeetingID != nil
+
         panel = nil
         isVisible = false
         currentMode = nil
         chatHasContent = false
-        if !preserveRecordingState {
+        if !keepRecordingState {
             activeRecordingMeetingID = nil
             tearDownAppActiveObservers()
         }
+        return dismissed
     }
 
     func dismissPanel() {
         removeMonitors()
-        guard let panel else { return }
-
-        // Keep recording state if a recording is still running (allows re-show from menu)
-        let keepRecordingState = RecordingSessionManager.shared.isRecording && activeRecordingMeetingID != nil
         let isRecordingMode = if case .recording = currentMode {
             true
         } else {
             false
         }
+        guard let panel = relinquishPanel() else { return }
 
         if isRecordingMode {
             // Scale-down + slide-up into the notch area (macOS native feel)
@@ -548,18 +552,16 @@ class CommandCenterController: ObservableObject {
                     display: true
                 )
                 panel.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
+            } completionHandler: {
                 panel.close()
-                Task { @MainActor in self?.finalizeDismiss(panel, preserveRecordingState: keepRecordingState) }
             }
         } else {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.15
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 panel.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
+            } completionHandler: {
                 panel.close()
-                Task { @MainActor in self?.finalizeDismiss(panel, preserveRecordingState: keepRecordingState) }
             }
         }
     }
@@ -574,7 +576,7 @@ class CommandCenterController: ObservableObject {
         hiddenForMainWindow = false
         tearDownAppActiveObservers()
 
-        guard let panel else { return }
+        guard let panel = relinquishPanel() else { return }
 
         let originalFrame = panel.frame
         let collapsedWidth: CGFloat = 120
@@ -595,10 +597,7 @@ class CommandCenterController: ObservableObject {
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             panel.close()
-            Task { @MainActor in
-                self?.finalizeDismiss(panel)
-                self?.showSavedToast(near: originalFrame)
-            }
+            Task { @MainActor in self?.showSavedToast(near: originalFrame) }
         }
     }
 
