@@ -5,28 +5,58 @@ import Testing
 /// The chat island's lifecycle rules — issue #46.
 ///
 /// Reported as "the Ask Logue bar never closes, and sits over every other app".
-/// Each of the three causes has a test here: the shortcut rebuilt the island
-/// instead of closing it, and losing frontmost status meant nothing at all to a
-/// chat island, whether or not anything had been said to it.
+/// These cover the two decisions that were wrong and are expressible without
+/// AppKit: what the shortcut does to a showing island, and what losing frontmost
+/// status means to one. The rest of the fix — panel identity through the close
+/// animation, and monitor add/remove symmetry — lives in the controller and is
+/// not reachable from here.
 @Suite("Command Center chat rules")
 struct CommandCenterChatRuleTests {
     // MARK: - Trigger
 
-    @Test("The shortcut closes a chat island that is already up")
+    @Test("The shortcut closes a chat island that is up in front")
     func triggerDismissesShowingChat() {
-        #expect(CommandCenterChatRule.trigger(mode: .chat, isShowingPanel: true) == .dismiss)
+        #expect(
+            CommandCenterChatRule.trigger(mode: .chat, isShowingPanel: true, isChatBehindOtherApps: false)
+                == .dismiss
+        )
+    }
+
+    @Test("The shortcut brings back an island sent behind other apps")
+    func triggerRaisesDemotedChat() {
+        // Pressing the shortcut from another app is how you ask for the island
+        // back. Dismissing it there would destroy an unsent prompt and show
+        // nothing in its place — the reported symptom, reintroduced.
+        #expect(
+            CommandCenterChatRule.trigger(mode: .chat, isShowingPanel: true, isChatBehindOtherApps: true)
+                == .raise
+        )
     }
 
     @Test("The shortcut opens the chat island when nothing is up")
     func triggerPresentsWhenIdle() {
-        #expect(CommandCenterChatRule.trigger(mode: nil, isShowingPanel: false) == .present)
+        #expect(
+            CommandCenterChatRule.trigger(mode: nil, isShowingPanel: false, isChatBehindOtherApps: false)
+                == .present
+        )
     }
 
     @Test("The recording island gives way to the chat island")
     func triggerReplacesRecording() {
         let recording = CommandCenterMode.recording(meetingID: UUID())
 
-        #expect(CommandCenterChatRule.trigger(mode: recording, isShowingPanel: true) == .replace)
+        #expect(
+            CommandCenterChatRule.trigger(mode: recording, isShowingPanel: true, isChatBehindOtherApps: false)
+                == .replace
+        )
+    }
+
+    @Test("A panel with no mode is replaced rather than left alone")
+    func triggerReplacesWhenModeIsMissing() {
+        #expect(
+            CommandCenterChatRule.trigger(mode: nil, isShowingPanel: true, isChatBehindOtherApps: false)
+                == .replace
+        )
     }
 
     @Test("A stale mode with no panel still opens one")
@@ -34,7 +64,10 @@ struct CommandCenterChatRuleTests {
         // The mode is cleared after the close animation, so a trigger can arrive
         // while it still reads .chat with nothing on screen. Dismissing then would
         // be a shortcut that does nothing.
-        #expect(CommandCenterChatRule.trigger(mode: .chat, isShowingPanel: false) == .present)
+        #expect(
+            CommandCenterChatRule.trigger(mode: .chat, isShowingPanel: false, isChatBehindOtherApps: false)
+                == .present
+        )
     }
 
     // MARK: - Focus loss
@@ -51,11 +84,12 @@ struct CommandCenterChatRuleTests {
         #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasContent: true) == .sendBehindOtherApps)
     }
 
-    @Test("The recording island is left alone")
+    @Test("The recording island is left alone whatever the chat island holds")
     func focusLossIgnoresRecording() {
         let recording = CommandCenterMode.recording(meetingID: UUID())
 
         #expect(CommandCenterChatRule.focusLoss(mode: recording, chatHasContent: false) == nil)
+        #expect(CommandCenterChatRule.focusLoss(mode: recording, chatHasContent: true) == nil)
     }
 
     @Test("Nothing showing means nothing to do")

@@ -133,9 +133,16 @@ class CommandCenterController: ObservableObject {
     /// Summons the chat island, or dismisses it when it is already up, so the
     /// activation shortcut is the same key that puts it away again.
     func toggleChatPanel() {
-        switch CommandCenterChatRule.trigger(mode: currentMode, isShowingPanel: panel != nil) {
+        switch CommandCenterChatRule.trigger(
+            mode: currentMode,
+            isShowingPanel: panel != nil,
+            isChatBehindOtherApps: panel?.level == .normal
+        ) {
         case .dismiss:
             dismissPanel()
+            return
+        case .raise:
+            raiseChatPanel()
             return
         case .replace:
             dismissPanel()
@@ -146,6 +153,17 @@ class CommandCenterController: ObservableObject {
         chatHasContent = false
         createPanel(mode: .chat)
         setupAppActiveObservers()
+    }
+
+    /// Brings an island that was sent behind other apps back to the front, with
+    /// whatever was typed into it still there. Reached from the shortcut while
+    /// another app is frontmost, where nothing else would re-promote it.
+    private func raiseChatPanel() {
+        guard let panel else { return }
+        panel.level = .floating
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func showRecordingPanel(meetingID: UUID) {

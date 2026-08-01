@@ -10,8 +10,12 @@ import Foundation
 enum CommandCenterChatRule {
     /// What pressing the Ask Logue shortcut should do.
     enum Trigger: Equatable {
-        /// The chat island is already up — the shortcut puts it away.
+        /// The chat island is up in front — the shortcut puts it away.
         case dismiss
+        /// The island was sent behind other apps when Logue lost focus. The
+        /// shortcut is how you ask for it back, so bring it forward rather than
+        /// destroying it along with whatever was typed into it.
+        case raise
         /// Another island is up and has to go first.
         case replace
         /// Nothing is up.
@@ -29,10 +33,14 @@ enum CommandCenterChatRule {
         case sendBehindOtherApps
     }
 
-    static func trigger(mode: CommandCenterMode?, isShowingPanel: Bool) -> Trigger {
+    static func trigger(
+        mode: CommandCenterMode?,
+        isShowingPanel: Bool,
+        isChatBehindOtherApps: Bool
+    ) -> Trigger {
         guard isShowingPanel else { return .present }
         if case .chat = mode {
-            return .dismiss
+            return isChatBehindOtherApps ? .raise : .dismiss
         }
         return .replace
     }
