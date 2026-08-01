@@ -428,25 +428,24 @@ class CommandCenterController: ObservableObject {
     // MARK: - Monitors
 
     private func setupMonitors(mode: CommandCenterMode) {
-        // A global monitor never sees events routed to our own app, and the panel
-        // is made key on creation — so Esc also needs a local monitor, or it only
-        // works while some other app is frontmost.
         escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == Self.escapeKeyCode {
                 Task { @MainActor in self?.dismissPanel() }
             }
         }
 
-        escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == Self.escapeKeyCode, let self, panel?.isKeyWindow == true else { return event }
-            dismissPanel()
-            return nil
-        }
-
+        // The local monitors below are chat-only on purpose. A global monitor never
+        // sees events routed to our own app, and creating a panel makes it key, so
+        // without them Esc and clicking away work only while some other app is
+        // frontmost. The recording island is left with exactly the behaviour it had
+        // rather than gaining an Esc that collapses it the instant recording starts.
         if case .chat = mode {
-            // Same blind spot as Esc: a click on one of Logue's own windows is
-            // routed to us and never reaches a global monitor, so clicking the main
-            // window beside the island left it sitting there. Watch both sides.
+            escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == Self.escapeKeyCode, let self, panel?.isKeyWindow == true else { return event }
+                dismissPanel()
+                return nil
+            }
+
             clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 let screenPoint = Self.screenPoint(for: event)
                 Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
