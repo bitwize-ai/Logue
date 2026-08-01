@@ -116,7 +116,7 @@ class CommandCenterController: ObservableObject {
     private var escLocalMonitor: Any?
     private var clickMonitor: Any?
     private var dismissObserver: NSObjectProtocol?
-    private var chatHasMessages: Bool = false
+    private var chatHasContent: Bool = false
 
     /// The meeting ID of the active recording panel, used to restore the island.
     private(set) var activeRecordingMeetingID: UUID?
@@ -142,7 +142,7 @@ class CommandCenterController: ObservableObject {
             break
         }
         currentMode = .chat
-        chatHasMessages = false
+        chatHasContent = false
         createPanel(mode: .chat)
         setupAppActiveObservers()
     }
@@ -221,7 +221,7 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppResignedActive() {
-        switch CommandCenterChatRule.focusLoss(mode: currentMode, chatHasMessages: chatHasMessages) {
+        switch CommandCenterChatRule.focusLoss(mode: currentMode, chatHasContent: chatHasContent) {
         case .dismiss:
             dismissPanel()
             return
@@ -257,7 +257,7 @@ class CommandCenterController: ObservableObject {
         case .chat:
             let chatView = CommandCenterChatView(
                 onDismiss: { [weak self] in self?.dismissPanel() },
-                onMessagesChanged: { [weak self] hasMessages in self?.chatHasMessages = hasMessages }
+                onContentChanged: { [weak self] hasContent in self?.chatHasContent = hasContent }
             )
             let hv = TransparentHostingView(rootView: chatView)
             hv.translatesAutoresizingMaskIntoConstraints = false
@@ -284,7 +284,7 @@ class CommandCenterController: ObservableObject {
             ])
 
             container.onClickEmptyArea = { [weak self] in
-                guard let self, !self.chatHasMessages else { return }
+                guard let self, !self.chatHasContent else { return }
                 dismissPanel()
             }
 
@@ -431,7 +431,7 @@ class CommandCenterController: ObservableObject {
                 Task { @MainActor in
                     guard let self, let panel = self.panel else { return }
                     // Don't dismiss on outside click when there are messages
-                    if self.chatHasMessages {
+                    if self.chatHasContent {
                         return
                     }
                     if !panel.frame.contains(screenPoint) {
@@ -478,7 +478,7 @@ class CommandCenterController: ObservableObject {
         panel = nil
         isVisible = false
         currentMode = nil
-        chatHasMessages = false
+        chatHasContent = false
         if !preserveRecordingState {
             activeRecordingMeetingID = nil
             tearDownAppActiveObservers()

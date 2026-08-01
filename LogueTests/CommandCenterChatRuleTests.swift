@@ -39,25 +39,27 @@ struct CommandCenterChatRuleTests {
 
     // MARK: - Focus loss
 
-    @Test("Switching apps closes an island nothing was said to")
+    @Test("Switching apps closes an empty island")
     func focusLossDismissesEmptyChat() {
-        #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasMessages: false) == .dismiss)
+        #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasContent: false) == .dismiss)
     }
 
-    @Test("Switching apps keeps a conversation but stops it covering them")
-    func focusLossDemotesChatWithMessages() {
-        #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasMessages: true) == .sendBehindOtherApps)
+    @Test("Switching apps keeps what the island holds but stops it covering them")
+    func focusLossDemotesChatWithContent() {
+        // Content is a sent conversation or a prompt typed and not sent — the view
+        // reports either, so switching apps mid-sentence cannot throw the draft away.
+        #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasContent: true) == .sendBehindOtherApps)
     }
 
     @Test("The recording island is left alone")
     func focusLossIgnoresRecording() {
         let recording = CommandCenterMode.recording(meetingID: UUID())
 
-        #expect(CommandCenterChatRule.focusLoss(mode: recording, chatHasMessages: false) == nil)
+        #expect(CommandCenterChatRule.focusLoss(mode: recording, chatHasContent: false) == nil)
     }
 
     @Test("Nothing showing means nothing to do")
     func focusLossIgnoresIdle() {
-        #expect(CommandCenterChatRule.focusLoss(mode: nil, chatHasMessages: false) == nil)
+        #expect(CommandCenterChatRule.focusLoss(mode: nil, chatHasContent: false) == nil)
     }
 }

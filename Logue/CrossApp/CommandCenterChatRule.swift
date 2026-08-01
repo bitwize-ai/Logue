@@ -21,10 +21,11 @@ enum CommandCenterChatRule {
     /// What losing frontmost status should do to a chat island, or `nil` when the
     /// showing panel is not one.
     enum FocusLoss: Equatable {
-        /// Nothing has been said to it, so nothing is lost by closing it.
+        /// Empty, so nothing is lost by closing it.
         case dismiss
-        /// It holds a conversation that only exists in the view's state. Keep it,
-        /// but stop it covering the app being switched to.
+        /// It holds a conversation, or a prompt typed but not sent, and both live
+        /// only in the view's state. Keep it, but stop it covering the app being
+        /// switched to.
         case sendBehindOtherApps
     }
 
@@ -34,8 +35,8 @@ enum CommandCenterChatRule {
         return .replace
     }
 
-    static func focusLoss(mode: CommandCenterMode?, chatHasMessages: Bool) -> FocusLoss? {
+    static func focusLoss(mode: CommandCenterMode?, chatHasContent: Bool) -> FocusLoss? {
         guard case .chat = mode else { return nil }
-        return chatHasMessages ? .sendBehindOtherApps : .dismiss
+        return chatHasContent ? .sendBehindOtherApps : .dismiss
     }
 }
