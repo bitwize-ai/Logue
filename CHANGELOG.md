@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switching apps meant nothing to the island, so the prompt bar sat over every other app until
   Logue was quit or hidden. It now closes on its own shortcut, on Esc and on a click anywhere
   outside it, and gets out of the way when you switch apps — keeping a conversation or an
-  unsent prompt rather than discarding it.
+  unsent prompt rather than discarding it, and coming back to the front on the shortcut that
+  summoned it.
 - Lists no longer show an empty state while the library is still loading — launching used to
   flash "No Documents" and greet returning users with the new-user welcome screen.
 
