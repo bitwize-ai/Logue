@@ -31,7 +31,9 @@ enum CommandCenterChatRule {
 
     static func trigger(mode: CommandCenterMode?, isShowingPanel: Bool) -> Trigger {
         guard isShowingPanel else { return .present }
-        if case .chat = mode { return .dismiss }
+        if case .chat = mode {
+            return .dismiss
+        }
         return .replace
     }
 
