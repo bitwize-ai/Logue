@@ -132,12 +132,14 @@ class CommandCenterController: ObservableObject {
     /// Summons the chat island, or dismisses it when it is already up, so the
     /// activation shortcut is the same key that puts it away again.
     func toggleChatPanel() {
-        if case .chat = currentMode, panel != nil {
+        switch CommandCenterChatRule.trigger(mode: currentMode, isShowingPanel: panel != nil) {
+        case .dismiss:
             dismissPanel()
             return
-        }
-        if panel != nil {
+        case .replace:
             dismissPanel()
+        case .present:
+            break
         }
         currentMode = .chat
         chatHasMessages = false
@@ -219,18 +221,15 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppResignedActive() {
-        if case .chat = currentMode {
-            // An untouched island is disposable — same rule as a click outside it.
-            // Once there are messages the conversation only exists in the view's
-            // state, so drop the panel out of the floating level instead of
-            // destroying it: it stops covering the app being switched to, and
-            // comes back to the front with Logue.
-            if chatHasMessages {
-                panel?.level = .normal
-            } else {
-                dismissPanel()
-            }
+        switch CommandCenterChatRule.focusLoss(mode: currentMode, chatHasMessages: chatHasMessages) {
+        case .dismiss:
+            dismissPanel()
             return
+        case .sendBehindOtherApps:
+            panel?.level = .normal
+            return
+        case nil:
+            break
         }
         guard RecordingSessionManager.shared.isRecording, activeRecordingMeetingID != nil else { return }
         if hiddenForMainWindow {
