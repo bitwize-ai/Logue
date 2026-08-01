@@ -107,9 +107,13 @@ private class TransparentContainerView: NSView {
 class CommandCenterController: ObservableObject {
     @Published var isVisible: Bool = false
 
+    /// Virtual key code for Escape.
+    private static let escapeKeyCode: UInt16 = 53
+
     private var panel: CommandCenterPanel?
     private var currentMode: CommandCenterMode?
     private var escMonitor: Any?
+    private var escLocalMonitor: Any?
     private var clickMonitor: Any?
     private var dismissObserver: NSObjectProtocol?
     private var chatHasMessages: Bool = false
@@ -388,10 +392,19 @@ class CommandCenterController: ObservableObject {
     // MARK: - Monitors
 
     private func setupMonitors(mode: CommandCenterMode) {
+        // A global monitor never sees events routed to our own app, and the panel
+        // is made key on creation — so Esc also needs a local monitor, or it only
+        // works while some other app is frontmost.
         escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
+            if event.keyCode == Self.escapeKeyCode {
                 Task { @MainActor in self?.dismissPanel() }
             }
+        }
+
+        escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == Self.escapeKeyCode, let self, panel?.isKeyWindow == true else { return event }
+            dismissPanel()
+            return nil
         }
 
         if case .chat = mode {
@@ -424,6 +437,9 @@ class CommandCenterController: ObservableObject {
     private func removeMonitors() {
         if let monitor = escMonitor {
             NSEvent.removeMonitor(monitor); escMonitor = nil
+        }
+        if let monitor = escLocalMonitor {
+            NSEvent.removeMonitor(monitor); escLocalMonitor = nil
         }
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor); clickMonitor = nil
