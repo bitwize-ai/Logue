@@ -70,6 +70,13 @@ private class TransparentContainerView: NSView {
 
     var onClickEmptyArea: (() -> Void)?
 
+    /// Whether a click on the empty area is ours to act on. Consulted during hit
+    /// testing, so it must answer without side effects. Answering `false` lets the
+    /// click through to whatever is behind the panel — the panel is far taller
+    /// than the pill drawn at the bottom of it, so claiming clicks we will not act
+    /// on turns the transparent region into a dead zone that swallows them.
+    var claimsEmptyAreaClicks: (() -> Bool)?
+
     override func draw(_ dirtyRect: NSRect) {
         // Fully transparent — do not draw anything.
     }
@@ -90,9 +97,9 @@ private class TransparentContainerView: NSView {
                 return hit
             }
         }
-        // No subview hit — return self only if we have an empty-area handler,
-        // otherwise return nil to let the click pass through entirely.
-        return onClickEmptyArea != nil ? self : nil
+        // No subview hit — claim it only if we will act on it, otherwise return nil
+        // to let the click pass through entirely.
+        return claimsEmptyAreaClicks?() == true ? self : nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -302,10 +309,8 @@ class CommandCenterController: ObservableObject {
                 hv.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
             ])
 
-            container.onClickEmptyArea = { [weak self] in
-                guard let self, !self.chatHasContent else { return }
-                dismissPanel()
-            }
+            container.claimsEmptyAreaClicks = { [weak self] in self?.chatHasContent == false }
+            container.onClickEmptyArea = { [weak self] in self?.dismissPanel() }
 
             hostingView = container
             panelWidth = 740
