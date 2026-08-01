@@ -115,6 +115,7 @@ class CommandCenterController: ObservableObject {
     private var escMonitor: Any?
     private var escLocalMonitor: Any?
     private var clickMonitor: Any?
+    private var clickLocalMonitor: Any?
     private var dismissObserver: NSObjectProtocol?
     private var chatHasContent: Bool = false
 
@@ -425,19 +426,18 @@ class CommandCenterController: ObservableObject {
         }
 
         if case .chat = mode {
+            // Same blind spot as Esc: a click on one of Logue's own windows is
+            // routed to us and never reaches a global monitor, so clicking the main
+            // window beside the island left it sitting there. Watch both sides.
             clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let clickLocation = event.locationInWindow
-                let screenPoint = event.window?.convertPoint(toScreen: clickLocation) ?? clickLocation
-                Task { @MainActor in
-                    guard let self, let panel = self.panel else { return }
-                    // Don't dismiss on outside click when there are messages
-                    if self.chatHasContent {
-                        return
-                    }
-                    if !panel.frame.contains(screenPoint) {
-                        self.dismissPanel()
-                    }
-                }
+                let screenPoint = Self.screenPoint(for: event)
+                Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
+            }
+
+            clickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                let screenPoint = Self.screenPoint(for: event)
+                Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
+                return event
             }
         }
 
@@ -446,6 +446,20 @@ class CommandCenterController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.dismissPanel() }
         }
+    }
+
+    /// Where a click landed, in screen coordinates. Events from a global monitor
+    /// carry no window and are already in screen space.
+    private static func screenPoint(for event: NSEvent) -> NSPoint {
+        guard let window = event.window else { return event.locationInWindow }
+        return window.convertPoint(toScreen: event.locationInWindow)
+    }
+
+    /// Puts an empty chat island away when a click lands anywhere but on it. An
+    /// island holding a conversation or an unsent prompt stays.
+    private func dismissIfClickMissedPanel(_ screenPoint: NSPoint) {
+        guard let panel, !chatHasContent, !panel.frame.contains(screenPoint) else { return }
+        dismissPanel()
     }
 
     // MARK: - Dismiss
@@ -460,6 +474,9 @@ class CommandCenterController: ObservableObject {
         }
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor); clickMonitor = nil
+        }
+        if let monitor = clickLocalMonitor {
+            NSEvent.removeMonitor(monitor); clickLocalMonitor = nil
         }
         if let observer = dismissObserver {
             NotificationCenter.default.removeObserver(observer); dismissObserver = nil
