@@ -124,7 +124,7 @@ class CommandCenterController: ObservableObject {
     private var clickMonitor: Any?
     private var clickLocalMonitor: Any?
     private var dismissObserver: NSObjectProtocol?
-    private var chatHasContent: Bool = false
+    private var chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
 
     /// The meeting ID of the active recording panel, used to restore the island.
     private(set) var activeRecordingMeetingID: UUID?
@@ -157,7 +157,7 @@ class CommandCenterController: ObservableObject {
             break
         }
         currentMode = .chat
-        chatHasContent = false
+        chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
         createPanel(mode: .chat)
         setupAppActiveObservers()
     }
@@ -247,7 +247,7 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppResignedActive() {
-        switch CommandCenterChatRule.focusLoss(mode: currentMode, chatHasContent: chatHasContent) {
+        switch CommandCenterChatRule.focusLoss(mode: currentMode, chatHasContent: !chatContent.isEmpty) {
         case .dismiss:
             dismissPanel()
             return
@@ -283,7 +283,7 @@ class CommandCenterController: ObservableObject {
         case .chat:
             let chatView = CommandCenterChatView(
                 onDismiss: { [weak self] in self?.dismissPanel() },
-                onContentChanged: { [weak self] hasContent in self?.chatHasContent = hasContent }
+                onContentChanged: { [weak self] content in self?.chatContent = content }
             )
             let hv = TransparentHostingView(rootView: chatView)
             hv.translatesAutoresizingMaskIntoConstraints = false
@@ -309,7 +309,7 @@ class CommandCenterController: ObservableObject {
                 hv.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
             ])
 
-            container.claimsEmptyAreaClicks = { [weak self] in self?.chatHasContent == false }
+            container.claimsEmptyAreaClicks = { [weak self] in self?.chatContent.hasMessages == false }
             container.onClickEmptyArea = { [weak self] in self?.dismissPanel() }
 
             hostingView = container
@@ -480,7 +480,7 @@ class CommandCenterController: ObservableObject {
     /// Puts an empty chat island away when a click lands anywhere but on it. An
     /// island holding a conversation or an unsent prompt stays.
     private func dismissIfClickMissedPanel(_ screenPoint: NSPoint) {
-        guard let panel, !chatHasContent, !panel.frame.contains(screenPoint) else { return }
+        guard let panel, !chatContent.hasMessages, !panel.frame.contains(screenPoint) else { return }
         dismissPanel()
     }
 
@@ -523,7 +523,7 @@ class CommandCenterController: ObservableObject {
         panel = nil
         isVisible = false
         currentMode = nil
-        chatHasContent = false
+        chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
         if !keepRecordingState {
             activeRecordingMeetingID = nil
             tearDownAppActiveObservers()

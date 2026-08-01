@@ -27,7 +27,7 @@ struct EphemeralChatMessage: Identifiable, Equatable {
 /// Prompt pill at bottom, messages float above with glass backdrop.
 struct CommandCenterChatView: View {
     let onDismiss: () -> Void
-    let onContentChanged: (Bool) -> Void
+    let onContentChanged: (CommandCenterChatContent) -> Void
 
     @State private var messages: [EphemeralChatMessage] = []
     @State private var inputText: String = ""
@@ -45,10 +45,11 @@ struct CommandCenterChatView: View {
 
     private let pillWidth: CGFloat = 740
 
-    /// Whether the island is holding anything the user would miss — a sent
-    /// conversation, or a prompt typed but not sent yet.
-    private var hasContent: Bool {
-        !messages.isEmpty || !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var content: CommandCenterChatContent {
+        CommandCenterChatContent(
+            hasMessages: !messages.isEmpty,
+            hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
     }
 
     var body: some View {
@@ -82,10 +83,10 @@ struct CommandCenterChatView: View {
             synthesizer.stopSpeaking(at: .immediate)
         }
         .onChange(of: messages.count) { _, _ in
-            onContentChanged(hasContent)
+            onContentChanged(content)
         }
         .onChange(of: inputText) { _, _ in
-            onContentChanged(hasContent)
+            onContentChanged(content)
         }
         // U7: Replaced continuous Timer.publish with onChange-triggered task
         .onChange(of: speakingMessageID) { _, newValue in

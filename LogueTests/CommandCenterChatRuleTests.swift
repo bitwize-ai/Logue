@@ -96,4 +96,28 @@ struct CommandCenterChatRuleTests {
     func focusLossIgnoresIdle() {
         #expect(CommandCenterChatRule.focusLoss(mode: nil, chatHasContent: false) == nil)
     }
+
+    // MARK: - What the island is holding
+
+    @Test("An island is empty only with neither a conversation nor a draft")
+    func contentIsEmptyOnlyWhenBothAreAbsent() {
+        #expect(CommandCenterChatContent(hasMessages: false, hasDraft: false).isEmpty)
+        #expect(!CommandCenterChatContent(hasMessages: true, hasDraft: false).isEmpty)
+        #expect(!CommandCenterChatContent(hasMessages: false, hasDraft: true).isEmpty)
+        #expect(!CommandCenterChatContent(hasMessages: true, hasDraft: true).isEmpty)
+    }
+
+    @Test("A draft survives an app switch but not a deliberate dismissal")
+    func draftIsProtectedFromFocusLossOnly() {
+        let draftOnly = CommandCenterChatContent(hasMessages: false, hasDraft: true)
+
+        // Switching apps is not a decision about the island, so it keeps the draft.
+        #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasContent: !draftOnly.isEmpty)
+            == .sendBehindOtherApps)
+
+        // Clicking off it is such a decision, and has always discarded an unsent
+        // prompt. Protecting the draft here would leave an island with no visible
+        // way out — the close button only exists once there are messages.
+        #expect(!draftOnly.hasMessages)
+    }
 }

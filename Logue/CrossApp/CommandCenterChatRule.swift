@@ -7,6 +7,22 @@ import Foundation
 /// owns the panel and only asks what to do with it — issue #46 was three separate
 /// wrong answers to these questions, none of which a test could have reached while
 /// they lived inside the window code.
+/// What the chat island is currently holding.
+///
+/// The two are kept apart because they earn different protection. Deliberately
+/// putting the island away — clicking off it, Esc, the close button, the shortcut
+/// — has always destroyed an unsent prompt, and a conversation is what a click
+/// off the island must not throw away. Switching apps is not a decision about the
+/// island at all, so that leaves either alone.
+struct CommandCenterChatContent: Equatable {
+    var hasMessages: Bool
+    var hasDraft: Bool
+
+    var isEmpty: Bool {
+        !hasMessages && !hasDraft
+    }
+}
+
 enum CommandCenterChatRule {
     /// What pressing the Ask Logue shortcut should do.
     enum Trigger: Equatable {
