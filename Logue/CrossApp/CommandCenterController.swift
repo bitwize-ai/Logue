@@ -1,10 +1,6 @@
 import Cocoa
 import SwiftUI
 
-extension Notification.Name {
-    static let dismissCommandCenter = Notification.Name("dismissCommandCenter")
-}
-
 /// Panel mode for Command Center — chat or recording.
 enum CommandCenterMode: Equatable {
     case chat
@@ -123,7 +119,6 @@ class CommandCenterController: ObservableObject {
     private var escLocalMonitor: Any?
     private var clickMonitor: Any?
     private var clickLocalMonitor: Any?
-    private var dismissObserver: NSObjectProtocol?
     private var chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
 
     /// The meeting ID of the active recording panel, used to restore the island.
@@ -462,12 +457,6 @@ class CommandCenterController: ObservableObject {
                 return event
             }
         }
-
-        dismissObserver = NotificationCenter.default.addObserver(
-            forName: .dismissCommandCenter, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.dismissPanel() }
-        }
     }
 
     /// Where a click landed, in screen coordinates. Events from a global monitor
@@ -486,7 +475,7 @@ class CommandCenterController: ObservableObject {
 
     // MARK: - Dismiss
 
-    /// Removes event monitors and notification observers used by the active panel.
+    /// Removes the event monitors used by the active panel.
     private func removeMonitors() {
         if let monitor = escMonitor {
             NSEvent.removeMonitor(monitor); escMonitor = nil
@@ -499,9 +488,6 @@ class CommandCenterController: ObservableObject {
         }
         if let monitor = clickLocalMonitor {
             NSEvent.removeMonitor(monitor); clickLocalMonitor = nil
-        }
-        if let observer = dismissObserver {
-            NotificationCenter.default.removeObserver(observer); dismissObserver = nil
         }
     }
 
