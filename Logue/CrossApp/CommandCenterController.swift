@@ -429,7 +429,13 @@ class CommandCenterController: ObservableObject {
 
     /// Shared cleanup after a panel closes. Resets panel state and optionally
     /// tears down recording observers if no recording is actively running.
-    private func finalizeDismiss(preserveRecordingState: Bool = false) {
+    ///
+    /// `dismissed` is the panel whose close animation just finished. Dismissal is
+    /// animated, so a new panel can be created before this runs — clearing state
+    /// then would strand the live panel with no reference to it, leaving it on
+    /// screen with nothing able to close it (issue #46).
+    private func finalizeDismiss(_ dismissed: CommandCenterPanel, preserveRecordingState: Bool = false) {
+        guard panel === dismissed else { return }
         panel = nil
         isVisible = false
         currentMode = nil
@@ -471,7 +477,7 @@ class CommandCenterController: ObservableObject {
                 panel.animator().alphaValue = 0
             } completionHandler: { [weak self] in
                 panel.close()
-                Task { @MainActor in self?.finalizeDismiss(preserveRecordingState: keepRecordingState) }
+                Task { @MainActor in self?.finalizeDismiss(panel, preserveRecordingState: keepRecordingState) }
             }
         } else {
             NSAnimationContext.runAnimationGroup { ctx in
@@ -480,7 +486,7 @@ class CommandCenterController: ObservableObject {
                 panel.animator().alphaValue = 0
             } completionHandler: { [weak self] in
                 panel.close()
-                Task { @MainActor in self?.finalizeDismiss(preserveRecordingState: keepRecordingState) }
+                Task { @MainActor in self?.finalizeDismiss(panel, preserveRecordingState: keepRecordingState) }
             }
         }
     }
@@ -517,7 +523,7 @@ class CommandCenterController: ObservableObject {
         } completionHandler: { [weak self] in
             panel.close()
             Task { @MainActor in
-                self?.finalizeDismiss()
+                self?.finalizeDismiss(panel)
                 self?.showSavedToast(near: originalFrame)
             }
         }
