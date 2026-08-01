@@ -213,6 +213,17 @@ final class AudioRecorder {
         logger.info("Microphone recording stopped")
     }
 
+    /// Seconds of audio the mic file holds right now.
+    ///
+    /// Read from the file's own frame count rather than from elapsed time, because the file is what
+    /// the playback mix reads back: across a mute the file stops growing while the clock does not,
+    /// and only the file's length says where the next activation actually begins in it. Zero once
+    /// `stopRecording()` has closed the file — read it before stopping.
+    var recordedDuration: TimeInterval {
+        guard let audioFile, audioFile.fileFormat.sampleRate > 0 else { return 0 }
+        return TimeInterval(audioFile.length) / audioFile.fileFormat.sampleRate
+    }
+
     /// Deletes the temporary WAV file and clears the URL. Call after the file has been
     /// moved to permanent storage (or if no permanent copy is needed).
     func clearTemporaryFile() {

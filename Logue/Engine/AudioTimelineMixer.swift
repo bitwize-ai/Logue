@@ -1,0 +1,136 @@
+import Foundation
+
+/// Accumulates a recording session's audio onto one 16 kHz mono timeline, placing every capture
+/// source at the position it was actually heard at.
+///
+/// A meeting can have two streams arriving at once — system audio from the remote participants and
+/// the local microphone — delivered as independent callbacks. Appending both to a single array puts
+/// them in *arrival* order rather than in *time* order, and two consequences follow. Every timestamp
+/// the batch transcriber and the diarizer derive from that array drifts further from the meeting the
+/// longer it runs, because an hour of meeting has become two hours of buffer. And the capacity limit
+/// arrives in half the wall-clock time, cutting the recording that can be processed in half.
+///
+/// So each source keeps its own cursor and writes where it belongs; samples that overlap are summed.
+/// One source or five, the buffer is the meeting's timeline and `samples.count / sampleRate` is the
+/// stretch of meeting it covers.
+struct AudioTimelineMixer {
+    /// Sample rate of the timeline. Sources are resampled to this before being written.
+    let sampleRate: Double
+
+    /// Most samples the timeline will hold. Audio past it is dropped rather than grown into, because
+    /// the whole buffer is handed to the models in one piece and has to fit in memory to do that.
+    let capacity: Int
+
+    /// The mixed timeline, from the start of the session.
+    private(set) var samples: [Float] = []
+
+    /// Set once any audio has been dropped for want of capacity. The post-recording pass reads it to
+    /// know its output speaks for only part of the session.
+    private(set) var didDropAudio = false
+
+    /// Where each source's next sample belongs, in timeline samples.
+    private var cursors: [AudioSource: Int] = [:]
+
+    init(sampleRate: Double, capacity: Int) {
+        self.sampleRate = sampleRate
+        self.capacity = max(0, capacity)
+    }
+
+    // MARK: - Capacity
+
+    /// Timeline capacity for a machine with this much physical memory.
+    ///
+    /// The buffer is held as Float32 and handed whole to Sortformer and Parakeet, so its ceiling is
+    /// a memory question rather than a duration one — a fixed number of minutes is either wasteful
+    /// on a large machine or reckless on a small one. A sixteenth of physical memory, floored and
+    /// capped so neither end runs away, works out at roughly 2.3 hours on 8 GB and 4.6 hours from
+    /// 16 GB up.
+    static func capacity(forPhysicalMemory physicalMemory: UInt64, sampleRate: Double) -> Int {
+        let share = physicalMemory / AppConstants.Diarization.audioBufferMemoryDivisor
+        let bytes = min(
+            max(share, AppConstants.Diarization.audioBufferMinBytes),
+            AppConstants.Diarization.audioBufferMaxBytes
+        )
+        guard sampleRate > 0 else { return 0 }
+        return Int(bytes / UInt64(MemoryLayout<Float>.size))
+    }
+
+    // MARK: - Reading
+
+    var isEmpty: Bool {
+        samples.isEmpty
+    }
+
+    /// Seconds of session timeline the buffer covers.
+    var duration: TimeInterval {
+        sampleRate > 0 ? TimeInterval(Double(samples.count) / sampleRate) : 0
+    }
+
+    /// Seconds of timeline the buffer holds, or `nil` when it holds all of it. `nil` is what lets
+    /// the post-recording pass replace the whole session's transcript; a value means it may only
+    /// speak for that much of it.
+    var heardDuration: TimeInterval? {
+        didDropAudio ? duration : nil
+    }
+
+    // MARK: - Writing
+
+    /// Declares where a source's next sample belongs on the session timeline.
+    ///
+    /// Call it when a source starts, including when one resumes: a capture device's own clock
+    /// restarts from zero every time it is toggled, so only the session can say where its audio
+    /// belongs. A source that never declares itself writes from the end of the timeline, which is
+    /// where a source that starts now belongs anyway.
+    mutating func beginSource(_ source: AudioSource, atSessionTime time: TimeInterval) {
+        cursors[source] = max(0, Int((time * sampleRate).rounded()))
+    }
+
+    /// Mixes one source's samples into the timeline at that source's cursor.
+    mutating func write(_ incoming: [Float], from source: AudioSource) {
+        guard !incoming.isEmpty, capacity > 0 else { return }
+
+        let start = cursors[source] ?? samples.count
+        let end = start + incoming.count
+        // The cursor advances even for audio that does not fit, so a source that outlives the
+        // capacity limit stays correctly placed rather than piling up at the boundary.
+        defer { cursors[source] = end }
+
+        guard start < capacity else {
+            didDropAudio = true
+            return
+        }
+        if end > capacity {
+            didDropAudio = true
+        }
+
+        let writable = min(end, capacity)
+        if samples.isEmpty {
+            samples.reserveCapacity(min(capacity, Int(sampleRate * 600)))
+        }
+        if samples.count < writable {
+            samples.append(contentsOf: repeatElement(0, count: writable - samples.count))
+        }
+
+        for offset in 0 ..< (writable - start) {
+            // Two people talking at once sums past full scale. Clamping distorts that moment;
+            // halving every sample would instead cost signal on the far more common case of one
+            // person talking, which is the one the models have to get right.
+            samples[start + offset] = min(1, max(-1, samples[start + offset] + incoming[offset]))
+        }
+    }
+
+    // MARK: - Clearing
+
+    /// Hands over the timeline and resets for the next session.
+    mutating func take() -> [Float] {
+        let copy = samples
+        removeAll()
+        return copy
+    }
+
+    mutating func removeAll() {
+        samples.removeAll(keepingCapacity: false)
+        cursors.removeAll()
+        didDropAudio = false
+    }
+}

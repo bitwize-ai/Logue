@@ -103,8 +103,68 @@ extension RecordingSessionManager {
         logger.info("Diarization complete: \(speakers.count) speakers, \(speakerSegments.count) segments")
     }
 
-    /// Primary diarization path: runs Sortformer `processComplete` and Parakeet TDT ASR
-    /// concurrently on the full audio buffer, then aligns the transcript with speaker segments.
+    /// What the post-recording pass produced, and how much of the session it can speak for.
+    private struct BatchPassResult {
+        var segments: [TranscriptSegment]?
+        var speakers: [SortformerSpeakerUpdate]?
+        /// Seconds of the session the pass actually heard, or `nil` when it heard all of it.
+        var heardDuration: TimeInterval?
+    }
+
+    /// Runs Parakeet TDT and Sortformer over the session, from memory when the recording fits and
+    /// from its own file on disk when it does not.
+    ///
+    /// The in-memory timeline is bounded by what the machine can hold, and a long meeting overruns
+    /// it. That used to be the end of the story — speakers and batch-quality transcript simply
+    /// stopped there. But the recording is already on disk for playback, and neither model needs it
+    /// in one piece, so an overrun becomes a change of route rather than a loss.
+    private func runBatchPass(
+        for meetingID: UUID,
+        diarizer: DiarizationManager
+    ) async -> BatchPassResult {
+        // Read before taking the buffer, which resets it for the next session.
+        let overflowed = diarizer.heardDuration != nil
+        let audioBuffer = diarizer.takeAudioBuffer()
+
+        if overflowed,
+           let audioURL = MeetingStore.shared.meetings.first(where: { $0.id == meetingID })?.audioFileURL
+        {
+            logger.info("Recording outgrew the in-memory timeline — processing it from disk instead")
+            diarizationStage = "Processing long recording…"
+            if let result = await diarizer.processRecordingFile(audioURL) {
+                // The file is the whole session, so the result speaks for all of it.
+                return BatchPassResult(
+                    segments: result.segments.isEmpty ? nil : result.segments,
+                    speakers: result.speakers.isEmpty ? nil : result.speakers,
+                    heardDuration: nil
+                )
+            }
+            logger.warning("Long-recording pass failed — falling back to the audio that fitted in memory")
+        }
+
+        var heardDuration: TimeInterval?
+        if overflowed {
+            // Nothing to read back: the pass below heard only the part that fitted, and must not be
+            // allowed to speak for the rest of the session.
+            heardDuration = TimeInterval(Double(audioBuffer.count) / Double(diarizer.sampleRate))
+            let heardSeconds = String(format: "%.0f", heardDuration ?? 0)
+            logger.warning(
+                """
+                Audio buffer capped and no file to fall back on: heard \(heardSeconds, privacy: .public)s \
+                of this session — keeping the live transcript beyond that point
+                """
+            )
+        }
+
+        // Both models are independent and take ~30-60s each on a 1-hour recording — run them together.
+        async let sortformerTask = diarizer.processCompleteWith(audioBuffer)
+        async let asrTask = diarizer.transcribeBuffer(audioBuffer)
+        let (speakers, segments) = await (sortformerTask, asrTask)
+        return BatchPassResult(segments: segments, speakers: speakers, heardDuration: heardDuration)
+    }
+
+    /// Primary diarization path: transcribes and diarizes the session, then aligns the transcript
+    /// with the speaker segments.
     /// Returns `true` when it handled diarization (streaming was active); `false` to fall back to batch.
     private func processSortformerDiarization(
         for meetingID: UUID,
@@ -114,12 +174,10 @@ extension RecordingSessionManager {
         guard diarizer.isStreamingActive else { return false }
         logger.info("Starting parallel Sortformer + batch ASR for meeting \(meetingID)...")
 
-        // Snapshot the buffer once, then run Sortformer diarization and Parakeet TDT ASR
-        // concurrently — both are independent and take ~30-60s each on a 1-hour recording.
-        let audioBuffer = diarizer.takeAudioBuffer()
-        async let sortformerTask = diarizer.processCompleteWith(audioBuffer)
-        async let asrTask = diarizer.transcribeBuffer(audioBuffer)
-        let (sortformerUpdates, batchSegments) = await (sortformerTask, asrTask)
+        let pass = await runBatchPass(for: meetingID, diarizer: diarizer)
+        let heardDuration = pass.heardDuration
+        let sortformerUpdates = pass.speakers
+        let batchSegments = pass.segments
 
         // Replace this session's streaming transcript with the accurate Parakeet TDT result before
         // speakers are assigned, so alignment runs against the final text rather than the draft.
@@ -127,7 +185,8 @@ extension RecordingSessionManager {
             MeetingStore.shared.replaceTranscript(
                 for: meetingID,
                 with: batchSegments,
-                sessionStart: sessionStart
+                sessionStart: sessionStart,
+                heardDuration: heardDuration
             )
             logger.info("Streaming transcript replaced with batch ASR (\(batchSegments.count) segments)")
         }
