@@ -142,6 +142,7 @@ class CommandCenterController: ObservableObject {
         currentMode = .chat
         chatHasMessages = false
         createPanel(mode: .chat)
+        setupAppActiveObservers()
     }
 
     func showRecordingPanel(meetingID: UUID) {
@@ -198,6 +199,10 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppBecameActive() {
+        if case .chat = currentMode {
+            panel?.level = .floating
+            return
+        }
         guard case .recording = currentMode else { return }
         // Skip if this activation was triggered by panel creation
         if suppressNextActiveHide {
@@ -214,6 +219,19 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppResignedActive() {
+        if case .chat = currentMode {
+            // An untouched island is disposable — same rule as a click outside it.
+            // Once there are messages the conversation only exists in the view's
+            // state, so drop the panel out of the floating level instead of
+            // destroying it: it stops covering the app being switched to, and
+            // comes back to the front with Logue.
+            if chatHasMessages {
+                panel?.level = .normal
+            } else {
+                dismissPanel()
+            }
+            return
+        }
         guard RecordingSessionManager.shared.isRecording, activeRecordingMeetingID != nil else { return }
         if hiddenForMainWindow {
             hiddenForMainWindow = false
