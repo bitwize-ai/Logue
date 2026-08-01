@@ -1,12 +1,5 @@
 import Foundation
 
-/// What a Command Center trigger, or Logue losing frontmost status, means for the
-/// chat island.
-///
-/// Kept free of AppKit so the matrix is testable without an NSPanel. The controller
-/// owns the panel and only asks what to do with it — issue #46 was three separate
-/// wrong answers to these questions, none of which a test could have reached while
-/// they lived inside the window code.
 /// What the chat island is currently holding.
 ///
 /// The two are kept apart because they earn different protection. Deliberately
@@ -23,6 +16,13 @@ struct CommandCenterChatContent: Equatable {
     }
 }
 
+/// What a Command Center trigger, or Logue losing frontmost status, means for the
+/// chat island.
+///
+/// Kept free of AppKit so the matrix is testable without an NSPanel: the controller
+/// owns the panel and only asks what to do with it. Issue #46 was several wrong
+/// answers to these questions, none of which a test could reach while they lived
+/// inside the window code.
 enum CommandCenterChatRule {
     /// What pressing the Ask Logue shortcut should do.
     enum Trigger: Equatable {
