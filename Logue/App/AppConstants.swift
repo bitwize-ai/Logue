@@ -137,6 +137,27 @@ enum AppConstants {
         static let offsetThreshold: Float = 0.4
         /// Post-recording pipeline timeout in seconds
         static let postRecordingTimeoutSeconds: TimeInterval = 180
+        /// How much of a recording the post-recording batch pass (Parakeet ASR + Sortformer) can be
+        /// handed in one go, expressed as memory rather than as minutes: the session's audio is held
+        /// as 16 kHz mono Float32 (~230 MB per hour) and given to the models whole, so what bounds
+        /// it is what the machine can hold. A fixed number of minutes would be wasteful on a large
+        /// Mac and reckless on a small one. `AudioTimelineMixer.capacity(forPhysicalMemory:)` reads
+        /// these; audio past the limit is dropped and that stretch keeps its live transcript rather
+        /// than losing it — see `TranscriptReplacement`.
+        static let audioBufferMemoryDivisor: UInt64 = 16 // a sixteenth of installed memory
+        /// …and no more than a quarter of what is actually free, which is the tighter bound on a
+        /// machine that has been running a while.
+        static let audioBufferAvailableDivisor: UInt64 = 4
+        static let audioBufferMinBytes: UInt64 = 256 * 1024 * 1024 // ~1.2 hours
+        static let audioBufferMaxBytes: UInt64 = 1024 * 1024 * 1024 // ~4.6 hours
+        /// Chunk size for the long-recording pass, which streams the persisted file past the
+        /// in-memory limit instead of stopping there. Big enough that per-chunk overhead is
+        /// irrelevant, small enough that a chunk is a few megabytes.
+        static let longRecordingChunkSeconds: Double = 30
+        /// How far short of the session the saved audio may fall before the long-recording pass
+        /// stops speaking for the part it does not hold. Covers the ordinary slack between capture
+        /// stopping and the clock stopping; a real shortfall is far larger than this.
+        static let recordingCoverageTolerance: TimeInterval = 5
         /// Dedup tolerance for overlapping speaker segments in seconds
         static let segmentDedupTolerance: Double = 0.15
         /// Silero VAD model probability threshold — lowered from default 0.85 to catch quiet/distant speakers
