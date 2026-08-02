@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Ask Logue island can be put away again. Its shortcut rebuilt it instead of closing it,
+  which stranded the panel on screen with every way out of it dead — often leaving quitting
+  Logue as the only escape. Esc and clicking outside were both watched in a way that could not
+  see the event while Logue itself was frontmost, so each worked only some of the time. And
+  switching apps meant nothing to the island, so the prompt bar sat over every other app until
+  Logue was quit or hidden. It now closes on its own shortcut, on Esc and on a click anywhere
+  outside it, and gets out of the way when you switch apps — keeping a conversation or an
+  unsent prompt rather than discarding it, and coming back to the front on the shortcut that
+  summoned it.
 - **Meeting transcripts no longer stop at 30 minutes.** When a recording ended, the transcript
   was replaced by a re-transcription of audio held in memory — and that buffer was capped at
   thirty minutes while the replacement covered the whole session. A ninety-minute meeting lost

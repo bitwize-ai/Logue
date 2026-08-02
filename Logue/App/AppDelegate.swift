@@ -696,7 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc
     private func showChatInterface() {
         suppressMainWindowRestore = true
-        commandCenterController?.showChatPanel()
+        commandCenterController?.toggleChatPanel()
     }
 
     @objc

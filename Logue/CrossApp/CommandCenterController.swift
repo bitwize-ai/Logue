@@ -1,10 +1,6 @@
 import Cocoa
 import SwiftUI
 
-extension Notification.Name {
-    static let dismissCommandCenter = Notification.Name("dismissCommandCenter")
-}
-
 /// Panel mode for Command Center — chat or recording.
 enum CommandCenterMode: Equatable {
     case chat
@@ -70,6 +66,13 @@ private class TransparentContainerView: NSView {
 
     var onClickEmptyArea: (() -> Void)?
 
+    /// Whether a click on the empty area is ours to act on. Consulted during hit
+    /// testing, so it must answer without side effects. Answering `false` lets the
+    /// click through to whatever is behind the panel — the panel is far taller
+    /// than the pill drawn at the bottom of it, so claiming clicks we will not act
+    /// on turns the transparent region into a dead zone that swallows them.
+    var claimsEmptyAreaClicks: (() -> Bool)?
+
     override func draw(_ dirtyRect: NSRect) {
         // Fully transparent — do not draw anything.
     }
@@ -90,9 +93,9 @@ private class TransparentContainerView: NSView {
                 return hit
             }
         }
-        // No subview hit — return self only if we have an empty-area handler,
-        // otherwise return nil to let the click pass through entirely.
-        return onClickEmptyArea != nil ? self : nil
+        // No subview hit — claim it only if we will act on it, otherwise return nil
+        // to let the click pass through entirely.
+        return claimsEmptyAreaClicks?() == true ? self : nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -107,12 +110,16 @@ private class TransparentContainerView: NSView {
 class CommandCenterController: ObservableObject {
     @Published var isVisible: Bool = false
 
+    /// Virtual key code for Escape.
+    private static let escapeKeyCode: UInt16 = 53
+
     private var panel: CommandCenterPanel?
     private var currentMode: CommandCenterMode?
     private var escMonitor: Any?
+    private var escLocalMonitor: Any?
     private var clickMonitor: Any?
-    private var dismissObserver: NSObjectProtocol?
-    private var chatHasMessages: Bool = false
+    private var clickLocalMonitor: Any?
+    private var chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
 
     /// The meeting ID of the active recording panel, used to restore the island.
     private(set) var activeRecordingMeetingID: UUID?
@@ -125,13 +132,40 @@ class CommandCenterController: ObservableObject {
 
     // MARK: - Public API
 
-    func showChatPanel() {
-        if panel != nil {
+    /// Summons the chat island, or dismisses it when it is already up, so the
+    /// activation shortcut is the same key that puts it away again.
+    func toggleChatPanel() {
+        switch CommandCenterChatRule.trigger(
+            mode: currentMode,
+            isShowingPanel: panel != nil,
+            isChatBehindOtherApps: panel?.level == .normal
+        ) {
+        case .dismiss:
             dismissPanel()
+            return
+        case .raise:
+            raiseChatPanel()
+            return
+        case .replace:
+            dismissPanel()
+        case .present:
+            break
         }
         currentMode = .chat
-        chatHasMessages = false
+        chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
         createPanel(mode: .chat)
+        setupAppActiveObservers()
+    }
+
+    /// Brings an island that was sent behind other apps back to the front, with
+    /// whatever was typed into it still there. Reached from the shortcut while
+    /// another app is frontmost, where nothing else would re-promote it.
+    private func raiseChatPanel() {
+        guard let panel else { return }
+        panel.level = .floating
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func showRecordingPanel(meetingID: UUID) {
@@ -188,6 +222,10 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppBecameActive() {
+        if case .chat = currentMode {
+            panel?.level = .floating
+            return
+        }
         guard case .recording = currentMode else { return }
         // Skip if this activation was triggered by panel creation
         if suppressNextActiveHide {
@@ -204,6 +242,16 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppResignedActive() {
+        switch CommandCenterChatRule.focusLoss(mode: currentMode, chatHasContent: !chatContent.isEmpty) {
+        case .dismiss:
+            dismissPanel()
+            return
+        case .sendBehindOtherApps:
+            panel?.level = .normal
+            return
+        case nil:
+            break
+        }
         guard RecordingSessionManager.shared.isRecording, activeRecordingMeetingID != nil else { return }
         if hiddenForMainWindow {
             hiddenForMainWindow = false
@@ -230,7 +278,7 @@ class CommandCenterController: ObservableObject {
         case .chat:
             let chatView = CommandCenterChatView(
                 onDismiss: { [weak self] in self?.dismissPanel() },
-                onMessagesChanged: { [weak self] hasMessages in self?.chatHasMessages = hasMessages }
+                onContentChanged: { [weak self] content in self?.chatContent = content }
             )
             let hv = TransparentHostingView(rootView: chatView)
             hv.translatesAutoresizingMaskIntoConstraints = false
@@ -256,10 +304,8 @@ class CommandCenterController: ObservableObject {
                 hv.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
             ])
 
-            container.onClickEmptyArea = { [weak self] in
-                guard let self, !self.chatHasMessages else { return }
-                dismissPanel()
-            }
+            container.claimsEmptyAreaClicks = { [weak self] in self?.chatContent.hasMessages == false }
+            container.onClickEmptyArea = { [weak self] in self?.dismissPanel() }
 
             hostingView = container
             panelWidth = 740
@@ -383,74 +429,102 @@ class CommandCenterController: ObservableObject {
 
     private func setupMonitors(mode: CommandCenterMode) {
         escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
+            if event.keyCode == Self.escapeKeyCode {
                 Task { @MainActor in self?.dismissPanel() }
             }
         }
 
+        // The local monitors below are chat-only on purpose. A global monitor never
+        // sees events routed to our own app, and creating a panel makes it key, so
+        // without them Esc and clicking away work only while some other app is
+        // frontmost. The recording island is left with exactly the behaviour it had
+        // rather than gaining an Esc that collapses it the instant recording starts.
         if case .chat = mode {
+            escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == Self.escapeKeyCode, let self, panel?.isKeyWindow == true else { return event }
+                dismissPanel()
+                return nil
+            }
+
             clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let clickLocation = event.locationInWindow
-                let screenPoint = event.window?.convertPoint(toScreen: clickLocation) ?? clickLocation
-                Task { @MainActor in
-                    guard let self, let panel = self.panel else { return }
-                    // Don't dismiss on outside click when there are messages
-                    if self.chatHasMessages {
-                        return
-                    }
-                    if !panel.frame.contains(screenPoint) {
-                        self.dismissPanel()
-                    }
-                }
+                let screenPoint = Self.screenPoint(for: event)
+                Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
+            }
+
+            clickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                let screenPoint = Self.screenPoint(for: event)
+                Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
+                return event
             }
         }
+    }
 
-        dismissObserver = NotificationCenter.default.addObserver(
-            forName: .dismissCommandCenter, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.dismissPanel() }
-        }
+    /// Where a click landed, in screen coordinates. Events from a global monitor
+    /// carry no window and are already in screen space.
+    private static func screenPoint(for event: NSEvent) -> NSPoint {
+        guard let window = event.window else { return event.locationInWindow }
+        return window.convertPoint(toScreen: event.locationInWindow)
+    }
+
+    /// Puts an empty chat island away when a click lands anywhere but on it. An
+    /// island holding a conversation or an unsent prompt stays.
+    private func dismissIfClickMissedPanel(_ screenPoint: NSPoint) {
+        guard let panel, !chatContent.hasMessages, !panel.frame.contains(screenPoint) else { return }
+        dismissPanel()
     }
 
     // MARK: - Dismiss
 
-    /// Removes event monitors and notification observers used by the active panel.
+    /// Removes the event monitors used by the active panel.
     private func removeMonitors() {
         if let monitor = escMonitor {
             NSEvent.removeMonitor(monitor); escMonitor = nil
         }
+        if let monitor = escLocalMonitor {
+            NSEvent.removeMonitor(monitor); escLocalMonitor = nil
+        }
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor); clickMonitor = nil
         }
-        if let observer = dismissObserver {
-            NotificationCenter.default.removeObserver(observer); dismissObserver = nil
+        if let monitor = clickLocalMonitor {
+            NSEvent.removeMonitor(monitor); clickLocalMonitor = nil
         }
     }
 
-    /// Shared cleanup after a panel closes. Resets panel state and optionally
-    /// tears down recording observers if no recording is actively running.
-    private func finalizeDismiss(preserveRecordingState: Bool = false) {
+    /// Gives up ownership of the showing panel and hands it to the caller to
+    /// animate away. Every piece of state describing it is cleared here, before
+    /// returning — a dismissal takes 150–300ms to animate, and for that whole
+    /// window anything reading `panel` or `currentMode` would otherwise be
+    /// answered about a panel that is already leaving. That stale answer is what
+    /// made the shortcut, a menu-bar click and the dismiss notification act on a
+    /// dying panel instead of presenting a new one (issue #46).
+    ///
+    /// Returns `nil` when there is nothing showing.
+    private func relinquishPanel() -> CommandCenterPanel? {
+        guard let dismissed = panel else { return nil }
+
+        // Keep recording state if a recording is still running (allows re-show from menu)
+        let keepRecordingState = RecordingSessionManager.shared.isRecording && activeRecordingMeetingID != nil
+
         panel = nil
         isVisible = false
         currentMode = nil
-        chatHasMessages = false
-        if !preserveRecordingState {
+        chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
+        if !keepRecordingState {
             activeRecordingMeetingID = nil
             tearDownAppActiveObservers()
         }
+        return dismissed
     }
 
     func dismissPanel() {
         removeMonitors()
-        guard let panel else { return }
-
-        // Keep recording state if a recording is still running (allows re-show from menu)
-        let keepRecordingState = RecordingSessionManager.shared.isRecording && activeRecordingMeetingID != nil
         let isRecordingMode = if case .recording = currentMode {
             true
         } else {
             false
         }
+        guard let panel = relinquishPanel() else { return }
 
         if isRecordingMode {
             // Scale-down + slide-up into the notch area (macOS native feel)
@@ -469,18 +543,16 @@ class CommandCenterController: ObservableObject {
                     display: true
                 )
                 panel.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
+            } completionHandler: {
                 panel.close()
-                Task { @MainActor in self?.finalizeDismiss(preserveRecordingState: keepRecordingState) }
             }
         } else {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.15
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 panel.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
+            } completionHandler: {
                 panel.close()
-                Task { @MainActor in self?.finalizeDismiss(preserveRecordingState: keepRecordingState) }
             }
         }
     }
@@ -495,7 +567,7 @@ class CommandCenterController: ObservableObject {
         hiddenForMainWindow = false
         tearDownAppActiveObservers()
 
-        guard let panel else { return }
+        guard let panel = relinquishPanel() else { return }
 
         let originalFrame = panel.frame
         let collapsedWidth: CGFloat = 120
@@ -516,10 +588,7 @@ class CommandCenterController: ObservableObject {
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             panel.close()
-            Task { @MainActor in
-                self?.finalizeDismiss()
-                self?.showSavedToast(near: originalFrame)
-            }
+            Task { @MainActor in self?.showSavedToast(near: originalFrame) }
         }
     }
 
