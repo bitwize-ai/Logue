@@ -81,9 +81,22 @@ extension RecordingSessionManager {
     func persistRecordingAudio(sources: CaptureSources, meetingID: UUID) async -> SavedRecording {
         guard !sources.isEmpty else { return .none }
 
-        if let sole = sources.soleSource, !sources.needsComposing {
-            // The common case: one source, running throughout. Its file is already the timeline.
-            return moveIntoPlace(sole.url, meetingID: meetingID, describesTimeline: true)
+        if let sole = sources.soleSource {
+            if !sources.needsComposing {
+                // The common case: one source, running throughout. Its file is already the timeline.
+                return moveIntoPlace(sole.url, meetingID: meetingID, describesTimeline: true)
+            }
+            // One source that joined late or was muted. Its file holds every sample, just packed
+            // together — so the gaps can be spliced in losslessly rather than paying an AAC encode
+            // for audio that needs no mixing. Encoding here would block the stop for a minute on a
+            // long recording, and hand the transcriber a lossy copy of a file we already have clean.
+            if let spliced = await splicePlacements(sole.url, placements: sole.placements, meetingID: meetingID) {
+                removeTemporary(sole.url)
+                audioRecorder.clearTemporaryFile()
+                MeetingStore.shared.setAudioFileURL(spliced, for: meetingID)
+                return .onSessionTimeline(spliced)
+            }
+            logger.warning("Single-source splice failed — falling back to the composition path")
         }
 
         if let composed = await composeRecording(sources: sources, meetingID: meetingID) {
@@ -120,6 +133,85 @@ extension RecordingSessionManager {
             try FileManager.default.removeItem(at: url)
         } catch {
             logger.error("Failed to delete temp audio file: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - Splicing a single source
+
+    /// Rewrites one source's file with its silent gaps restored, sample for sample.
+    ///
+    /// A single source records every sample it heard, contiguously — a mute or a late join only
+    /// means the file is *shorter* than the meeting, never that audio is missing. So the file can be
+    /// copied through with silence inserted at the gaps: no mixing, no encoder, and the result is
+    /// still bit-identical PCM. Reserved for the single-source case; two sources genuinely have to be
+    /// mixed, which is what `composeRecording` is for.
+    private func splicePlacements(
+        _ url: URL,
+        placements: [CaptureSegmentTimeline.Placement],
+        meetingID: UUID
+    ) async -> URL? {
+        guard !placements.isEmpty else { return nil }
+        let ext = url.pathExtension.isEmpty ? "wav" : url.pathExtension
+        guard let outputURL = recordingsFileURL(for: meetingID, extension: ext) else { return nil }
+        let capturedLogger = logger
+
+        return await Task.detached {
+            do {
+                let source = try AVAudioFile(forReading: url)
+                let format = source.processingFormat
+                let rate = format.sampleRate
+                guard rate > 0 else { return nil }
+                let destination = try AVAudioFile(forWriting: outputURL, settings: source.fileFormat.settings)
+
+                let blockFrames: AVAudioFrameCount = 1 << 16
+                var writtenFrames: AVAudioFramePosition = 0
+
+                for placement in placements.sorted(by: { $0.sessionStart < $1.sessionStart }) {
+                    // Silence up to where this activation belongs.
+                    let startFrame = AVAudioFramePosition((placement.sessionStart * rate).rounded())
+                    if startFrame > writtenFrames {
+                        try Self.writeSilence(
+                            frames: AVAudioFramePosition(startFrame - writtenFrames),
+                            format: format, to: destination, blockFrames: blockFrames
+                        )
+                        writtenFrames = startFrame
+                    }
+
+                    // Then the activation itself, straight through.
+                    source.framePosition = AVAudioFramePosition((placement.fileStart * rate).rounded())
+                    var remaining = AVAudioFramePosition((placement.duration * rate).rounded())
+                    while remaining > 0, source.framePosition < source.length {
+                        let count = AVAudioFrameCount(min(AVAudioFramePosition(blockFrames), remaining))
+                        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { break }
+                        try source.read(into: buffer, frameCount: count)
+                        guard buffer.frameLength > 0 else { break }
+                        try destination.write(from: buffer)
+                        remaining -= AVAudioFramePosition(buffer.frameLength)
+                        writtenFrames += AVAudioFramePosition(buffer.frameLength)
+                    }
+                }
+                return outputURL
+            } catch {
+                capturedLogger.error("Failed to splice recording: \(error.localizedDescription, privacy: .public)")
+                return nil
+            }
+        }.value
+    }
+
+    nonisolated private static func writeSilence(
+        frames: AVAudioFramePosition,
+        format: AVAudioFormat,
+        to file: AVAudioFile,
+        blockFrames: AVAudioFrameCount
+    ) throws {
+        var remaining = frames
+        while remaining > 0 {
+            let count = AVAudioFrameCount(min(AVAudioFramePosition(blockFrames), remaining))
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { return }
+            buffer.frameLength = count
+            // A freshly allocated buffer is already zeroed; set the length and write it.
+            try file.write(from: buffer)
+            remaining -= AVAudioFramePosition(count)
         }
     }
 
@@ -205,8 +297,7 @@ extension RecordingSessionManager {
 
     /// Moves a temporary audio file to a stable per-meeting location in Application Support.
     /// Preserves the source file extension (.wav for mic, .caf for system audio).
-    /// Internal rather than private: the core file calls it when a recording stops.
-    func moveRecordingFile(from tempURL: URL, meetingID: UUID) throws -> URL {
+    private func moveRecordingFile(from tempURL: URL, meetingID: UUID) throws -> URL {
         let ext = tempURL.pathExtension.isEmpty ? "wav" : tempURL.pathExtension
         guard let dest = recordingsFileURL(for: meetingID, extension: ext) else {
             throw CocoaError(.fileWriteUnknown)

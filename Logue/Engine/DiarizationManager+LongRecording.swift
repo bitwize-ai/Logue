@@ -28,6 +28,8 @@ extension DiarizationManager {
             return nil
         }
 
+        guard !Task.isCancelled else { return nil }
+
         async let transcriptTask = transcribeRecordingFile(url)
         let speakers = await diarizeRecordingFile(url)
         let segments = await transcriptTask
@@ -44,14 +46,18 @@ extension DiarizationManager {
         guard let asr = await ensureAsrManager() else { return nil }
         let capturedLogger = logger
 
-        let result: ASRResult? = await Task.detached {
+        let result: ASRResult? = await Self.offMainActor {
             do {
+                try Task.checkCancellation()
                 return try await asr.transcribe(url, source: .system)
+            } catch is CancellationError {
+                capturedLogger.info("Long-recording ASR cancelled")
+                return nil
             } catch {
                 capturedLogger.error("Long-recording ASR failed: \(error.localizedDescription, privacy: .public)")
                 return nil
             }
-        }.value
+        }
 
         guard let result else { return nil }
         let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -60,8 +66,14 @@ extension DiarizationManager {
             return nil
         }
         guard let timings = result.tokenTimings, !timings.isEmpty else {
-            logger.warning("Long-recording ASR: no token timings — returning one segment")
-            return [TranscriptSegment(text: trimmed, startTime: 0, endTime: result.duration)]
+            // The in-memory path falls back to a single segment spanning `result.duration` here, but
+            // that figure is always zero on this route: disk-backed transcription finishes with an
+            // empty sample array and derives the duration from its count. A segment from 0 to 0
+            // holding hours of text would read as covering the session and would replace the whole
+            // live transcript with one unplaceable blob. The live transcript is segmented and
+            // correctly timed — keep it.
+            logger.warning("Long-recording ASR returned no token timings — keeping the live transcript")
+            return nil
         }
 
         let segments = segmentsFromTokenTimings(timings)
@@ -95,25 +107,29 @@ extension DiarizationManager {
         // Off the MainActor: this reads and resamples the whole recording, hundreds of times over a
         // long one. Left on the main thread it would hitch the UI for the entire post-recording pass,
         // while the diarization pass running beside it is detached and does not.
-        let regions: [(start: TimeInterval, end: TimeInterval)]? = await Task.detached {
+        let regions: [(start: TimeInterval, end: TimeInterval)]? = await Self.offMainActor {
             do {
                 var found: [(start: TimeInterval, end: TimeInterval)] = []
                 // Streamed rather than collected: awaiting VAD per chunk is exactly the case the
                 // reader is an iterator for.
                 var reader = try AudioFileChunkReader(url: url, chunkSeconds: chunkSeconds, sampleRate: rate)
                 while let chunk = try reader.next() {
+                    try Task.checkCancellation()
                     let offset = TimeInterval(Double(chunk.offset) / rate)
                     let speech = try await vad.segmentSpeech(chunk.samples, config: config)
                     found.append(contentsOf: speech.map { (offset + $0.startTime, offset + $0.endTime) })
                 }
                 return found
+            } catch is CancellationError {
+                capturedLogger.info("Long-recording VAD cancelled")
+                return nil
             } catch {
                 capturedLogger.warning(
                     "Long-recording VAD failed, returning unfiltered: \(error.localizedDescription, privacy: .public)"
                 )
                 return nil
             }
-        }.value
+        }
 
         guard let regions else { return segments }
 
@@ -153,25 +169,32 @@ extension DiarizationManager {
         let rate = Double(sampleRate)
         let capturedLogger = logger
 
-        let timeline: DiarizerTimeline? = await Task.detached {
+        let timeline: DiarizerTimeline? = await Self.offMainActor {
             do {
                 diarizer.reset()
                 var chunks = 0
-                try AudioFileChunkReader.read(url, chunkSeconds: chunkSeconds, sampleRate: rate) { samples, _ in
-                    _ = try diarizer.process(samples: samples)
+                var reader = try AudioFileChunkReader(url: url, chunkSeconds: chunkSeconds, sampleRate: rate)
+                while let chunk = try reader.next() {
+                    // Hours of work on a long recording. Without this the user cannot stop it: the
+                    // app sits in `.stopping`, and starting a new meeting is refused until it ends.
+                    try Task.checkCancellation()
+                    _ = try diarizer.process(samples: chunk.samples)
                     chunks += 1
                 }
                 guard chunks > 0 else { return nil }
                 _ = try diarizer.finalizeSession()
                 capturedLogger.info("Long-recording diarization: \(chunks) chunks streamed")
                 return diarizer.timeline
+            } catch is CancellationError {
+                capturedLogger.info("Long-recording diarization cancelled")
+                return nil
             } catch {
                 capturedLogger.error(
                     "Long-recording diarization failed: \(error.localizedDescription, privacy: .public)"
                 )
                 return nil
             }
-        }.value
+        }
 
         guard let timeline else { return nil }
         let updates = Self.speakerUpdates(from: timeline)
@@ -185,6 +208,17 @@ extension DiarizationManager {
     }
 
     // MARK: - Shared
+
+    /// Runs work off the main actor while keeping it inside the current task tree.
+    ///
+    /// `Task.detached` would also get the work off the actor, but a detached task does not inherit
+    /// cancellation — and this pass can run for tens of minutes on a long recording, during which
+    /// stopping the app or starting another meeting has to be able to interrupt it.
+    nonisolated static func offMainActor<T: Sendable>(
+        _ work: @Sendable @escaping () async -> T
+    ) async -> T {
+        await work()
+    }
 
     /// Flattens a Sortformer timeline into the app's speaker updates.
     static func speakerUpdates(from timeline: DiarizerTimeline) -> [SortformerSpeakerUpdate] {

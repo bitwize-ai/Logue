@@ -68,7 +68,9 @@ struct AudioFileChunkReader {
         // without this the last few milliseconds of every recording are quietly dropped.
         guard !drained else { return nil }
         drained = true
-        guard let tail = try? convert(feeding: nil), !tail.isEmpty else { return nil }
+        // Propagated, not swallowed: this drain exists precisely so the last milliseconds are not
+        // lost silently, and `try?` here would lose them silently on failure.
+        guard let tail = try convert(feeding: nil), !tail.isEmpty else { return nil }
         let offset = producedSamples
         producedSamples += tail.count
         return (tail, offset)

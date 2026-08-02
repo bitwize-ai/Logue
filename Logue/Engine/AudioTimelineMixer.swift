@@ -1,4 +1,6 @@
+import Darwin
 import Foundation
+import os.log
 
 /// Accumulates a recording session's audio onto one 16 kHz mono timeline, placing every capture
 /// source at the position it was actually heard at.
@@ -49,13 +51,39 @@ struct AudioTimelineMixer {
     /// The result is a count of samples, so the sample rate does not enter into it — how many fit in
     /// a byte budget is the same number whatever they are played back at. It decides how many
     /// *seconds* that is, which is the caller's business.
-    static func capacity(forPhysicalMemory physicalMemory: UInt64) -> Int {
-        let share = physicalMemory / AppConstants.Diarization.audioBufferMemoryDivisor
+    static func capacity(forPhysicalMemory physicalMemory: UInt64, availableMemory: UInt64? = nil) -> Int {
+        var budget = physicalMemory / AppConstants.Diarization.audioBufferMemoryDivisor
+
+        // Installed memory is not memory we can have. The buffer is handed to Parakeet and
+        // Sortformer at the same time, on a machine that may already have an MLX model resident, so
+        // where the OS will tell us what is actually free we take the smaller of the two shares.
+        if let availableMemory {
+            budget = min(budget, availableMemory / AppConstants.Diarization.audioBufferAvailableDivisor)
+        }
+
         let bytes = min(
-            max(share, AppConstants.Diarization.audioBufferMinBytes),
+            max(budget, AppConstants.Diarization.audioBufferMinBytes),
             AppConstants.Diarization.audioBufferMaxBytes
         )
         return Int(bytes / UInt64(MemoryLayout<Float>.size))
+    }
+
+    /// Free and inactive physical memory, or nil if the kernel will not say.
+    ///
+    /// Inactive pages count: they are file-backed or already-written pages the OS reclaims on
+    /// demand, so treating them as unavailable would floor the budget on any machine that has been
+    /// awake for a while.
+    static func availableSystemMemory() -> UInt64? {
+        var stats = vm_statistics64_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        let pageSize = UInt64(vm_kernel_page_size)
+        return (UInt64(stats.free_count) + UInt64(stats.inactive_count)) * pageSize
     }
 
     // MARK: - Reading
@@ -111,7 +139,22 @@ struct AudioTimelineMixer {
             samples.reserveCapacity(min(capacity, Int(sampleRate * 600)))
         }
         if samples.count < writable {
-            samples.append(contentsOf: repeatElement(0, count: writable - samples.count))
+            // A source resuming after a mute leaves a gap, and the timeline is dense, so the gap
+            // becomes real zeroed samples: ~230 MB an hour, allocated in one go on the actor that
+            // draws the UI. Held deliberately — the models need the silence to place what follows
+            // it, and a sparse timeline is a larger change than this fix — but a gap worth noticing
+            // is worth logging, because it also spends capacity that real audio will then not have.
+            let gap = writable - samples.count
+            if gap > Int(sampleRate * 60) {
+                let seconds = Int(Double(gap) / sampleRate)
+                let megabytes = gap * MemoryLayout<Float>.size / 1_048_576
+                os_log(
+                    .info,
+                    "Audio timeline: materialising a %{public}ds silent gap (~%{public}dMB)",
+                    seconds, megabytes
+                )
+            }
+            samples.append(contentsOf: repeatElement(0, count: gap))
         }
 
         for offset in 0 ..< (writable - start) {

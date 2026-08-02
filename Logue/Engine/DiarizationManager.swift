@@ -109,7 +109,10 @@ final class DiarizationManager {
     /// was heard at, so this stays the meeting's own timeline however many sources are running.
     private var mixer = AudioTimelineMixer(
         sampleRate: 16000,
-        capacity: AudioTimelineMixer.capacity(forPhysicalMemory: ProcessInfo.processInfo.physicalMemory)
+        capacity: AudioTimelineMixer.capacity(
+            forPhysicalMemory: ProcessInfo.processInfo.physicalMemory,
+            availableMemory: AudioTimelineMixer.availableSystemMemory()
+        )
     )
 
     // Extension-visible: +BatchASR

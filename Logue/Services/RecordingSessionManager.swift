@@ -131,24 +131,21 @@ final class RecordingSessionManager {
         sessionStartDate.map { Date().timeIntervalSince($0) } ?? 0
     }
 
-    // Extension-visible: +AudioFiles
     /// Where each stretch of the mic recording belongs on the meeting's timeline. The mic writes one
     /// file across every mute and unmute, with the muted stretches absent from it, so the playback
     /// mix has to lay each activation down separately or everything after the first mute plays early.
-    var micSegments = CaptureSegmentTimeline()
+    private var micSegments = CaptureSegmentTimeline()
 
-    // Extension-visible: +AudioFiles
     /// The same, for the system-audio tap. It can join a meeting already in progress, in which case
     /// its file starts then and laying it down at zero would play the remote side early.
-    var systemSegments = CaptureSegmentTimeline()
+    private var systemSegments = CaptureSegmentTimeline()
 
     /// Seconds written to the system-audio file, accumulated on the capture thread as each buffer
     /// lands. Counted rather than read back from the file, which that thread is concurrently writing.
     private let systemWrittenSeconds = OSAllocatedUnfairLock<TimeInterval>(initialState: 0)
 
-    // Extension-visible: +AudioFiles
     /// Seconds of audio the system-audio file holds right now.
-    var systemRecordedDuration: TimeInterval {
+    private var systemRecordedDuration: TimeInterval {
         systemWrittenSeconds.withLock { $0 }
     }
 
@@ -157,6 +154,31 @@ final class RecordingSessionManager {
     private var systemAudioFile: AVAudioFile?
     /// Temp path for the system audio recording file. Preserved after teardown so stopRecording() can move it.
     private var systemAudioTempURL: URL?
+
+    /// Installs the system-audio callback: write to disk, count what landed, forward to transcription.
+    ///
+    /// One copy rather than two. The same closure previously appeared at both the session start and
+    /// the mid-recording enable, which is two places for the two to drift apart — and they already
+    /// had, differing only in a log string.
+    private func installSystemAudioTap() {
+        let continuation = audioBufferContinuation
+        let sysFileRef = systemAudioFile
+        let writtenLock = systemWrittenSeconds
+        systemCapture.onAudioBuffer = { buffer in
+            if let ref = sysFileRef {
+                do {
+                    try ref.write(from: buffer)
+                    if buffer.format.sampleRate > 0 {
+                        let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
+                        writtenLock.withLock { $0 += seconds }
+                    }
+                } catch {
+                    os_log(.error, "System audio file write failed: %{public}@", error.localizedDescription)
+                }
+            }
+            continuation?.yield(CapturedAudio(buffer: buffer, source: .system))
+        }
+    }
 
     // MARK: - Audio Buffer Stream
 
@@ -202,6 +224,31 @@ final class RecordingSessionManager {
 
     // MARK: - Start Recording
 
+    /// Gives the previous session's post-recording work a moment to finish, then cancels it.
+    ///
+    /// Racing `await task.value` against a sleep inside a task group cannot do this: the group waits
+    /// for every child before returning, and `await task.value` ignores the group's cancellation, so
+    /// the timeout was only ever reached after the thing it meant to cut short had finished anyway.
+    /// That was harmless while the work was bounded by a thirty-minute buffer; now that a long
+    /// recording is processed to its end it could hold a new recording off for tens of minutes. The
+    /// task clears the handle when it completes, so waiting on that — with a deadline — leaves us
+    /// free to stop waiting.
+    private func awaitPreviousPostRecordingTask() async {
+        guard postRecordingTask != nil else { return }
+        logger.info("Waiting for previous post-recording task to complete before resume...")
+
+        let deadline = ContinuousClock.now + AppConstants.Delays.postRecordingWaitTimeout
+        while postRecordingTask != nil, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        if let task = postRecordingTask {
+            task.cancel()
+            _ = await task.value // The pass checks for cancellation, so this returns promptly.
+            logger.warning("Post-recording task timed out — cancelled and awaited")
+        }
+        postRecordingTask = nil
+    }
+
     // swiftlint:disable:next function_body_length
     func startRecording(for meeting: MeetingNote) async {
         guard recordingState == .idle else { return }
@@ -220,21 +267,7 @@ final class RecordingSessionManager {
             }
         }
 
-        // Wait for previous post-recording tasks to complete (max 5s) before starting new session
-        if let task = postRecordingTask {
-            logger.info("Waiting for previous post-recording task to complete before resume...")
-            let didFinish = await withTaskGroup(of: Bool.self) { group in
-                group.addTask { await task.value; return true }
-                group.addTask { try? await Task.sleep(for: AppConstants.Delays.postRecordingWaitTimeout); return false }
-                return await group.next() ?? false
-            }
-            if !didFinish {
-                task.cancel()
-                _ = await task.value // Wait for actual cancellation to complete
-                logger.warning("Post-recording task timed out — cancelled and awaited")
-            }
-            postRecordingTask = nil
-        }
+        await awaitPreviousPostRecordingTask()
         postRecordingPipeline.cancel()
 
         currentMeetingID = meeting.id
@@ -400,23 +433,7 @@ final class RecordingSessionManager {
         diarizer.beginSource(.system, atSessionTime: 0)
         // Capture is already running by this point — startCapture() returned above.
         systemSegments.sourceStarted(atSessionTime: 0, fileDuration: 0)
-        let continuation = audioBufferContinuation
-        let sysFileRef = systemAudioFile
-        let writtenLock = systemWrittenSeconds
-        systemCapture.onAudioBuffer = { buffer in
-            if let ref = sysFileRef {
-                do {
-                    try ref.write(from: buffer)
-                    if buffer.format.sampleRate > 0 {
-                        let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
-                        writtenLock.withLock { $0 += seconds }
-                    }
-                } catch {
-                    os_log(.error, "System audio file write failed: %{public}@", error.localizedDescription)
-                }
-            }
-            continuation?.yield(CapturedAudio(buffer: buffer, source: .system))
-        }
+        installSystemAudioTap()
 
         // Mic is NOT auto-started for system audio recordings.
         // User can manually enable it via the mic toggle (enableMic()).
@@ -488,7 +505,8 @@ final class RecordingSessionManager {
                     for: meetingID,
                     diarizer: diarizer,
                     sessionStart: sessionStart,
-                    savedAudio: savedAudio
+                    savedAudio: savedAudio,
+                    sessionDuration: finalElapsedTime - sessionStart
                 )
             }
             guard let self else { return }
@@ -497,6 +515,10 @@ final class RecordingSessionManager {
             }
             postRecordingPipeline.start(for: meetingID)
             MeetingStore.shared.saveMeeting(id: meetingID)
+            // Clears the handle so a subsequent start can see this finished rather than wait it out.
+            if currentMeetingID == nil {
+                postRecordingTask = nil
+            }
         }
 
         logger.info("Recording stopped for meeting \(meetingID)")
@@ -579,23 +601,7 @@ final class RecordingSessionManager {
         let systemJoinedAt = sessionElapsed
         diarizationManager?.beginSource(.system, atSessionTime: systemJoinedAt)
         systemSegments.sourceStarted(atSessionTime: systemJoinedAt, fileDuration: systemRecordedDuration)
-        let continuation = audioBufferContinuation
-        let sysFileRef = systemAudioFile
-        let writtenLock = systemWrittenSeconds
-        systemCapture.onAudioBuffer = { buffer in
-            if let ref = sysFileRef {
-                do {
-                    try ref.write(from: buffer)
-                    if buffer.format.sampleRate > 0 {
-                        let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
-                        writtenLock.withLock { $0 += seconds }
-                    }
-                } catch {
-                    os_log(.error, "System audio file write failed (mid-recording): %{public}@", error.localizedDescription)
-                }
-            }
-            continuation?.yield(CapturedAudio(buffer: buffer, source: .system))
-        }
+        installSystemAudioTap()
 
         // Update meeting mode to reflect system audio capture
         if let idx = MeetingStore.shared.meetings.firstIndex(where: { $0.id == meetingID }) {

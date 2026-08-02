@@ -29,7 +29,14 @@ struct LongRecordingE2ETests {
 
     @Test(
         "A recording past the in-memory limit is transcribed and diarized to its last minute",
-        .enabled(if: ProcessInfo.processInfo.environment["LOGUE_LONG_AUDIO"] != nil)
+        .enabled(if: {
+            let env = ProcessInfo.processInfo.environment
+            // Both are needed, so both gate the run — checking only one turns a half-configured
+            // environment into a failure where the doc comment promises a skip.
+            guard let path = env["LOGUE_LONG_AUDIO"], Double(env["LOGUE_LONG_AUDIO_HOURS"] ?? "") != nil
+            else { return false }
+            return FileManager.default.fileExists(atPath: path)
+        }())
     )
     @MainActor
     func longRecordingIsProcessedToTheEnd() async throws {
