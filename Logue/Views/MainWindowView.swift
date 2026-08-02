@@ -85,16 +85,22 @@ struct MainWindowView: View {
     /// Bridge between `EditorLayoutMode` and the split view's own column visibility.
     ///
     /// What a report back from the split view means is decided by
-    /// `EditorLayoutMode.modeAfterVisibilityReport(listIsVisible:)` rather than here, because
-    /// that rule is subtle enough to be worth a test — see its doc comment for the bug that
-    /// made it so.
+    /// `EditorLayoutMode.modeAfterVisibilityReport(listIsVisible:current:)` rather than here,
+    /// because that rule is subtle enough to be worth a test — see its doc comment for the bugs
+    /// that made it so.
+    ///
+    /// `current` is `EditorLayoutMode.stored`, read fresh from `UserDefaults`, and not
+    /// `layoutMode`. That is load-bearing: `@AppStorage` caches, so within the update that
+    /// echoes our own write back, `layoutMode` still reads the mode we just replaced.
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
             get: { layoutMode.showsList ? .all : .detailOnly },
             set: { newValue in
-                let listIsVisible = newValue != .detailOnly
-                guard let next = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: listIsVisible)
-                else { return }
+                let next = EditorLayoutMode.modeAfterVisibilityReport(
+                    listIsVisible: newValue != .detailOnly,
+                    current: EditorLayoutMode.stored
+                )
+                guard let next else { return }
                 layoutModeRaw = next.rawValue
             }
         )
@@ -103,7 +109,14 @@ struct MainWindowView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: columnVisibility) {
             CategorySidebarView(selection: $sidebarSelection)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
+                // A static ceiling, deliberately: measuring the window to bound this column
+                // means writing state during the split view's first layout, and this split
+                // view persists any `.detailOnly` it reports — see `columnVisibility`. The
+                // window-relative rule would only bind under 960pt anyway.
+                .navigationSplitViewColumnWidth(
+                    min: SidebarWidthLimit.categorySidebar.minimum, ideal: 240,
+                    max: SidebarWidthLimit.categorySidebar.ceiling
+                )
         } detail: {
             contentArea
         }

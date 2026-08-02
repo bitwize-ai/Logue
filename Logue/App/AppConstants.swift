@@ -348,9 +348,26 @@ enum AppConstants {
 
     enum Editor {
         /// Comfortable measure for prose — roughly 75 characters at the default size.
-        static let normalContentWidth: CGFloat = 720
+        /// The column never goes below this until the pane itself is narrower.
+        static let normalBaseContentWidth: CGFloat = 720
         /// Wide measure for tables, diagrams, and generated documents.
-        static let wideContentWidth: CGFloat = 1100
+        static let wideBaseContentWidth: CGFloat = 1100
+
+        /// Share of the editor pane each mode grows to occupy once the pane is wide
+        /// enough that the base measure would leave the window looking empty.
+        static let normalWidthFraction: CGFloat = 0.70
+        static let wideWidthFraction: CGFloat = 0.90
+
+        /// Ceilings on the grown column. Past these a line is too long to read
+        /// comfortably however much display there is.
+        static let normalMaxContentWidth: CGFloat = 900
+        static let wideMaxContentWidth: CGFloat = 1400
+
+        /// The narrowest a content pane may be squeezed to by widening the inspector
+        /// beside it — the normal reading measure. Past this the editor is giving up
+        /// the column it is designed around, and wide content starts scrolling
+        /// sideways instead of fitting.
+        static let minContentPaneWidth: CGFloat = normalBaseContentWidth
 
         /// Editor text-zoom bounds. 1.0 is the document's natural size.
         static let minZoom: CGFloat = 0.5

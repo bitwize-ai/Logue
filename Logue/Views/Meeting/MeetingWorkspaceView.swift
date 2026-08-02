@@ -145,6 +145,7 @@ struct MeetingWorkspaceView: View {
                         rightPanel(for: tool, meeting: meeting)
                     }
                 }
+                .measuringWorkspaceWidth()
             }
             .background(AppThemeConstants.contentBackground)
             .navigationTitle(meeting.title)

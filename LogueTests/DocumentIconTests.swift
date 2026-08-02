@@ -112,50 +112,79 @@ struct EditorLayoutModeTests {
         #expect(EditorLayoutMode(rawValue: "splitScreenTriptych") == nil)
     }
 
-    /// The regression this rule exists for. SwiftUI echoes the split view's visibility back
-    /// through the binding right after a menu item sets a mode, and the echo arrives while the
-    /// binding still reads the previous mode. If a "list is visible" report were allowed to
-    /// name a mode, that stale read is what it would name it from — which is how every ⌘3
-    /// pressed from editor-only used to land on editor-and-list.
-    @Test("A report that the list is visible never changes the mode")
-    func visibleListReportIsIgnored() {
-        #expect(EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: true) == nil)
+    /// The regression the echo test exists for. SwiftUI echoes the split view's visibility back
+    /// through the binding right after a menu item sets a mode. A report that agrees with the
+    /// stored mode is that echo, and acting on it is how every ⌘3 pressed from editor-only used
+    /// to land on editor-and-list.
+    @Test("An echo of the stored mode changes nothing", arguments: EditorLayoutMode.allCases)
+    func echoOfStoredModeChangesNothing(mode: EditorLayoutMode) {
+        let echo = EditorLayoutMode.modeAfterVisibilityReport(
+            listIsVisible: mode.showsList, current: mode
+        )
+        #expect(echo == nil, "\(mode) would have been overwritten by an echo of itself")
     }
 
-    /// Specifically: from every mode, including the one whose stale `showsInspector` caused the
-    /// bug, a visible-list report must leave the stored mode alone.
-    @Test("No mode is rewritten by a visible-list report", arguments: EditorLayoutMode.allCases)
-    func visibleListReportPreservesEveryMode(mode: EditorLayoutMode) {
-        let reported = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: true)
-        #expect(reported == nil, "\(mode) would have been overwritten by a visible-list report")
+    /// The bug that made the rule symmetric: the window's sidebar toggle reports the list as
+    /// visible, and while visible-list reports were dropped the button did nothing at all.
+    @Test("Showing the list from editor-only is honoured")
+    func showingTheListIsHonoured() {
+        let next = EditorLayoutMode.modeAfterVisibilityReport(
+            listIsVisible: true, current: .editorOnly
+        )
+        #expect(next == .editorAndList)
+        #expect(next?.showsList == true)
     }
 
-    /// The one direction that *is* inferred: the user dragging the sidebar shut is recorded, so
-    /// a collapsed sidebar does not come back on the next launch.
-    @Test("A collapse is recorded as editor-only")
-    func collapseReportIsRecorded() {
-        #expect(EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false) == .editorOnly)
+    /// The user dragging the sidebar shut is recorded, so a collapsed sidebar does not come
+    /// back on the next launch.
+    @Test("A collapse hides the list", arguments: [EditorLayoutMode.allPanels, .editorAndList])
+    func collapseReportHidesTheList(from mode: EditorLayoutMode) {
+        let next = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false, current: mode)
+        #expect(next?.showsList == false)
     }
 
-    /// Collapsing from `allPanels` lands on `editorOnly`, hiding the inspector as well as the
-    /// list. That is the only mode "no list" can mean — the three are a progression with no
-    /// editor-plus-inspector rung — so it is asserted rather than left as an accident of the
-    /// implementation.
-    @Test("Collapsing from all-panels also gives up the inspector")
-    func collapseFromAllPanelsDropsTheInspector() {
-        #expect(EditorLayoutMode.allPanels.showsInspector)
-        let afterCollapse = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false)
-        #expect(afterCollapse == .editorOnly)
-        #expect(afterCollapse?.showsInspector == false)
+    /// The bug this case was added for. Closing the navigation sidebar used to land on
+    /// `editorOnly`, which took the tools sidebar down with it — one drag, two panes gone.
+    @Test("Collapsing the list leaves the inspector alone", arguments: EditorLayoutMode.allCases)
+    func collapsePreservesTheInspector(from mode: EditorLayoutMode) {
+        guard let next = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false, current: mode)
+        else { return } // Already listless — an echo, nothing to check.
+        #expect(next.showsInspector == mode.showsInspector, "\(mode) lost its inspector to a list collapse")
+    }
+
+    @Test("Showing the list leaves the inspector alone", arguments: EditorLayoutMode.allCases)
+    func showPreservesTheInspector(from mode: EditorLayoutMode) {
+        guard let next = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: true, current: mode)
+        else { return }
+        #expect(next.showsInspector == mode.showsInspector, "\(mode) gained or lost an inspector")
+    }
+
+    /// Hiding and showing has to return where it started, or the toolbar button is not a toggle.
+    /// This is the round trip that was one-way: the sidebar went and could not be brought back.
+    @Test("Hiding then showing the list returns to the same mode", arguments: EditorLayoutMode.allCases)
+    func hideThenShowRoundTrips(from mode: EditorLayoutMode) {
+        let hidden = mode.withoutList
+        #expect(hidden.showsList == false)
+        #expect(hidden.withList == mode.withList)
+        #expect(hidden.withList.showsInspector == mode.showsInspector)
+    }
+
+    /// Every combination of the two panes has a mode, which is the whole reason there are four.
+    @Test("Every list/inspector combination is representable")
+    func everyPaneCombinationExists() {
+        let combinations = Set(EditorLayoutMode.allCases.map { [$0.showsList, $0.showsInspector] })
+        #expect(combinations.count == 4)
     }
 
     /// Recording a collapse has to be idempotent, because the split view echoes our own
     /// `.detailOnly` straight back at us.
     @Test("Recording a collapse twice is stable")
     func collapseIsIdempotent() {
-        let first = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false)
-        #expect(first == .editorOnly)
-        #expect(first?.showsList == false)
-        #expect(EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: first?.showsList ?? true) == .editorOnly)
+        let first = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false, current: .allPanels)
+        #expect(first == .editorAndInspector)
+
+        // The echo of that write, read with the mode it just stored.
+        let echo = EditorLayoutMode.modeAfterVisibilityReport(listIsVisible: false, current: .editorAndInspector)
+        #expect(echo == nil)
     }
 }
