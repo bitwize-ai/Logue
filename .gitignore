@@ -110,5 +110,6 @@ docs/*
 !docs/dev-setup.md
 !docs/RELEASE_SETUP.md
 !docs/SPARKLE_UPDATE_FLOW.md
+!docs/WHATS_NEW.md
 # Design and spec documents are reviewed on their pull request, so they are tracked.
 !docs/specs/

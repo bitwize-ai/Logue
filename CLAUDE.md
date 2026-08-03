@@ -249,6 +249,12 @@ because nothing can infer them:
   extracts that section for both Sparkle's release-notes pane and the GitHub Release body.
   Forgetting falls back to `[Unreleased]`, which ships whatever is sitting there — including
   things not in the tag.
-- **Append a matching block to `WhatsNewCatalog.releases`** for anything users should be
-  told about in-app. The catalog is bounded by the running build, so a block for a version
-  that has not been tagged stays invisible until it is.
+- **Append a matching block to `WhatsNewCatalog.releases`** listing only what this release
+  added, illustrated cards first. The catalog is bounded by the running build, so a block for
+  a version that has not been tagged stays invisible until it is — write it as the work lands.
+
+`WhatsNewCatalog.tour`, the fresh-install list, is hand-picked and does *not* change every
+release. It answers "what is this app for", not "what changed", and a newcomer handed the
+upgrade deck gets a dozen cards of features they have no context for yet.
+
+Full runbook, including screenshots and the version stamp: **[docs/WHATS_NEW.md](docs/WHATS_NEW.md)**.
