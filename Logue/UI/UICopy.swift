@@ -184,6 +184,9 @@ enum UICopy {
         static let back = "Back"
         static let next = "Continue"
         static let skip = "Skip"
+        /// Leaving release notes part-read. Every deck needs a way out that is not
+        /// clicking through all of it.
+        static let close = "Close"
         /// Last card of the first-run tour.
         static let finishTour = "Start using Logue"
         /// Last card of a release's notes.

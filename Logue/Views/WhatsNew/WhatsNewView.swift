@@ -1,4 +1,6 @@
-import os.log
+// `os` rather than `os.log`: it carries both `Logger` and the `OSAllocatedUnfairLock`
+// guarding the image cache.
+import os
 import SwiftUI
 
 /// A paged showcase of features, used for two jobs that differ only in what they list:
@@ -174,40 +176,46 @@ struct WhatsNewView: View {
         .padding(.vertical, 20)
     }
 
-    /// The screenshot when the feature has one, the symbol when it does not. A feature
-    /// without art is the ordinary case, not a degraded one.
+    /// The feature's art when it has any, the symbol when it does not. A feature without
+    /// art is the ordinary case, not a degraded one.
     @ViewBuilder
     private func visual(for feature: WhatsNewFeature) -> some View {
-        if let image = screenshot(for: feature) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxHeight: 250)
-                .clipShape(RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge)
-                        .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5)
-                )
-                .shadow(radius: AppThemeConstants.shadowRadiusHover, y: 2)
-                .accessibilityLabel(Text(feature.title))
-        } else {
+        let images = screenshots(for: feature)
+        if images.isEmpty {
             Image(systemName: feature.symbol)
                 .font(.system(size: 60))
                 .foregroundStyle(Color.accentColor)
                 .symbolEffect(.pulse)
                 .accessibilityHidden(true)
+        } else {
+            ShowcaseSequence(images: images, label: feature.title)
         }
     }
 
-    private func screenshot(for feature: WhatsNewFeature) -> NSImage? {
-        guard let url = WhatsNewCatalog.screenshotURL(for: feature) else { return nil }
-        guard let image = NSImage(contentsOf: url) else {
-            // A packaging problem, not a user-facing one — the card still reads.
-            Self.logger.debug("Unreadable What's New screenshot for \(feature.id, privacy: .public)")
-            return nil
+    /// Loads a card's art once per card rather than on every body evaluation — a
+    /// sequence re-renders on every step, and re-reading the PNGs each time would put a
+    /// disk read on an animation frame.
+    private func screenshots(for feature: WhatsNewFeature) -> [NSImage] {
+        WhatsNewCatalog.screenshotURLs(for: feature).compactMap { url in
+            guard let image = Self.imageCache.withLock({ $0[url] }) else {
+                guard let loaded = NSImage(contentsOf: url) else {
+                    // A packaging problem, not a user-facing one — the card still reads.
+                    Self.logger.debug("Unreadable What's New screenshot for \(feature.id, privacy: .public)")
+                    return nil
+                }
+                Self.imageCache.withLock { $0[url] = loaded }
+                return loaded
+            }
+            return image
         }
-        return image
     }
+
+    /// Decoded art, keyed by URL. The sheet is short-lived and the catalog is small, so
+    /// this is bounded by the number of screenshots that ship.
+    ///
+    /// `OSAllocatedUnfairLock` provides the thread-safety: the view is main-actor bound
+    /// but `static` storage is not, so the lock is what makes the shared access safe.
+    private static let imageCache = OSAllocatedUnfairLock<[URL: NSImage]>(initialState: [:])
 
     // MARK: - Footer
 
@@ -223,8 +231,11 @@ struct WhatsNewView: View {
 
             Spacer()
 
-            if mode == .discover, !isLastPage {
-                Button(UICopy.WhatsNew.skip) { dismiss() }
+            // Both modes, not just the tour. Gating this on `.discover` left the release
+            // notes with no way out but clicking through every card: no button, and no
+            // `.cancelAction` anywhere in the sheet, so Escape did nothing either.
+            if !isLastPage {
+                Button(dismissTitle) { dismiss() }
                     .buttonStyle(.borderless)
                     .keyboardShortcut(.cancelAction)
             }
@@ -248,8 +259,76 @@ struct WhatsNewView: View {
         .padding(.vertical, 14)
     }
 
+    /// A card's art: a still when there is one image, a sequence when there are several.
+    ///
+    /// The sequence is the point — it lets a card show *where* a feature lives before
+    /// showing what it does. It loops rather than stopping on the last frame, because a
+    /// user who arrives mid-cycle would otherwise see the steps out of order and then
+    /// never see the beginning.
+    private struct ShowcaseSequence: View {
+        let images: [NSImage]
+        let label: String
+
+        @State private var step = 0
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            VStack(spacing: 8) {
+                Image(nsImage: images[min(step, images.count - 1)])
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 250)
+                    .clipShape(RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge)
+                            .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                    )
+                    .shadow(radius: AppThemeConstants.shadowRadiusHover, y: 2)
+                    .id(step)
+                    .transition(.opacity)
+
+                // Only when there is a sequence: without this a change of image reads as
+                // a glitch rather than as step 2 of 3.
+                if images.count > 1 {
+                    HStack(spacing: 5) {
+                        ForEach(images.indices, id: \.self) { position in
+                            Capsule()
+                                .fill(position == step ? Color.accentColor : Color.secondary.opacity(0.25))
+                                .frame(width: position == step ? 14 : 5, height: 5)
+                        }
+                    }
+                    .animation(Motion.spring, value: step)
+                    .accessibilityHidden(true)
+                }
+            }
+            .accessibilityLabel(Text(label))
+            // Keyed on the image set so switching cards restarts the sequence from its
+            // first step, and leaving the card cancels it.
+            .task(id: images.count) {
+                step = 0
+                guard images.count > 1 else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: AppConstants.Delays.whatsNewSequenceStep)
+                    guard !Task.isCancelled else { return }
+                    let next = (step + 1) % images.count
+                    if reduceMotion {
+                        step = next
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.35)) { step = next }
+                    }
+                }
+            }
+        }
+    }
+
     private var continueTitle: String {
         guard isLastPage else { return UICopy.WhatsNew.next }
         return mode == .discover ? UICopy.WhatsNew.finishTour : UICopy.WhatsNew.finishNotes
+    }
+
+    /// "Skip" reads as skipping an introduction; for notes already being read it is
+    /// closing them.
+    private var dismissTitle: String {
+        mode == .discover ? UICopy.WhatsNew.skip : UICopy.WhatsNew.close
     }
 }
