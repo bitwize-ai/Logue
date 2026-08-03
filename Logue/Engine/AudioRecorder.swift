@@ -36,6 +36,14 @@ final class AudioRecorder {
     /// Lock-protected audio level written from the audio tap thread, read by the MainActor timer.
     private let pendingAudioLevel = OSAllocatedUnfairLock<Float>(initialState: 0)
 
+    /// Seconds written to the mic file, accumulated on the tap thread as each buffer lands.
+    ///
+    /// Counted here rather than read from `AVAudioFile.length`, which the tap is concurrently
+    /// writing to — reading a property of a file being appended to from another thread is a race.
+    /// Accumulating seconds rather than frames also survives the sample rate changing mid-recording,
+    /// which happens when the input device is switched.
+    private let writtenSeconds = OSAllocatedUnfairLock<TimeInterval>(initialState: 0)
+
     /// Callback fired with every raw audio buffer from the microphone tap.
     /// Updating this after recording starts takes effect immediately (dynamic dispatch).
     var onAudioBuffer: ((AVAudioPCMBuffer) -> Void)? {
@@ -72,6 +80,7 @@ final class AudioRecorder {
                 .appending(component: UUID().uuidString)
                 .appendingPathExtension("wav")
             tempFileURL = fileURL
+            writtenSeconds.withLock { $0 = 0 }
             do {
                 let newFile = try AVAudioFile(forWriting: fileURL, settings: inputFormat.settings)
                 audioFile = newFile
@@ -82,32 +91,7 @@ final class AudioRecorder {
             try? (fileURL as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
         }
 
-        // Capture file by value; callback is read dynamically via thread-safe holder
-        let capturedFile = audioFile
-        let callbackHolder = audioCallback
-
-        let levelLock = pendingAudioLevel
-        inputNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.tapBufferSize, format: inputFormat) { buffer, _ in
-            // Calculate audio level via Accelerate (written to lock, read by timer on MainActor)
-            let count = Int(buffer.frameLength)
-            if let channelData = buffer.floatChannelData, count > 0, buffer.format.channelCount > 0 {
-                var rms: Float = 0
-                vDSP_rmsqv(channelData[0], 1, &rms, vDSP_Length(count))
-                let normalized = AudioLevelNormalizer.normalize(rms)
-                levelLock.withLock { $0 = normalized }
-            }
-
-            // Write to disk for playback
-            do {
-                try capturedFile?.write(from: buffer)
-            } catch {
-                // Log once — further errors will repeat but are non-fatal (recording continues)
-                os_log(.error, "Audio file write failed: %{public}@", error.localizedDescription)
-            }
-
-            // Stream raw buffer to caller (dynamic — picks up callback changes after start)
-            callbackHolder.callback?(buffer)
-        }
+        installTap(on: inputNode, format: inputFormat)
 
         try engine.start()
         // Observe audio configuration changes (e.g., device disconnected, Bluetooth switch).
@@ -135,6 +119,43 @@ final class AudioRecorder {
         logger.info("Microphone recording started")
     }
 
+    /// Installs the capture tap: metering, the write to disk, and the hand-off to the caller.
+    ///
+    /// Shared by the initial start and by the reinstall after a device change, which previously
+    /// carried two copies of it and so two places for the two to drift apart.
+    private func installTap(on node: AVAudioNode, format: AVAudioFormat) {
+        // Capture the file by value; the callback is read dynamically via the thread-safe holder.
+        let capturedFile = audioFile
+        let callbackHolder = audioCallback
+        let levelLock = pendingAudioLevel
+        let writtenLock = writtenSeconds
+
+        node.installTap(onBus: 0, bufferSize: AppConstants.Audio.tapBufferSize, format: format) { buffer, _ in
+            // Audio level via Accelerate — written to the lock, read by the timer on the MainActor.
+            let count = Int(buffer.frameLength)
+            if let channelData = buffer.floatChannelData, count > 0, buffer.format.channelCount > 0 {
+                var rms: Float = 0
+                vDSP_rmsqv(channelData[0], 1, &rms, vDSP_Length(count))
+                levelLock.withLock { $0 = AudioLevelNormalizer.normalize(rms) }
+            }
+
+            // Write to disk for playback, counting what actually landed.
+            do {
+                try capturedFile?.write(from: buffer)
+                if buffer.format.sampleRate > 0 {
+                    let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
+                    writtenLock.withLock { $0 += seconds }
+                }
+            } catch {
+                // Logged once — further errors repeat but are non-fatal, and recording continues.
+                os_log(.error, "Audio file write failed: %{public}@", error.localizedDescription)
+            }
+
+            // Stream the raw buffer on (dynamic — picks up callback changes made after start).
+            callbackHolder.callback?(buffer)
+        }
+    }
+
     /// Reinstall the audio tap with the new format after a configuration change (e.g., device switch).
     private func handleConfigChange() {
         guard isRecording, let engine = audioEngine else { return }
@@ -144,24 +165,7 @@ final class AudioRecorder {
         let newFormat = engine.inputNode.outputFormat(forBus: 0)
         recordingFormat = newFormat
 
-        let capturedFile = audioFile
-        let callbackHolder = audioCallback
-        let levelLock = pendingAudioLevel
-        engine.inputNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.tapBufferSize, format: newFormat) { buffer, _ in
-            let count = Int(buffer.frameLength)
-            if let channelData = buffer.floatChannelData, count > 0, buffer.format.channelCount > 0 {
-                var rms: Float = 0
-                vDSP_rmsqv(channelData[0], 1, &rms, vDSP_Length(count))
-                let normalized = AudioLevelNormalizer.normalize(rms)
-                levelLock.withLock { $0 = normalized }
-            }
-            do {
-                try capturedFile?.write(from: buffer)
-            } catch {
-                os_log(.error, "Audio file write failed in config change handler: %{public}@", error.localizedDescription)
-            }
-            callbackHolder.callback?(buffer)
-        }
+        installTap(on: engine.inputNode, format: newFormat)
         do {
             try engine.start()
         } catch {
@@ -211,6 +215,15 @@ final class AudioRecorder {
         audioFile = nil
         // tempFileURL is preserved — caller is responsible for consuming or clearing it
         logger.info("Microphone recording stopped")
+    }
+
+    /// Seconds of audio the mic file holds right now.
+    ///
+    /// This is what the playback mix reads back, and it is not elapsed time: across a mute the file
+    /// stops growing while the clock does not, so only what was actually written says where the next
+    /// activation begins in the file. Safe to read at any point, including while recording.
+    var recordedDuration: TimeInterval {
+        writtenSeconds.withLock { $0 }
     }
 
     /// Deletes the temporary WAV file and clears the URL. Call after the file has been

@@ -19,34 +19,7 @@ extension DiarizationManager {
     func transcribeBuffer(_ buffer: [Float]) async -> [TranscriptSegment]? {
         guard !buffer.isEmpty else { return nil }
 
-        if asrManager == nil {
-            do {
-                let models: AsrModels
-                if let cached = Self.cachedAsrModels {
-                    models = cached
-                    logger.info("Reusing cached ASR models")
-                } else {
-                    logger.info("Downloading Parakeet TDT models for batch transcription...")
-                    models = try await AsrModels.downloadAndLoad(
-                        progressHandler: { [weak self] progress in
-                            Task { @MainActor in
-                                self?.modelDownloadProgress = progress.fractionCompleted
-                            }
-                        }
-                    )
-                    Self.cachedAsrModels = models
-                    logger.info("ASR models downloaded and cached")
-                }
-                let manager = AsrManager()
-                try await manager.loadModels(models)
-                asrManager = manager
-            } catch {
-                logger.error("Batch ASR init failed: \(error.localizedDescription, privacy: .public)")
-                return nil
-            }
-        }
-
-        guard let asr = asrManager else { return nil }
+        guard let asr = await ensureAsrManager() else { return nil }
         let capturedLogger = logger
         let durationSec = Double(buffer.count) / Double(sampleRate)
         logger.info("Running batch ASR on \(String(format: "%.1f", durationSec))s of audio")
@@ -84,29 +57,7 @@ extension DiarizationManager {
     /// Removes segments whose time range doesn't overlap any detected speech.
     /// Falls back to unfiltered segments if VAD init or processing fails.
     func filterWithVAD(_ segments: [TranscriptSegment], audioBuffer: [Float]) async -> [TranscriptSegment] {
-        if vadManager == nil {
-            do {
-                if let cached = Self.cachedVadManager {
-                    vadManager = cached
-                    logger.info("Reusing cached VAD manager")
-                } else {
-                    logger.info("Loading Silero VAD model...")
-                    let vadConfig = VadConfig(
-                        defaultThreshold: AppConstants.Diarization.vadThreshold,
-                        computeUnits: .all
-                    )
-                    let vad = try await VadManager(config: vadConfig)
-                    Self.cachedVadManager = vad
-                    vadManager = vad
-                    logger.info("VAD model loaded and cached")
-                }
-            } catch {
-                logger.warning("VAD init failed, skipping silence filtering: \(error.localizedDescription, privacy: .public)")
-                return segments
-            }
-        }
-
-        guard let vad = vadManager else { return segments }
+        guard let vad = await ensureVadManager() else { return segments }
 
         do {
             let segConfig = VadSegmentationConfig(
@@ -172,5 +123,66 @@ extension DiarizationManager {
         }
         flush()
         return segments
+    }
+
+    /// The Parakeet manager, loading and caching the models on first use.
+    /// Shared by the in-memory batch pass and the long-recording file pass.
+    func ensureAsrManager() async -> AsrManager? {
+        if let asrManager {
+            return asrManager
+        }
+        do {
+            let models: AsrModels
+            if let cached = Self.cachedAsrModels {
+                models = cached
+                logger.info("Reusing cached ASR models")
+            } else {
+                logger.info("Downloading Parakeet TDT models for batch transcription...")
+                models = try await AsrModels.downloadAndLoad(
+                    progressHandler: { [weak self] progress in
+                        Task { @MainActor in
+                            self?.modelDownloadProgress = progress.fractionCompleted
+                        }
+                    }
+                )
+                Self.cachedAsrModels = models
+                logger.info("ASR models downloaded and cached")
+            }
+            let manager = AsrManager()
+            try await manager.loadModels(models)
+            asrManager = manager
+            return manager
+        } catch {
+            logger.error("Batch ASR init failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// The Silero VAD manager, loading and caching the model on first use.
+    /// Shared by the in-memory batch pass and the long-recording file pass.
+    func ensureVadManager() async -> VadManager? {
+        if let vadManager {
+            return vadManager
+        }
+        do {
+            if let cached = Self.cachedVadManager {
+                vadManager = cached
+                logger.info("Reusing cached VAD manager")
+                return cached
+            }
+            logger.info("Loading Silero VAD model...")
+            let vadConfig = VadConfig(
+                defaultThreshold: AppConstants.Diarization.vadThreshold,
+                computeUnits: .all
+            )
+            let vad = try await VadManager(config: vadConfig)
+            Self.cachedVadManager = vad
+            vadManager = vad
+            logger.info("VAD model loaded and cached")
+            return vad
+        } catch {
+            logger.warning("VAD init failed, skipping silence filtering: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 }

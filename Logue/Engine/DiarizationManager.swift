@@ -68,6 +68,12 @@ final class DiarizationManager {
     // MARK: - Diarizers
 
     private var sortformerDiarizer: SortformerDiarizer?
+    // Extension-visible: +LongRecording
+    /// The streaming Sortformer, for the long-recording pass that feeds it the file in chunks.
+    var streamingDiarizer: SortformerDiarizer? {
+        sortformerDiarizer
+    }
+
     /// Old-style batch diarizer — kept as fallback for post-recording if Sortformer unavailable.
     private var batchDiarizer: DiarizerManager?
     // Extension-visible: +BatchASR
@@ -89,19 +95,39 @@ final class DiarizationManager {
     /// Target format for diarization: 16 kHz mono Float32.
     private var targetFormat: AVAudioFormat?
 
-    /// Reusable AVAudioConverter for efficient resampling (lazy-initialized per input format)
-    private var resampler: AVAudioConverter?
-    private var resamplerInputFormat: AVAudioFormat?
+    /// Reusable AVAudioConverters for efficient resampling — one per capture source, lazily created
+    /// and rebuilt only when that source's own input format changes.
+    private var resamplers: [AudioSource: AVAudioConverter] = [:]
+    private var resamplerInputFormats: [AudioSource: AVAudioFormat] = [:]
 
     // MARK: - Streaming State
 
     /// Counter to throttle how often we call process() (not every buffer) — used by batch fallback
     private var samplesAccumulatedSinceLastProcess: Int = 0
 
+    /// The session's audio, mixed onto one timeline. Every capture source writes at the position it
+    /// was heard at, so this stays the meeting's own timeline however many sources are running.
+    private var mixer = AudioTimelineMixer(
+        sampleRate: 16000,
+        capacity: AudioTimelineMixer.capacity(
+            forPhysicalMemory: ProcessInfo.processInfo.physicalMemory,
+            availableMemory: AudioTimelineMixer.availableSystemMemory()
+        )
+    )
+
     // Extension-visible: +BatchASR
-    /// Audio buffer for batch fallback (only used if Sortformer init fails)
-    var audioBuffer: [Float] = []
-    private let maxBufferSeconds: Float = 1800.0 // 30 minutes max to limit memory (~115 MB at 16kHz mono)
+    /// The accumulated session audio, 16 kHz mono Float32.
+    var audioBuffer: [Float] {
+        mixer.samples
+    }
+
+    /// How much of the session the post-recording pass will get to hear, or `nil` when it will hear
+    /// all of it. A value means the buffer filled and the rest of the meeting was dropped, so the
+    /// live transcript for that stretch has to be kept rather than replaced by a result that never
+    /// heard it — see `TranscriptReplacement`.
+    var heardDuration: TimeInterval? {
+        mixer.heardDuration
+    }
 
     // MARK: - Configuration
 
@@ -253,9 +279,13 @@ final class DiarizationManager {
     /// Call this before running transcription and diarization in parallel so both
     /// receive the same snapshot without a buffer-clear race.
     func takeAudioBuffer() -> [Float] {
-        let copy = audioBuffer
-        audioBuffer.removeAll(keepingCapacity: false)
-        return copy
+        mixer.take()
+    }
+
+    /// Frees the accumulated audio without reading it, for when the recording is being processed
+    /// from its file instead and the buffer is only holding memory that the models are about to need.
+    func discardAudioBuffer() {
+        mixer.removeAll()
     }
 
     /// Pre-warm Parakeet TDT ASR and Silero VAD models in the background during recording.
@@ -298,32 +328,41 @@ final class DiarizationManager {
         }
     }
 
-    /// Accumulate audio for post-recording diarization.
-    /// All audio is buffered at 16kHz and processed after recording stops via `processCompleteRecording()`.
-    /// This gives Sortformer full context over the entire conversation for maximum accuracy.
-    func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+    /// Declares where a capture source's audio belongs on the session timeline.
+    ///
+    /// Call it whenever a source starts, including when one resumes mid-recording — a capture
+    /// device's own clock restarts from zero every time it is toggled, so only the session knows
+    /// where the audio it delivers next belongs.
+    func beginSource(_ source: AudioSource, atSessionTime time: TimeInterval) {
+        guard isEnabled else { return }
+        mixer.beginSource(source, atSessionTime: time)
+    }
+
+    /// Accumulate audio for post-recording diarization and batch transcription.
+    /// All audio is mixed onto one 16 kHz timeline and processed after recording stops, which gives
+    /// Sortformer full context over the entire conversation for maximum accuracy.
+    func processAudioBuffer(_ buffer: AVAudioPCMBuffer, from source: AudioSource) {
         guard isEnabled else { return }
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0, buffer.format.channelCount > 0 else { return }
-        accumulateBatchBuffer(buffer)
+        accumulateBatchBuffer(buffer, from: source)
     }
 
-    /// Convert to 16kHz mono Float32 and accumulate for post-recording processing.
-    private func accumulateBatchBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let floatSamples = convertBufferToFloatArray(buffer) else { return }
-        let maxBufferSecs = maxBufferSeconds
-        let maxSamples = Int(sampleRate) * Int(maxBufferSecs)
-        guard audioBuffer.count < maxSamples else {
-            if audioBuffer.count == maxSamples || (audioBuffer.count > maxSamples && audioBuffer.count - floatSamples.count < maxSamples) {
-                let bufferMB = maxSamples * 4 / 1_048_576
-                logger.warning("Diarization buffer full (\(maxBufferSecs)s / ~\(bufferMB)MB) — dropping new audio")
-            }
-            return
+    /// Convert to 16kHz mono Float32 and mix into the session timeline.
+    private func accumulateBatchBuffer(_ buffer: AVAudioPCMBuffer, from source: AudioSource) {
+        guard let floatSamples = convertBufferToFloatArray(buffer, from: source) else { return }
+        let wasFull = mixer.didDropAudio
+        mixer.write(floatSamples, from: source)
+        if mixer.didDropAudio, !wasFull {
+            let capacityMB = mixer.capacity * MemoryLayout<Float>.size / 1_048_576
+            let capacityMinutes = Int(mixer.duration / 60)
+            logger.warning(
+                """
+                Session audio buffer full (\(capacityMinutes)min / ~\(capacityMB)MB) — dropping further audio. \
+                The rest of this recording keeps its live transcript instead of the batch one.
+                """
+            )
         }
-        if audioBuffer.isEmpty {
-            audioBuffer.reserveCapacity(Int(sampleRate * 600))
-        }
-        audioBuffer.append(contentsOf: floatSamples)
     }
 
     // MARK: - Post-Recording Complete Processing
@@ -370,17 +409,7 @@ final class DiarizationManager {
 
         guard let timeline = result else { return nil }
 
-        var allUpdates: [SortformerSpeakerUpdate] = []
-        for (speakerIndex, speaker) in timeline.speakers {
-            for segment in speaker.finalizedSegments {
-                allUpdates.append(SortformerSpeakerUpdate(
-                    speakerIndex: speakerIndex,
-                    speakerName: speaker.name ?? "Speaker \(speakerIndex + 1)",
-                    startTime: TimeInterval(segment.startTime),
-                    endTime: TimeInterval(segment.endTime)
-                ))
-            }
-        }
+        let allUpdates = Self.speakerUpdates(from: timeline)
 
         if allUpdates.isEmpty {
             logger.info("Sortformer processComplete: no segments (recording may be very short or silent)")
@@ -399,14 +428,13 @@ final class DiarizationManager {
     func finishProcessing() async -> DiarizationResult? {
         guard isEnabled, isInitialized, !audioBuffer.isEmpty else { return nil }
         guard let diarizer = batchDiarizer else {
-            audioBuffer.removeAll(keepingCapacity: false)
+            mixer.removeAll()
             return nil
         }
 
-        let bufferCopy = audioBuffer
         let sr = Int(sampleRate)
         let capturedLogger = logger
-        audioBuffer.removeAll(keepingCapacity: false)
+        let bufferCopy = mixer.take()
 
         return await Task.detached {
             do {
@@ -420,7 +448,7 @@ final class DiarizationManager {
 
     // MARK: - Audio Conversion
 
-    private func convertBufferToFloatArray(_ buffer: AVAudioPCMBuffer) -> [Float]? {
+    private func convertBufferToFloatArray(_ buffer: AVAudioPCMBuffer, from source: AudioSource) -> [Float]? {
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0, buffer.format.channelCount > 0, let targetFormat else { return nil }
 
@@ -428,13 +456,17 @@ final class DiarizationManager {
             return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
         }
 
-        if resampler == nil || resamplerInputFormat != buffer.format {
-            resampler = AVAudioConverter(from: buffer.format, to: targetFormat)
-            resampler?.primeMethod = .none
-            resamplerInputFormat = buffer.format
+        // One converter per source. The mic and the system tap rarely share a format, and a single
+        // shared converter would be torn down and rebuilt on every buffer as the two alternate —
+        // paying for the rebuild each time and losing the resampler's carried-over state with it.
+        if resamplers[source] == nil || resamplerInputFormats[source] != buffer.format {
+            guard let converter = AVAudioConverter(from: buffer.format, to: targetFormat) else { return nil }
+            converter.primeMethod = .none
+            resamplers[source] = converter
+            resamplerInputFormats[source] = buffer.format
         }
 
-        guard let converter = resampler else { return nil }
+        guard let converter = resamplers[source] else { return nil }
         guard buffer.format.sampleRate > 0 else { return nil }
 
         let ratio = targetFormat.sampleRate / buffer.format.sampleRate
@@ -467,10 +499,10 @@ final class DiarizationManager {
 
     func reset() {
         sortformerDiarizer?.reset()
-        audioBuffer.removeAll()
+        mixer.removeAll()
         lastError = nil
-        resampler = nil
-        resamplerInputFormat = nil
+        resamplers.removeAll()
+        resamplerInputFormats.removeAll()
         samplesAccumulatedSinceLastProcess = 0
     }
 }

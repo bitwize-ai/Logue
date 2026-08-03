@@ -38,22 +38,25 @@ extension MeetingStore {
     /// Required deliberately: a default of `0` would filter for segments starting below zero, find
     /// none, and silently go back to replacing the whole array — the exact data loss this argument
     /// exists to prevent, in the one scenario least likely to be exercised while developing.
+    ///
+    /// `heardDuration` bounds it the other way. Batch ASR runs on a memory-capped audio buffer, so
+    /// on a long recording it hears only the start of the session; pass how much it heard and the
+    /// live transcript for the rest is kept rather than replaced by silence. `nil` means it heard
+    /// the whole session. `TranscriptReplacement` holds the rule.
     func replaceTranscript(
         for meetingID: UUID,
         with segments: [TranscriptSegment],
-        sessionStart: TimeInterval
+        sessionStart: TimeInterval,
+        heardDuration: TimeInterval?
     ) {
         guard let index = meetingIndex(for: meetingID) else { return }
 
-        let shifted = segments.map { segment in
-            var moved = segment
-            moved.startTime += sessionStart
-            moved.endTime += sessionStart
-            return moved
-        }
-        let earlierSessions = meetings[index].segments.filter { $0.startTime < sessionStart }
-
-        meetings[index].segments = (earlierSessions + shifted).sorted { $0.startTime < $1.startTime }
+        meetings[index].segments = TranscriptReplacement.merged(
+            existing: meetings[index].segments,
+            batch: segments,
+            sessionStart: sessionStart,
+            heardDuration: heardDuration
+        )
         meetings[index].modifiedAt = Date()
         saveMeeting(id: meetingID)
     }

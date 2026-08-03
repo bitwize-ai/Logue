@@ -28,14 +28,33 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 
 ## Architecture
 
-### Audio Pipeline (direct streaming — no chunking, no backpressure queue)
+### Audio Pipeline (live capture streams directly; the post-recording pass chunks)
 
 - `AudioRecorder` — mic capture, raw `AVAudioPCMBuffer` via callback
 - `SystemAudioCapture` — ScreenCaptureKit system audio, `CMSampleBuffer` → `AVAudioPCMBuffer`
 - `BufferConverter` — `AVAudioConverter` wrapper for format conversion
 - `SpeechTranscriberEngine` — streams raw audio → `SpeechAnalyzer` → `TranscriptSegment`
 - `RecordingSessionManager` — orchestrates engines + diarization; uses `RecordingState` enum (`.idle`, `.starting`, `.recording`, `.stopping`)
-- `DiarizationManager` — FluidAudio wrapper; streaming Sortformer (primary) + batch accumulation fallback
+- `AudioTimelineMixer` — the session's audio on one 16 kHz timeline; each source writes at its own
+  cursor and overlaps are summed, so an hour of meeting is an hour of buffer however many sources run
+- `DiarizationManager` — FluidAudio wrapper; streaming Sortformer (primary) + batch accumulation
+  fallback. Past what memory holds, the post-recording pass reads the saved file back in chunks
+  (`+LongRecording`) instead of stopping
+
+### Recording invariants
+
+Two rules the recording path depends on, both learned the hard way:
+
+- **A pass may only speak for the audio it actually heard.** The post-recording batch transcription
+  replaces the live transcript, so it is bounded to the stretch it covered (`TranscriptReplacement`).
+  Covering the session means *both* that the file lines up with it and that it is long enough to be
+  it — alignment alone let a truncated file delete an hour of correct live transcript.
+- **The saved audio file is the meeting's timeline.** A source records only while it runs, so its
+  raw file is shorter than the meeting after a mute or a late join. `CaptureSegmentTimeline` records
+  where each activation belongs and the file is rewritten to match. Whether that succeeded is
+  *reported* by `persistRecordingAudio` (`SavedRecording`), never re-derived afterwards — a capture
+  device's clock resets on every toggle, so anything inferred from it is wrong in exactly the cases
+  that produce a misaligned file.
 
 ### LLM Engine
 
@@ -198,6 +217,13 @@ nothing to reconcile. Rules that follow from that, all of which have bitten:
 | `Engine/MeetingPromptBuilder.swift` | All LLM prompt construction + JSON parsing |
 | `Engine/LLMClient.swift` | External LLM provider clients (OpenAI/Anthropic-compatible) — optional, user-configured |
 | `Services/RecordingSessionManager.swift` | Recording lifecycle (`RecordingState` enum) |
+| `Services/RecordingSessionManager+AudioFiles.swift` | Saving a session's audio as the meeting's timeline (splice/compose/move) |
+| `Services/RecordingSessionManager+BatchPass.swift` | Choosing the in-memory or on-disk post-recording route |
+| `Engine/AudioTimelineMixer.swift` | The session's audio on one timeline, mixed by time rather than arrival |
+| `Engine/CaptureSegmentTimeline.swift` | Where each stretch of a source's file belongs on the meeting |
+| `Engine/TranscriptReplacement.swift` | How much of the live transcript a batch result may replace |
+| `Engine/AudioFileChunkReader.swift` | Reading a recording back in bounded chunks |
+| `Engine/DiarizationManager+LongRecording.swift` | Transcribing and diarizing from disk, for recordings memory cannot hold |
 | `Services/EncryptionManager.swift` | AES-256-GCM encryption at rest (7-day migration window) |
 | `Services/SandboxContainerMigrator.swift` | One-time move of user data out of the pre-1.0.1 sandbox container (runs in `LogueApp.init()`) |
 | `Services/DocumentStorage.swift` | Storage mode, switching both ways, the `~/Logue` location (+Rescan: watching and scanning) |
