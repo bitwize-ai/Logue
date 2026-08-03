@@ -10,16 +10,31 @@ struct WhatsNewFeature: Identifiable, Equatable, Sendable {
     let symbol: String
     let title: String
     let detail: String
-    /// Base name of a PNG in `Logue/Resources`, without the extension. Nil renders the
-    /// card symbol-only, which is the ordinary case rather than a failure.
-    let screenshot: String?
+    /// Base names of PNGs in `Logue/Resources`, without the extension.
+    ///
+    /// Empty renders the card symbol-only, which is the ordinary case rather than a
+    /// failure. One renders a still. More than one plays as a sequence, in the order
+    /// written — which is what lets a card show *where* a feature lives before showing
+    /// what it does: the menu it hides under, then the result. A still cannot say that.
+    let screenshots: [String]
 
+    /// A feature with one still, or none.
     init(id: String, symbol: String, title: String, detail: String, screenshot: String? = nil) {
+        self.init(id: id, symbol: symbol, title: title, detail: detail, screenshots: screenshot.map { [$0] } ?? [])
+    }
+
+    /// A feature whose art is a sequence. Order is the order it plays.
+    init(id: String, symbol: String, title: String, detail: String, screenshots: [String]) {
         self.id = id
         self.symbol = symbol
         self.title = title
         self.detail = detail
-        self.screenshot = screenshot
+        self.screenshots = screenshots
+    }
+
+    /// Whether this card has any art at all. Decks are ordered so these come first.
+    var hasArt: Bool {
+        !screenshots.isEmpty
     }
 }
 
@@ -167,6 +182,16 @@ enum WhatsNewCatalog {
             """
         )
 
+        static let whatsNew = WhatsNewFeature(
+            id: "whats-new",
+            symbol: "gift",
+            title: "Logue now tells you what changed",
+            detail: """
+            After an update, Logue shows what that release added — and only the versions \
+            you have not already seen. You can reopen this any time from Help → What's New.
+            """
+        )
+
         static let savedViews = WhatsNewFeature(
             id: "saved-views-inbox",
             symbol: "tray.full",
@@ -211,13 +236,17 @@ enum WhatsNewCatalog {
     /// arriving from 1.0.0 or 1.0.1 this is the first time any of it is surfaced. Every
     /// release after it lists only its own additions, which is a handful of cards.
     ///
-    /// Ordered so the illustrated cards come first. The deck opens on what Logue is,
-    /// which is also what there is art for; the newer and narrower additions follow. A
-    /// deck that opens on a symbol-only card reads as though the screenshots are missing.
+    /// Read in two halves: what Logue already does, then what is actually new. Someone
+    /// arriving from 1.0.x is meeting both at once, and the second half only means
+    /// anything against the first.
+    ///
+    /// Within the first half the illustrated cards lead, so the deck opens on art rather
+    /// than on a bare symbol — which reads as the screenshots being broken.
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
             version: AppVersion(major: 1, minor: 1, patch: 0),
             features: [
+                // Already there — what Logue is.
                 Feature.meetings,
                 Feature.smartMinutes,
                 Feature.writingEditor,
@@ -225,11 +254,13 @@ enum WhatsNewCatalog {
                 Feature.privacy,
                 Feature.askLogue,
                 Feature.crossApp,
+                Feature.externalProviders,
+                // New — what these releases added.
                 Feature.markdownStorage,
                 Feature.wikiLinks,
                 Feature.properties,
                 Feature.savedViews,
-                Feature.externalProviders,
+                Feature.whatsNew,
             ]
         ),
     ]
@@ -246,13 +277,21 @@ enum WhatsNewCatalog {
         return releases.last { $0.version <= current }
     }
 
-    /// Where a feature's bundled screenshot lives, if it has one.
+    /// Where a feature's bundled art lives, in play order.
     ///
-    /// Nil is ordinary rather than a failure: most features are illustrated by their
-    /// symbol alone. A test walks the catalog to catch the case that is a failure —
-    /// a name that no longer matches a file in the bundle.
-    static func screenshotURL(for feature: WhatsNewFeature, in bundle: Bundle = .main) -> URL? {
-        guard let name = feature.screenshot else { return nil }
-        return bundle.url(forResource: name, withExtension: "png")
+    /// Empty is ordinary rather than a failure: most features are illustrated by their
+    /// symbol alone. A test walks the catalog to catch the case that *is* a failure — a
+    /// name that no longer matches a file in the bundle.
+    ///
+    /// A name that does not resolve is dropped rather than left as a gap, so one missing
+    /// file degrades a three-step sequence to two steps instead of stalling on a blank.
+    static func screenshotURLs(for feature: WhatsNewFeature, in bundle: Bundle = .main) -> [URL] {
+        feature.screenshots.compactMap { bundle.url(forResource: $0, withExtension: "png") }
+    }
+
+    /// Whether every name this feature declares resolves to a bundled file. Used by the
+    /// test that catches a typo, which would otherwise degrade silently.
+    static func allScreenshotsResolve(for feature: WhatsNewFeature, in bundle: Bundle = .main) -> Bool {
+        screenshotURLs(for: feature, in: bundle).count == feature.screenshots.count
     }
 }

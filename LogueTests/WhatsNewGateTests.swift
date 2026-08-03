@@ -246,8 +246,8 @@ struct WhatsNewGateTests {
         // screenshot sat behind them, which reads as the screenshots being missing.
         // Ordering art-first is the fix, so it is the thing worth pinning.
         for features in WhatsNewCatalog.releases.map(\.features) + [WhatsNewCatalog.tour] {
-            let firstWithoutArt = features.firstIndex { $0.screenshot == nil }
-            let lastWithArt = features.lastIndex { $0.screenshot != nil }
+            let firstWithoutArt = features.firstIndex { !$0.hasArt }
+            let lastWithArt = features.lastIndex(where: \.hasArt)
             guard let firstWithoutArt, let lastWithArt else { continue }
             let illustrated = features[lastWithArt].id
             let bare = features[firstWithoutArt].id
@@ -265,7 +265,7 @@ struct WhatsNewGateTests {
             // whole back catalogue, because it is the one that introduces What's New.
             // Anything longer than that is a release listing more than it added.
             #expect(
-                release.features.count <= 12,
+                release.features.count <= 13,
                 "\(release.version) has \(release.features.count) cards"
             )
         }
@@ -307,14 +307,31 @@ struct WhatsNewGateTests {
     @Test("Every named screenshot is actually in the bundle")
     func catalogScreenshotsResolve() {
         let features = (WhatsNewCatalog.releases.flatMap(\.features) + WhatsNewCatalog.tour)
-            .filter { $0.screenshot != nil }
+            .filter(\.hasArt)
         #expect(!features.isEmpty)
         for feature in features {
-            // A typo here degrades silently to a symbol-only card, so it needs a test.
+            // A typo degrades silently — to a symbol-only card, or to a sequence quietly
+            // missing a step — so it needs a test rather than a convention.
+            let named = feature.screenshots.count
+            let found = WhatsNewCatalog.screenshotURLs(for: feature).count
             #expect(
-                WhatsNewCatalog.screenshotURL(for: feature) != nil,
-                "Missing bundled screenshot \(feature.screenshot ?? "") for \(feature.id)"
+                WhatsNewCatalog.allScreenshotsResolve(for: feature),
+                "\(feature.id) names \(named) images but only \(found) are in the bundle"
             )
+        }
+    }
+
+    @Test("A sequence is in a deliberate order, with no repeats")
+    func sequencesAreWellFormed() {
+        for feature in WhatsNewCatalog.releases.flatMap(\.features) + WhatsNewCatalog.tour {
+            // The same frame twice in one sequence reads as the animation being stuck.
+            #expect(
+                Set(feature.screenshots).count == feature.screenshots.count,
+                "\(feature.id) repeats a frame"
+            )
+            // Past about four steps a card stops being a card and becomes a video the
+            // user cannot pause.
+            #expect(feature.screenshots.count <= 4, "\(feature.id) has too many steps")
         }
     }
 

@@ -297,6 +297,11 @@ enum AppConstants {
         /// fails silently, so the tour simply never appeared without this wait.
         static let sheetHandoff: Duration = .milliseconds(600)
 
+        /// How long each frame of a What's New card's image sequence holds before the
+        /// next one. Long enough to read a screenshot, short enough that a three-step
+        /// sequence completes before the reader has finished the caption and moved on.
+        static let whatsNewSequenceStep: Duration = .seconds(2.5)
+
         /// -- Navigation --
         /// Brief yield to let sidebar expand before selecting a space
         static let sidebarNavigationYield: Duration = .milliseconds(150)

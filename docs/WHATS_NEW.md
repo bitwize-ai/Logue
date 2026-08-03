@@ -119,6 +119,39 @@ A feature without art renders its SF Symbol instead. That is the ordinary case, 
 degraded one — most cards have no screenshot. What is not ordinary is a name that no longer
 matches a file, which is why the test walks the catalog.
 
+### Sequences: showing where a feature lives, then what it does
+
+A card can hold several images instead of one. They play in the order written, looping,
+with a step indicator under the image:
+
+```swift
+screenshots: [
+    "whatsnew-asklogue-1-button",   // where the button is
+    "whatsnew-asklogue-2-menu",     // opening it
+    "whatsnew-asklogue-3-answer",   // what it does
+]
+```
+
+Use this when a still cannot answer *"where do I find this?"* — which is most features that
+live behind a menu, a shortcut or a panel. One image stays a still; nothing changes for the
+cards that already have one.
+
+Rules, all enforced by tests:
+
+- **At most four steps.** Past that a card stops being a card and becomes a video the user
+  cannot pause.
+- **No repeated frame** in one sequence — it reads as the animation being stuck.
+- **Every name must resolve.** A missing file is dropped rather than left as a gap, so a
+  typo silently shortens a three-step sequence to two. The test is what catches it.
+
+Each step holds for `AppConstants.Delays.whatsNewSequenceStep` (2.5s). The sequence restarts
+from step 1 when the user moves to another card, and stops when the sheet closes. Reduce
+Motion still advances the steps but without the crossfade — the order carries the meaning,
+so skipping it entirely would lose information.
+
+Shoot every frame in a sequence at the **same window size and position**, so the steps read
+as one thing changing rather than three unrelated pictures.
+
 ## The stamp
 
 `lastSeenWhatsNewVersion` in `UserDefaults` records the newest release a user has been
