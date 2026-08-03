@@ -24,9 +24,13 @@ struct UnifiedSidebarView<Tool: ToolbarTool, PanelContent: View>: View {
     private let defaultWidth: CGFloat = 320
     private let limit = SidebarWidthLimit.inspector
 
-    /// The width actually rendered. Held separate from `currentWidth` so that shrinking
-    /// the window narrows the panel without forgetting the width the user chose — grow
-    /// the window back and the panel returns to it.
+    /// The width actually rendered, clamped to what the window currently allows.
+    ///
+    /// Held separate from `currentWidth` so a *window resize* does not overwrite the width the
+    /// user chose: shrinking narrows the panel on screen, and growing the window back returns
+    /// it to the chosen width. A *drag* does overwrite it — `onChanged` stores the clamped
+    /// value and `onEnded` persists it — which is intended, because a drag re-chooses the width
+    /// from wherever the handle actually is.
     private var effectiveWidth: CGFloat {
         limit.clamping(currentWidth, inContainerOfWidth: workspaceWidth)
     }
