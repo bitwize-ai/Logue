@@ -240,6 +240,70 @@ struct WhatsNewGateTests {
         #expect(tour.count <= 6)
     }
 
+    @Test("Every deck opens on the cards that have art")
+    func illustratedFeaturesLeadEveryDeck() {
+        // The reported bug: What's New opened on four symbol-only cards and every
+        // screenshot sat behind them, which reads as the screenshots being missing.
+        // Ordering art-first is the fix, so it is the thing worth pinning.
+        for features in WhatsNewCatalog.releases.map(\.features) + [WhatsNewCatalog.tour] {
+            let firstWithoutArt = features.firstIndex { $0.screenshot == nil }
+            let lastWithArt = features.lastIndex { $0.screenshot != nil }
+            guard let firstWithoutArt, let lastWithArt else { continue }
+            let illustrated = features[lastWithArt].id
+            let bare = features[firstWithoutArt].id
+            #expect(
+                firstWithoutArt > lastWithArt,
+                "\(illustrated) has a screenshot but sits behind \(bare), which has none"
+            )
+        }
+    }
+
+    @Test("A release's notes stay a deck, not a slideshow")
+    func releaseNotesAreBounded() {
+        for release in WhatsNewCatalog.releases {
+            // 1.1.0 is the ceiling on purpose: it is the one release that carries the
+            // whole back catalogue, because it is the one that introduces What's New.
+            // Anything longer than that is a release listing more than it added.
+            #expect(
+                release.features.count <= 12,
+                "\(release.version) has \(release.features.count) cards"
+            )
+        }
+    }
+
+    // MARK: - What the Help menu opens
+
+    @Test("The Help menu opens the newest release this build actually is")
+    func latestReleaseIsBoundedByBuild() throws {
+        let newest = try #require(WhatsNewCatalog.releases.last)
+        #expect(WhatsNewCatalog.latestRelease(notNewerThan: newest.version) == newest)
+        // A development build whose MARKETING_VERSION lags the catalog must not
+        // advertise a release that has not been tagged.
+        let ahead = AppVersion(major: newest.version.major, minor: newest.version.minor + 1, patch: 0)
+        #expect(WhatsNewCatalog.latestRelease(notNewerThan: ahead) == newest)
+    }
+
+    @Test("A build older than every catalogued release has no notes to open")
+    func latestReleaseIsNilBeforeTheFirstRelease() throws {
+        // True of the shipping catalog on any 1.0.x build: What's New arrives in 1.1.0,
+        // so there is nothing for it to open until MARKETING_VERSION says 1.1.0.
+        // `WhatsNewView.Mode.latestNotes` falls back to the tour rather than a blank sheet.
+        let oldest = try #require(WhatsNewCatalog.releases.first)
+        let before = AppVersion(major: oldest.version.major, minor: 0, patch: 0)
+        #expect(before < oldest.version)
+        #expect(WhatsNewCatalog.latestRelease(notNewerThan: before) == nil)
+    }
+
+    @Test("An unreadable build version opens the newest notes rather than nothing")
+    func latestReleaseWithoutAVersion() {
+        // Unlike the launch gate, this path is the user having asked by name. Showing
+        // them the newest notes beats an empty sheet.
+        #expect(
+            WhatsNewCatalog.latestRelease(notNewerThan: nil)?.version
+                == WhatsNewCatalog.releases.last?.version
+        )
+    }
+
     @Test("Every named screenshot is actually in the bundle")
     func catalogScreenshotsResolve() {
         let features = (WhatsNewCatalog.releases.flatMap(\.features) + WhatsNewCatalog.tour)

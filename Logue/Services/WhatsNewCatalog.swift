@@ -182,40 +182,53 @@ enum WhatsNewCatalog {
 
     /// What a first install is shown, once the onboarding wizard is done.
     ///
-    /// Deliberately short. A newcomer has just clicked through seven pages of setup, and
-    /// the slide they close early is worth nothing — so this is the headlines only, and
-    /// the rest of the app introduces itself when they get there.
+    /// Deliberately short, and deliberately hand-picked rather than derived from
+    /// `releases`. A newcomer has just clicked through seven pages of setup, and the slide
+    /// they close early is worth nothing — so this is the headlines only, and the rest of
+    /// the app introduces itself when they get there. Handing them the upgrade deck
+    /// instead would be a dozen cards of features they have no context for yet.
+    ///
+    /// Because it is hand-picked, it does not change when a release ships. Revisit it only
+    /// when something lands that changes what Logue *is* — not for every addition.
+    ///
+    /// Illustrated cards first, same as the release decks, and it closes on Ask Logue —
+    /// the one a newcomer can go and try the moment the sheet is gone.
     static let tour: [WhatsNewFeature] = [
         Feature.meetings,
         Feature.smartMinutes,
         Feature.writingEditor,
-        Feature.askLogue,
         Feature.privacy,
+        Feature.askLogue,
     ]
 
     // MARK: Upgrades
 
     /// What each release is worth announcing, ascending by version.
     ///
-    /// 1.0.1 carries the whole feature set rather than only what 1.0.1 added, because
-    /// What's New did not exist in 1.0.0 — nothing has ever been announced to anyone, so
-    /// for every existing user this is the first time any of it is being surfaced.
-    /// Later releases list only their own additions.
+    /// **1.1.0 is a one-off and must not be copied as the pattern.** It carries the whole
+    /// feature set rather than only what 1.1.0 added, because 1.1.0 is the release that
+    /// introduces What's New: nothing has ever been announced in-app, so for every user
+    /// arriving from 1.0.0 or 1.0.1 this is the first time any of it is surfaced. Every
+    /// release after it lists only its own additions, which is a handful of cards.
+    ///
+    /// Ordered so the illustrated cards come first. The deck opens on what Logue is,
+    /// which is also what there is art for; the newer and narrower additions follow. A
+    /// deck that opens on a symbol-only card reads as though the screenshots are missing.
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
-            version: AppVersion(major: 1, minor: 0, patch: 1),
+            version: AppVersion(major: 1, minor: 1, patch: 0),
             features: [
+                Feature.meetings,
+                Feature.smartMinutes,
+                Feature.writingEditor,
+                Feature.spacesAndSearch,
+                Feature.privacy,
+                Feature.askLogue,
+                Feature.crossApp,
                 Feature.markdownStorage,
                 Feature.wikiLinks,
                 Feature.properties,
                 Feature.savedViews,
-                Feature.meetings,
-                Feature.smartMinutes,
-                Feature.writingEditor,
-                Feature.askLogue,
-                Feature.crossApp,
-                Feature.spacesAndSearch,
-                Feature.privacy,
                 Feature.externalProviders,
             ]
         ),
