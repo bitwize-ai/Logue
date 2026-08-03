@@ -240,21 +240,15 @@ struct WhatsNewGateTests {
         #expect(tour.count <= 6)
     }
 
-    @Test("Every deck opens on the cards that have art")
-    func illustratedFeaturesLeadEveryDeck() {
-        // The reported bug: What's New opened on four symbol-only cards and every
-        // screenshot sat behind them, which reads as the screenshots being missing.
-        // Ordering art-first is the fix, so it is the thing worth pinning.
+    @Test("Every deck opens on a card that has art")
+    func everyDeckOpensOnArt() {
+        // The reported bug: What's New opened on a symbol-only card while every
+        // screenshot sat several clicks behind it, which reads as the screenshots being
+        // missing entirely. The first card is the one that has to carry art; after that,
+        // order by what the cards mean rather than by which happen to be illustrated.
         for features in WhatsNewCatalog.releases.map(\.features) + [WhatsNewCatalog.tour] {
-            let firstWithoutArt = features.firstIndex { !$0.hasArt }
-            let lastWithArt = features.lastIndex(where: \.hasArt)
-            guard let firstWithoutArt, let lastWithArt else { continue }
-            let illustrated = features[lastWithArt].id
-            let bare = features[firstWithoutArt].id
-            #expect(
-                firstWithoutArt > lastWithArt,
-                "\(illustrated) has a screenshot but sits behind \(bare), which has none"
-            )
+            guard let first = features.first else { continue }
+            #expect(first.hasArt, "\(first.id) opens a deck with no art")
         }
     }
 

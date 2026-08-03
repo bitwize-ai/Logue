@@ -277,7 +277,10 @@ struct WhatsNewView: View {
                 Image(nsImage: images[min(step, images.count - 1)])
                     .resizable()
                     .scaledToFit()
-                    .frame(maxHeight: 250)
+                    // A fixed well rather than a maximum: steps of a sequence are rarely
+                    // the same shape, and sizing to each one in turn makes the title and
+                    // caption jump every time the image changes.
+                    .frame(height: 250)
                     .clipShape(RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge))
                     .overlay(
                         RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge)

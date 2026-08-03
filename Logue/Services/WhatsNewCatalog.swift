@@ -104,7 +104,10 @@ enum WhatsNewCatalog {
             A chat that can actually reach your meetings, documents, calendar and \
             reminders, and take multiple steps to answer. It asks before it does \
             anything you would want to be asked about.
-            """
+            """,
+            // Where it lives before what it does: the menu bar item is the part nobody
+            // finds on their own.
+            screenshots: ["whatsnew-asklogue-1-where", "whatsnew-asklogue-2-answer"]
         )
 
         static let crossApp = WhatsNewFeature(
@@ -169,7 +172,8 @@ enum WhatsNewCatalog {
             detail: """
             Type [[ to link another document. Links show the target's real name, survive \
             renames, and every document lists what points back to it.
-            """
+            """,
+            screenshot: "whatsnew-wikilinks"
         )
 
         static let properties = WhatsNewFeature(
