@@ -199,6 +199,10 @@ private struct AppRootView: View {
                 openSettings()
             }
             .onReceive(NotificationCenter.default.publisher(for: .showWhatsNew)) { _ in
+                // The Help menu is live while the onboarding sheet is up, and AppKit
+                // drops a second sheet on the same window without saying so — which
+                // would leave this queued and present it at some unrelated later moment.
+                guard hasCompletedOnboarding else { return }
                 whatsNew = WhatsNewSheetItem(mode: .latestNotes)
             }
             .environment(ModelManager.shared)
@@ -208,20 +212,33 @@ private struct AppRootView: View {
             .environment(RecordingSessionManager.shared)
             .environment(TemplateStore.shared)
             .environment(CalendarManager.shared)
-            .sheet(isPresented: Binding(
-                get: { !hasCompletedOnboarding },
-                set: {
-                    if !$0 {
+            .sheet(
+                isPresented: Binding(
+                    get: { !hasCompletedOnboarding },
+                    set: {
+                        if !$0 {
+                            hasCompletedOnboarding = true
+                        }
+                    }
+                ),
+                // Fires once, when a new install finishes the wizard: this binding is
+                // only ever driven by `hasCompletedOnboarding`, which nothing else sets
+                // and which a data reset deliberately preserves.
+                //
+                // Sequencing the tour from here rather than from an `onChange` on the
+                // flag is what makes the handoff reliable. AppKit refuses a sheet while
+                // the window still has one and fails silently, and this callback is the
+                // only signal that says the wizard's sheet is gone — the flag flips
+                // before the dismissal, so anything keyed to it is guessing.
+                onDismiss: { presentDiscoverTour() },
+                content: {
+                    OnboardingView {
                         hasCompletedOnboarding = true
                     }
+                    .environment(ModelManager.shared)
+                    .interactiveDismissDisabled()
                 }
-            )) {
-                OnboardingView {
-                    hasCompletedOnboarding = true
-                }
-                .environment(ModelManager.shared)
-                .interactiveDismissDisabled()
-            }
+            )
             .task {
                 // The tour belongs to a fresh install and waits for the wizard; only
                 // release notes are owed to someone who has been here before.
@@ -230,22 +247,28 @@ private struct AppRootView: View {
                     whatsNew = WhatsNewSheetItem(mode: .whatsNew(releases))
                 }
             }
-            .onChange(of: hasCompletedOnboarding) { wasCompleted, isCompleted in
-                // False to true happens once, when a new install finishes the wizard —
-                // nothing else sets this, and a data reset deliberately preserves it.
-                guard !wasCompleted, isCompleted else { return }
-                Task {
-                    // AppKit drops a sheet requested while the previous one is still
-                    // animating away, silently.
-                    try? await Task.sleep(for: AppConstants.Delays.sheetHandoff)
-                    whatsNew = WhatsNewSheetItem(mode: .discover)
-                }
-            }
             .sheet(
                 item: $whatsNew,
                 onDismiss: { WhatsNewGate.markSeen() },
                 content: { item in WhatsNewView(mode: item.mode) }
             )
+    }
+
+    /// Shows the first-run tour once the onboarding sheet has actually gone.
+    ///
+    /// The wait is a margin on top of `onDismiss`, not the mechanism: the callback lands
+    /// as the dismissal completes, and requesting the next sheet in the same run loop
+    /// turn has been enough to lose it.
+    ///
+    /// `@MainActor` because only `body` inherits it from `View`. Without it this method is
+    /// nonisolated, the `Task` inherits that, and the state driving the sheet is written
+    /// off the main actor.
+    @MainActor
+    private func presentDiscoverTour() {
+        Task {
+            try? await Task.sleep(for: AppConstants.Delays.sheetHandoff)
+            whatsNew = WhatsNewSheetItem(mode: .discover)
+        }
     }
 }
 
