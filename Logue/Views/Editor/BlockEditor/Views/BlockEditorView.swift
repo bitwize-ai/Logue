@@ -24,6 +24,9 @@ struct BlockEditorView: View {
     @Binding var scrollToSuggestion: Suggestion?
     /// Scrolls to and selects arbitrary text (used by vocab enhancement, etc.)
     @Binding var scrollToText: String?
+    /// How wide the text column should be. Applied to the blocks inside the scroll
+    /// view rather than to the scroll view, so the scroller stays at the pane's edge.
+    var contentWidth: EditorContentWidth = .scaling(.normal)
 
     @Environment(\.undoManager) private var undoManager
     // Extension-visible: +Reorder
@@ -113,6 +116,9 @@ struct BlockEditorView: View {
                         }
                         .padding(.horizontal, AppThemeConstants.editorHorizontalInset)
                         .padding(.vertical, AppThemeConstants.editorVerticalInset)
+                        // Outside the insets, so the text measure is unchanged by the move.
+                        .frame(maxWidth: contentWidth.resolved(forPaneWidth: geometry.size.width))
+                        .frame(maxWidth: .infinity)
                     }
                     .coordinateSpace(name: "editorScroll")
                     .onPreferenceChange(BlockFramePreferenceKey.self) { [blockFrameStore] newFrames in

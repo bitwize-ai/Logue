@@ -9,11 +9,28 @@ enum DocumentWidthMode: String, Codable, CaseIterable, Sendable {
     case normal
     case wide
 
-    /// Maximum width of the editor's text container for this mode.
+    /// The measure this mode reads at before the pane is wide enough for the column
+    /// to start growing. The column is never narrower than this unless the pane is.
+    var baseContentWidth: CGFloat {
+        switch self {
+        case .normal: AppConstants.Editor.normalBaseContentWidth
+        case .wide: AppConstants.Editor.wideBaseContentWidth
+        }
+    }
+
+    /// Share of the editor pane the column grows to occupy.
+    var widthFraction: CGFloat {
+        switch self {
+        case .normal: AppConstants.Editor.normalWidthFraction
+        case .wide: AppConstants.Editor.wideWidthFraction
+        }
+    }
+
+    /// Ceiling on the grown column, past which a line is too long to read comfortably.
     var maxContentWidth: CGFloat {
         switch self {
-        case .normal: AppConstants.Editor.normalContentWidth
-        case .wide: AppConstants.Editor.wideContentWidth
+        case .normal: AppConstants.Editor.normalMaxContentWidth
+        case .wide: AppConstants.Editor.wideMaxContentWidth
         }
     }
 

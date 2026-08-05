@@ -77,6 +77,9 @@ struct DocumentWorkspaceView: View {
 
     var body: some View {
         if let doc = store.selectedDocument {
+            // No spacing: the editor pane runs right up to the sidebar so its scroller
+            // sits on the pane edge. The text column is centred and capped well inside
+            // that, so it keeps its margin without the scroller floating in from the edge.
             HStack(spacing: 0) {
                 // Center: rich text editor
                 VStack(spacing: 0) {
@@ -96,14 +99,11 @@ struct DocumentWorkspaceView: View {
                         onSuggestionAccepted: { acceptFromEditor(suggestion: $0) },
                         onSuggestionDismissed: { dismiss(suggestion: $0) },
                         scrollToSuggestion: $scrollToSuggestion,
-                        scrollToText: $scrollToText
+                        scrollToText: $scrollToText,
+                        contentWidth: focusState.isActive
+                            ? .fixed(focusState.columnWidth)
+                            : .scaling(doc.widthMode)
                     )
-                    .frame(
-                        maxWidth: focusState.isActive
-                            ? focusState.columnWidth
-                            : doc.widthMode.maxContentWidth
-                    )
-                    .frame(maxWidth: .infinity)
 
                     if !focusState.isActive {
                         Divider()
@@ -128,6 +128,7 @@ struct DocumentWorkspaceView: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            .measuringWorkspaceWidth()
             .background(AppThemeConstants.contentBackground)
             .navigationTitle(doc.title)
             .navigationSubtitle(focusState.isActive ? "\(doc.wordCount) words · Focus Mode" : "\(doc.wordCount) words")
