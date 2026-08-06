@@ -58,6 +58,14 @@ def inline_html(text: str) -> str:
     escaped = html.escape(text, quote=False)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    # Attribution links are all over the changelog; without this they reach Sparkle's
+    # pane as literal "[@name](https://…)". Only http(s) targets become links, so a
+    # javascript: URL in a changelog cannot execute in the update dialog's web view.
+    escaped = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
+        lambda m: '<a href="{}">{}</a>'.format(html.escape(m.group(2), quote=True), m.group(1)),
+        escaped,
+    )
     return escaped
 
 

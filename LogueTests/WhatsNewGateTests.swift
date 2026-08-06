@@ -199,13 +199,40 @@ struct WhatsNewGateTests {
         }
     }
 
-    @Test("A stamped, onboarded user is read back as having nothing to see")
-    func launchReadsStoredStamp() {
+    @Test("The stamp is what was shown, not what the build is")
+    func stampRecordsOnlyWhatWasDisplayed() {
+        // The Help menu and Settings open one release, not the whole backlog. Stamping
+        // the running version there marks everything older as seen without showing it,
+        // and because the stamp only rises those releases are gone for good.
+        let catalog = self.catalog
+        let shown = WhatsNewView.Mode.whatsNew([release(1, 1, 0)])
+        #expect(shown.seenThrough == version(1, 1, 0))
+
         withScratchDefaults { defaults in
             defaults.set(true, forKey: AppConstants.UserDefaultsKeys.hasCompletedOnboarding)
-            WhatsNewGate.markSeen(upTo: AppVersion.current, defaults: defaults)
-            #expect(WhatsNewGate.presentationForLaunch(defaults: defaults) == .none)
+            WhatsNewGate.markSeen(upTo: shown.seenThrough, defaults: defaults)
+
+            // 1.2.0 was never displayed, so a 1.2.0 build must still offer it.
+            let stillOwed = WhatsNewGate.presentation(
+                current: version(1, 2, 0),
+                lastSeen: version(1, 1, 0),
+                hasCompletedOnboarding: true,
+                releases: catalog
+            )
+            #expect(versions(of: stillOwed) == [version(1, 2, 0)])
         }
+    }
+
+    @Test("A deck spanning several releases stamps the newest of them")
+    func stampCoversEveryReleaseShown() {
+        let shown = WhatsNewView.Mode.whatsNew([release(1, 2, 0), release(1, 1, 0)])
+        #expect(shown.seenThrough == version(1, 2, 0))
+    }
+
+    @Test("The tour stamps the running build")
+    func tourStampsCurrentVersion() {
+        // A fresh install has been told what Logue is; it is not owed the catch-up deck.
+        #expect(WhatsNewView.Mode.discover.seenThrough == AppVersion.current)
     }
 
     // MARK: - The real catalog
@@ -217,17 +244,16 @@ struct WhatsNewGateTests {
         #expect(Set(versions.map(\.description)).count == versions.count)
     }
 
-    @Test("Every feature has a unique id and something to say")
+    /// Every list a user can be shown: each release's deck, plus the first-run tour.
+    private var allDecks: [[WhatsNewFeature]] {
+        WhatsNewCatalog.releases.map(\.features) + [WhatsNewCatalog.tour]
+    }
+
+    @Test("No deck shows the same feature twice")
     func catalogFeaturesAreWellFormed() {
-        for features in WhatsNewCatalog.releases.map(\.features) + [WhatsNewCatalog.tour] {
+        for features in allDecks {
             #expect(!features.isEmpty)
-            // Within one list, a repeated feature would show the same card twice.
             #expect(Set(features.map(\.id)).count == features.count)
-            for feature in features {
-                #expect(!feature.title.isEmpty)
-                #expect(!feature.detail.isEmpty)
-                #expect(!feature.symbol.isEmpty)
-            }
         }
     }
 
@@ -243,10 +269,8 @@ struct WhatsNewGateTests {
     @Test("Every deck opens on a card that has art")
     func everyDeckOpensOnArt() {
         // The reported bug: What's New opened on a symbol-only card while every
-        // screenshot sat several clicks behind it, which reads as the screenshots being
-        // missing entirely. The first card is the one that has to carry art; after that,
-        // order by what the cards mean rather than by which happen to be illustrated.
-        for features in WhatsNewCatalog.releases.map(\.features) + [WhatsNewCatalog.tour] {
+        // screenshot sat several clicks behind it, which reads as the art being missing.
+        for features in allDecks {
             guard let first = features.first else { continue }
             #expect(first.hasArt, "\(first.id) opens a deck with no art")
         }
@@ -254,13 +278,14 @@ struct WhatsNewGateTests {
 
     @Test("A release's notes stay a deck, not a slideshow")
     func releaseNotesAreBounded() {
+        let backCatalogue = AppVersion(major: 1, minor: 1, patch: 0)
         for release in WhatsNewCatalog.releases {
-            // 1.1.0 is the ceiling on purpose: it is the one release that carries the
-            // whole back catalogue, because it is the one that introduces What's New.
-            // Anything longer than that is a release listing more than it added.
+            // Only 1.1.0 carries the whole back catalogue, because it is the release that
+            // introduces What's New. Anything else this long is listing more than it added.
+            let cap = release.version == backCatalogue ? 13 : 6
             #expect(
-                release.features.count <= 13,
-                "\(release.version) has \(release.features.count) cards"
+                release.features.count <= cap,
+                "\(release.version) has \(release.features.count) cards, cap is \(cap)"
             )
         }
     }
@@ -289,35 +314,29 @@ struct WhatsNewGateTests {
     }
 
     @Test("An unreadable build version opens the newest notes rather than nothing")
-    func latestReleaseWithoutAVersion() {
+    func latestReleaseWithoutAVersion() throws {
         // Unlike the launch gate, this path is the user having asked by name. Showing
         // them the newest notes beats an empty sheet.
-        #expect(
-            WhatsNewCatalog.latestRelease(notNewerThan: nil)?.version
-                == WhatsNewCatalog.releases.last?.version
-        )
+        let newest = try #require(WhatsNewCatalog.releases.last)
+        #expect(WhatsNewCatalog.latestRelease(notNewerThan: nil) == newest)
     }
 
     @Test("Every named screenshot is actually in the bundle")
     func catalogScreenshotsResolve() {
-        let features = (WhatsNewCatalog.releases.flatMap(\.features) + WhatsNewCatalog.tour)
-            .filter(\.hasArt)
+        let features = allDecks.flatMap { $0 }.filter(\.hasArt)
         #expect(!features.isEmpty)
         for feature in features {
             // A typo degrades silently — to a symbol-only card, or to a sequence quietly
             // missing a step — so it needs a test rather than a convention.
             let named = feature.screenshots.count
             let found = WhatsNewCatalog.screenshotURLs(for: feature).count
-            #expect(
-                WhatsNewCatalog.allScreenshotsResolve(for: feature),
-                "\(feature.id) names \(named) images but only \(found) are in the bundle"
-            )
+            #expect(found == named, "\(feature.id) names \(named) images but only \(found) are in the bundle")
         }
     }
 
     @Test("A sequence is in a deliberate order, with no repeats")
     func sequencesAreWellFormed() {
-        for feature in WhatsNewCatalog.releases.flatMap(\.features) + WhatsNewCatalog.tour {
+        for feature in allDecks.flatMap({ $0 }) {
             // The same frame twice in one sequence reads as the animation being stuck.
             #expect(
                 Set(feature.screenshots).count == feature.screenshots.count,

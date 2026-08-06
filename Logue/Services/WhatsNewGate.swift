@@ -8,7 +8,7 @@ import os.log
 /// UserDefaults; `presentationForLaunch()` is the thin shell that reads the real state.
 enum WhatsNewGate {
     enum Presentation: Equatable {
-        /// Nothing to show. The common case for a user who is already up to date.
+        /// Nothing to show.
         case none
         /// A fresh install: a tour of what Logue does, shown once onboarding is finished.
         case discoverTour
@@ -31,25 +31,22 @@ enum WhatsNewGate {
         hasCompletedOnboarding: Bool,
         releases: [WhatsNewRelease]
     ) -> Presentation {
-        // A version we cannot read is not evidence of anything. Showing notes on a
-        // guess would repeat them on every launch, so do nothing.
+        // Guessing would replay the notes on every launch.
         guard let current else {
             logger.error("No parseable app version; skipping What's New")
             return .none
         }
 
-        // Onboarding not done means nobody has used this copy of Logue yet. The tour
-        // waits for the wizard to finish — the caller sequences that, not this.
+        // The caller sequences the tour after the wizard, not this.
         guard hasCompletedOnboarding else { return .discoverTour }
 
         let unseen = releases
             .filter { release in
-                // The upper bound matters on development builds, where the catalog
-                // routinely describes a version MARKETING_VERSION has not been bumped to.
+                // Development builds routinely run a catalog describing a version the
+                // build itself has not been bumped to yet.
                 guard release.version <= current else { return false }
-                // No stamp means nothing has ever been announced to this user — What's
-                // New did not exist in 1.0.0, so an install from then has seen none of
-                // it. That is "seen nothing", not "seen everything up to now".
+                // No stamp means nothing was ever announced — What's New did not exist in
+                // 1.0.0 — which is "seen nothing", not "seen everything up to now".
                 guard let lastSeen else { return true }
                 return release.version > lastSeen
             }
@@ -70,14 +67,10 @@ enum WhatsNewGate {
 
     // MARK: - Stamp
 
-    /// Records that the user has seen everything up to `version`.
-    ///
-    /// Only ever raises the stamp. Re-opening the notes from the Help menu, or running
-    /// an older build against a newer stamp, must not make a release unseen again.
-    ///
-    /// Called when the sheet closes rather than when it opens: a crash between the two
-    /// should cost a second showing, not swallow the release notes permanently.
-    static func markSeen(upTo version: AppVersion? = AppVersion.current, defaults: UserDefaults = .standard) {
+    /// Records that the user has seen everything up to `version`, which must be what was
+    /// actually shown — defaulting it to the running version silently buries the releases
+    /// in between, and the stamp only ever rises.
+    static func markSeen(upTo version: AppVersion?, defaults: UserDefaults = .standard) {
         guard let version else { return }
         if let stored = storedVersion(in: defaults), stored >= version {
             return

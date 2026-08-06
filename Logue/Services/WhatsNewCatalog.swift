@@ -6,25 +6,15 @@ import Foundation
 struct WhatsNewFeature: Identifiable, Equatable, Sendable {
     /// Stable slug. Never renamed and never reused — tests and screenshots pin to it.
     let id: String
-    /// SF Symbol shown as the card's hero.
+    /// SF Symbol, shown when the card has no art.
     let symbol: String
     let title: String
     let detail: String
-    /// Base names of PNGs in `Logue/Resources`, without the extension.
-    ///
-    /// Empty renders the card symbol-only, which is the ordinary case rather than a
-    /// failure. One renders a still. More than one plays as a sequence, in the order
-    /// written — which is what lets a card show *where* a feature lives before showing
-    /// what it does: the menu it hides under, then the result. A still cannot say that.
+    /// Base names of PNGs in `Logue/Resources`, without the extension. Several play as a
+    /// sequence, in the order written. See docs/WHATS_NEW.md.
     let screenshots: [String]
 
-    /// A feature with one still, or none.
-    init(id: String, symbol: String, title: String, detail: String, screenshot: String? = nil) {
-        self.init(id: id, symbol: symbol, title: title, detail: detail, screenshots: screenshot.map { [$0] } ?? [])
-    }
-
-    /// A feature whose art is a sequence. Order is the order it plays.
-    init(id: String, symbol: String, title: String, detail: String, screenshots: [String]) {
+    init(id: String, symbol: String, title: String, detail: String, screenshots: [String] = []) {
         self.id = id
         self.symbol = symbol
         self.title = title
@@ -32,7 +22,11 @@ struct WhatsNewFeature: Identifiable, Equatable, Sendable {
         self.screenshots = screenshots
     }
 
-    /// Whether this card has any art at all. Decks are ordered so these come first.
+    /// Convenience for the common case of a single still.
+    init(id: String, symbol: String, title: String, detail: String, screenshot: String) {
+        self.init(id: id, symbol: symbol, title: title, detail: detail, screenshots: [screenshot])
+    }
+
     var hasArt: Bool {
         !screenshots.isEmpty
     }
@@ -46,16 +40,9 @@ struct WhatsNewRelease: Equatable, Sendable {
 
 // MARK: - Catalog
 
-/// What to tell users about, kept as two separate lists because they answer two
-/// different questions.
-///
-/// `tour` is for somebody who has never opened Logue: the headlines, in the order that
-/// best explains what the app is for. `releases` is for somebody upgrading: what changed
-/// since the version they last saw. A feature can appear in both, in neither, or in one
-/// — deriving either list from the other always ended up compromising both.
-///
-/// Features are defined once in `Feature` and composed into the two lists, so the copy
-/// cannot drift between them.
+/// Two lists, because they answer two questions: `tour` is "what is Logue for", `releases`
+/// is "what changed". Features are defined once in `Feature` and composed into both, so
+/// the copy cannot drift between them. See docs/WHATS_NEW.md.
 enum WhatsNewCatalog {
     // MARK: Features
 
@@ -209,19 +196,9 @@ enum WhatsNewCatalog {
 
     // MARK: New installs
 
-    /// What a first install is shown, once the onboarding wizard is done.
-    ///
-    /// Deliberately short, and deliberately hand-picked rather than derived from
-    /// `releases`. A newcomer has just clicked through seven pages of setup, and the slide
-    /// they close early is worth nothing — so this is the headlines only, and the rest of
-    /// the app introduces itself when they get there. Handing them the upgrade deck
-    /// instead would be a dozen cards of features they have no context for yet.
-    ///
-    /// Because it is hand-picked, it does not change when a release ships. Revisit it only
-    /// when something lands that changes what Logue *is* — not for every addition.
-    ///
-    /// Illustrated cards first, same as the release decks, and it closes on Ask Logue —
-    /// the one a newcomer can go and try the moment the sheet is gone.
+    /// What a first install is shown, once the onboarding wizard is done. Hand-picked
+    /// rather than derived from `releases`, and it does not change every release — see
+    /// docs/WHATS_NEW.md.
     static let tour: [WhatsNewFeature] = [
         Feature.meetings,
         Feature.smartMinutes,
@@ -232,25 +209,16 @@ enum WhatsNewCatalog {
 
     // MARK: Upgrades
 
-    /// What each release is worth announcing, ascending by version.
-    ///
-    /// **1.1.0 is a one-off and must not be copied as the pattern.** It carries the whole
-    /// feature set rather than only what 1.1.0 added, because 1.1.0 is the release that
-    /// introduces What's New: nothing has ever been announced in-app, so for every user
-    /// arriving from 1.0.0 or 1.0.1 this is the first time any of it is surfaced. Every
-    /// release after it lists only its own additions, which is a handful of cards.
-    ///
-    /// Read in two halves: what Logue already does, then what is actually new. Someone
-    /// arriving from 1.0.x is meeting both at once, and the second half only means
-    /// anything against the first.
-    ///
-    /// Within the first half the illustrated cards lead, so the deck opens on art rather
-    /// than on a bare symbol — which reads as the screenshots being broken.
+    /// What each release is worth announcing, ascending by version. A release lists only
+    /// what it added; the first card must have art. See docs/WHATS_NEW.md.
     static let releases: [WhatsNewRelease] = [
+        // 1.1.0 is a one-off: it introduces What's New, so it carries the whole back
+        // catalogue rather than its own additions. Read in two halves — what Logue
+        // already does, then what is new, which only means anything against the first.
         WhatsNewRelease(
             version: AppVersion(major: 1, minor: 1, patch: 0),
             features: [
-                // Already there — what Logue is.
+                // Already there.
                 Feature.meetings,
                 Feature.smartMinutes,
                 Feature.writingEditor,
@@ -283,19 +251,9 @@ enum WhatsNewCatalog {
 
     /// Where a feature's bundled art lives, in play order.
     ///
-    /// Empty is ordinary rather than a failure: most features are illustrated by their
-    /// symbol alone. A test walks the catalog to catch the case that *is* a failure — a
-    /// name that no longer matches a file in the bundle.
-    ///
     /// A name that does not resolve is dropped rather than left as a gap, so one missing
-    /// file degrades a three-step sequence to two steps instead of stalling on a blank.
+    /// file shortens a sequence instead of stalling it on a blank.
     static func screenshotURLs(for feature: WhatsNewFeature, in bundle: Bundle = .main) -> [URL] {
         feature.screenshots.compactMap { bundle.url(forResource: $0, withExtension: "png") }
-    }
-
-    /// Whether every name this feature declares resolves to a bundled file. Used by the
-    /// test that catches a typo, which would otherwise degrade silently.
-    static func allScreenshotsResolve(for feature: WhatsNewFeature, in bundle: Bundle = .main) -> Bool {
-        screenshotURLs(for: feature, in: bundle).count == feature.screenshots.count
     }
 }

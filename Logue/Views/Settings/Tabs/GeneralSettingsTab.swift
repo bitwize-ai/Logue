@@ -221,11 +221,7 @@ struct GeneralSettingsTab: View {
         .sheet(isPresented: $showWelcomeTour) {
             OnboardingV2View()
         }
-        .sheet(
-            isPresented: $showWhatsNew,
-            onDismiss: { WhatsNewGate.markSeen() },
-            content: { WhatsNewView(mode: .latestNotes) }
-        )
+        .sheet(isPresented: $showWhatsNew) { WhatsNewView(mode: .latestNotes) }
         .onAppear { applyAppearance() }
         .confirmationDialog(
             "Clear all example data?",

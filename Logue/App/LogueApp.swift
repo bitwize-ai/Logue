@@ -199,10 +199,10 @@ private struct AppRootView: View {
                 openSettings()
             }
             .onReceive(NotificationCenter.default.publisher(for: .showWhatsNew)) { _ in
-                // The Help menu is live while the onboarding sheet is up, and AppKit
-                // drops a second sheet on the same window without saying so — which
-                // would leave this queued and present it at some unrelated later moment.
-                guard hasCompletedOnboarding else { return }
+                // The Help menu stays live while a sheet is up. Assigning here would swap
+                // a multi-release catch-up deck for a single-release one mid-read, and
+                // during onboarding AppKit would drop the sheet while leaving this set.
+                guard hasCompletedOnboarding, whatsNew == nil else { return }
                 whatsNew = WhatsNewSheetItem(mode: .latestNotes)
             }
             .environment(ModelManager.shared)
@@ -221,15 +221,8 @@ private struct AppRootView: View {
                         }
                     }
                 ),
-                // Fires once, when a new install finishes the wizard: this binding is
-                // only ever driven by `hasCompletedOnboarding`, which nothing else sets
-                // and which a data reset deliberately preserves.
-                //
-                // Sequencing the tour from here rather than from an `onChange` on the
-                // flag is what makes the handoff reliable. AppKit refuses a sheet while
-                // the window still has one and fails silently, and this callback is the
-                // only signal that says the wizard's sheet is gone — the flag flips
-                // before the dismissal, so anything keyed to it is guessing.
+                // onDismiss is the only signal that the wizard's sheet is actually gone.
+                // The flag flips before the dismissal, so anything keyed to it is guessing.
                 onDismiss: { presentDiscoverTour() },
                 content: {
                     OnboardingView {
@@ -247,26 +240,20 @@ private struct AppRootView: View {
                     whatsNew = WhatsNewSheetItem(mode: .whatsNew(releases))
                 }
             }
-            .sheet(
-                item: $whatsNew,
-                onDismiss: { WhatsNewGate.markSeen() },
-                content: { item in WhatsNewView(mode: item.mode) }
-            )
+            .sheet(item: $whatsNew) { item in WhatsNewView(mode: item.mode) }
     }
 
     /// Shows the first-run tour once the onboarding sheet has actually gone.
     ///
-    /// The wait is a margin on top of `onDismiss`, not the mechanism: the callback lands
-    /// as the dismissal completes, and requesting the next sheet in the same run loop
-    /// turn has been enough to lose it.
-    ///
-    /// `@MainActor` because only `body` inherits it from `View`. Without it this method is
-    /// nonisolated, the `Task` inherits that, and the state driving the sheet is written
-    /// off the main actor.
+    /// `@MainActor` because only `body` inherits it from `View`; without it the `Task`
+    /// would write the sheet's state off the main actor.
     @MainActor
     private func presentDiscoverTour() {
         Task {
             try? await Task.sleep(for: AppConstants.Delays.sheetHandoff)
+            // The Help menu is reachable during the wait, so this must not overwrite a
+            // sheet the user asked for themselves.
+            guard whatsNew == nil else { return }
             whatsNew = WhatsNewSheetItem(mode: .discover)
         }
     }

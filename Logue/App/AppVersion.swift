@@ -5,10 +5,6 @@ import Foundation
 /// Ordering is the whole reason this type exists. Comparing the strings instead puts
 /// "1.10.0" below "1.9.0", which would silently stop showing release notes to everyone
 /// past a tenth minor release.
-///
-/// A pre-release suffix ("1.1.0-beta.1") parses and then orders as the release it leads
-/// up to. Nothing in the app needs to tell a beta from its release, and ordering them
-/// apart would show a beta tester the same notes again on the final build.
 struct AppVersion: Comparable, Equatable, Sendable, CustomStringConvertible {
     let major: Int
     let minor: Int
@@ -20,7 +16,9 @@ struct AppVersion: Comparable, Equatable, Sendable, CustomStringConvertible {
         self.patch = patch
     }
 
-    /// Parses "1", "1.2", "1.2.3" and "1.2.3-beta.1"; absent components are zero.
+    /// Parses "1", "1.2", "1.2.3" and "1.2.3-beta.1"; absent components are zero, and a
+    /// pre-release suffix orders as the release it leads up to, so a beta tester is not
+    /// shown the same notes again on the final build.
     ///
     /// Returns nil for anything else, so a garbled Info.plist reads as "unknown" rather
     /// than as 0.0.0 — which would compare as older than every real release and replay

@@ -52,12 +52,14 @@ brought it. Repeating older features means seeing them twice.
 
 Four rules the tests enforce, so a slip fails CI rather than shipping:
 
-- **Illustrated cards come first within a block.** A deck that opens on a symbol-only card
-  reads as though the screenshots are broken. This is exactly the bug that was reported
-  against the first version of this feature.
+- **The first card in a block has art.** A deck that opens on a symbol-only card reads as
+  though the screenshots are broken — the bug reported against the first version of this
+  feature. Cards after the first are ordered by meaning, not by which happen to be
+  illustrated.
 - **Every `screenshot:` name resolves to a file in the bundle.** A typo degrades silently
   to a symbol-only card, which is why it is a test and not a convention.
-- **At most 12 cards in a block.** 1.1.0 is the only one that should ever come close.
+- **At most 6 cards in a block, and 13 for 1.1.0.** 1.1.0 is the one release that carries
+  the whole back catalogue; anything else that large is listing more than it added.
 - **Feature `id`s are unique within a block and never reused.** Tests and screenshots pin
   to them.
 
@@ -108,8 +110,9 @@ at six cards or fewer; a test enforces that.
 3. Run `xcodegen generate`. Resources are picked up from the folder, so there is nothing
    to add by hand.
 
-Resize to **900px wide**. The card displays at roughly 340pt, so 900px is twice what a
-Retina display needs and keeps the app around 200 KB per image rather than 500 KB.
+Resize to **900px wide**. The image well is 250pt tall, so 900px covers Retina with room
+to spare and keeps each file near 200 KB rather than 500 KB. Every screenshot ships inside
+the app, so this is download size for every user.
 
 ```sh
 sips --resampleWidth 900 Logue/Resources/whatsnew-<slug>.png
@@ -192,5 +195,6 @@ To see the whole thing as a first-time user would, on a build whose `MARKETING_V
 at or past the newest block:
 
 ```sh
-defaults delete com.bitwize.logue hasCompletedOnboarding lastSeenWhatsNewVersion
+defaults delete com.bitwize.logue hasCompletedOnboarding
+defaults delete com.bitwize.logue lastSeenWhatsNewVersion
 ```

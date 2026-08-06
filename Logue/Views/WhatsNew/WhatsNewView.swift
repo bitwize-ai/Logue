@@ -1,14 +1,12 @@
-// `os` rather than `os.log`: it carries both `Logger` and the `OSAllocatedUnfairLock`
-// guarding the image cache.
-import os
+import os.log
 import SwiftUI
 
 /// A paged showcase of features, used for two jobs that differ only in what they list:
 /// the first-run tour of what Logue does, and the notes for releases the user has not
 /// seen yet.
 ///
-/// Structured like `OnboardingV2View` — one card at a time, dots and a footer — because
-/// a user meets this right after that flow and a second, unfamiliar shape would read as
+/// One card at a time with dots and a footer, matching `OnboardingView` — a fresh install
+/// meets this immediately after that wizard, and a second, unfamiliar shape would read as
 /// a different app.
 struct WhatsNewView: View {
     enum Mode: Equatable {
@@ -19,12 +17,25 @@ struct WhatsNewView: View {
 
         /// What "What's New" opens when the user asks for it by name, from the Help menu
         /// or Settings: the notes for the release this build is. Falls back to the tour
-        /// only if no release is catalogued, which would mean the catalog is empty.
+        /// when this build predates every catalogued release.
         static var latestNotes: Mode {
             guard let latest = WhatsNewCatalog.latestRelease(notNewerThan: AppVersion.current) else {
                 return .discover
             }
             return .whatsNew([latest])
+        }
+
+        /// The newest release this mode actually put in front of the user.
+        ///
+        /// Stamping the running version instead would be wrong for the two entry points
+        /// that show a single release: opening Help → What's New on a build that is
+        /// several releases ahead would mark the ones in between as seen without ever
+        /// having shown them, and the stamp only ever rises.
+        var seenThrough: AppVersion? {
+            switch self {
+            case .discover: AppVersion.current
+            case let .whatsNew(releases): releases.map(\.version).max()
+            }
         }
     }
 
@@ -112,13 +123,19 @@ struct WhatsNewView: View {
         }
         .frame(width: 620, height: 560)
         .background(.regularMaterial)
-        // An empty catalog would leave a blank sheet with no way to read it as anything
-        // other than a bug. Nothing to say means nothing to show.
+        // Escape belongs to the sheet, not to the dismiss button — that button is hidden
+        // on the last card, which otherwise left the deck with no keyboard way out.
+        .onExitCommand { dismiss() }
         .onAppear {
+            // Nothing to say, nothing to show.
             if pages.isEmpty {
                 dismiss()
             }
         }
+        // Recorded on the way out rather than on the way in: a crash in between should
+        // cost a second showing, not swallow the notes permanently. `seenThrough` is what
+        // was actually displayed, which is not always the running version.
+        .onDisappear { WhatsNewGate.markSeen(upTo: mode.seenThrough) }
     }
 
     // MARK: - Header
@@ -176,46 +193,19 @@ struct WhatsNewView: View {
         .padding(.vertical, 20)
     }
 
-    /// The feature's art when it has any, the symbol when it does not. A feature without
-    /// art is the ordinary case, not a degraded one.
     @ViewBuilder
     private func visual(for feature: WhatsNewFeature) -> some View {
-        let images = screenshots(for: feature)
-        if images.isEmpty {
+        let urls = WhatsNewCatalog.screenshotURLs(for: feature)
+        if urls.isEmpty {
             Image(systemName: feature.symbol)
                 .font(.system(size: 60))
                 .foregroundStyle(Color.accentColor)
                 .symbolEffect(.pulse)
                 .accessibilityHidden(true)
         } else {
-            ShowcaseSequence(images: images, label: feature.title)
+            ShowcaseSequence(urls: urls, label: feature.title)
         }
     }
-
-    /// Loads a card's art once per card rather than on every body evaluation — a
-    /// sequence re-renders on every step, and re-reading the PNGs each time would put a
-    /// disk read on an animation frame.
-    private func screenshots(for feature: WhatsNewFeature) -> [NSImage] {
-        WhatsNewCatalog.screenshotURLs(for: feature).compactMap { url in
-            guard let image = Self.imageCache.withLock({ $0[url] }) else {
-                guard let loaded = NSImage(contentsOf: url) else {
-                    // A packaging problem, not a user-facing one — the card still reads.
-                    Self.logger.debug("Unreadable What's New screenshot for \(feature.id, privacy: .public)")
-                    return nil
-                }
-                Self.imageCache.withLock { $0[url] = loaded }
-                return loaded
-            }
-            return image
-        }
-    }
-
-    /// Decoded art, keyed by URL. The sheet is short-lived and the catalog is small, so
-    /// this is bounded by the number of screenshots that ship.
-    ///
-    /// `OSAllocatedUnfairLock` provides the thread-safety: the view is main-actor bound
-    /// but `static` storage is not, so the lock is what makes the shared access safe.
-    private static let imageCache = OSAllocatedUnfairLock<[URL: NSImage]>(initialState: [:])
 
     // MARK: - Footer
 
@@ -231,13 +221,11 @@ struct WhatsNewView: View {
 
             Spacer()
 
-            // Both modes, not just the tour. Gating this on `.discover` left the release
-            // notes with no way out but clicking through every card: no button, and no
-            // `.cancelAction` anywhere in the sheet, so Escape did nothing either.
+            // Both modes: gating this on the tour left the release notes with no way out
+            // but clicking through every card.
             if !isLastPage {
                 Button(dismissTitle) { dismiss() }
                     .buttonStyle(.borderless)
-                    .keyboardShortcut(.cancelAction)
             }
 
             if index > 0 {
@@ -261,37 +249,48 @@ struct WhatsNewView: View {
 
     /// A card's art: a still when there is one image, a sequence when there are several.
     ///
-    /// The sequence is the point — it lets a card show *where* a feature lives before
-    /// showing what it does. It loops rather than stopping on the last frame, because a
-    /// user who arrives mid-cycle would otherwise see the steps out of order and then
-    /// never see the beginning.
+    /// A sequence loops rather than stopping on the last frame, because a user who arrives
+    /// mid-cycle would otherwise see the steps out of order and never see the beginning.
+    ///
+    /// Images are decoded into this view's own state rather than a shared cache, so they
+    /// are released when the sheet closes — a permanent cache of decoded screenshots costs
+    /// tens of megabytes for a sheet opened about once per release.
     private struct ShowcaseSequence: View {
-        let images: [NSImage]
+        let urls: [URL]
         let label: String
 
+        @State private var images: [NSImage] = []
         @State private var step = 0
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+        private static let logger = Logger(subsystem: AppConstants.bundleID, category: "WhatsNew")
+        private static let crossfade: TimeInterval = 0.35
+
         var body: some View {
             VStack(spacing: 8) {
-                Image(nsImage: images[min(step, images.count - 1)])
-                    .resizable()
-                    .scaledToFit()
-                    // A fixed well rather than a maximum: steps of a sequence are rarely
-                    // the same shape, and sizing to each one in turn makes the title and
-                    // caption jump every time the image changes.
-                    .frame(height: 250)
-                    .clipShape(RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge)
-                            .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5)
-                    )
-                    .shadow(radius: AppThemeConstants.shadowRadiusHover, y: 2)
-                    .id(step)
-                    .transition(.opacity)
+                if let image = images.indices.contains(step) ? images[step] : images.first {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        // A fixed well rather than a maximum: steps of a sequence are
+                        // rarely the same shape, and sizing to each one in turn makes the
+                        // title and caption jump every time the image changes.
+                        .frame(height: 250)
+                        .clipShape(RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge)
+                                .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                        )
+                        .shadow(radius: AppThemeConstants.shadowRadiusHover, y: 2)
+                        .id(step)
+                        .transition(.opacity)
+                } else {
+                    // Holds the well open while the art decodes, so the card does not
+                    // reflow the moment it appears.
+                    Color.clear.frame(height: 250)
+                }
 
-                // Only when there is a sequence: without this a change of image reads as
-                // a glitch rather than as step 2 of 3.
+                // Without this a change of image reads as a glitch rather than as step 2 of 3.
                 if images.count > 1 {
                     HStack(spacing: 5) {
                         ForEach(images.indices, id: \.self) { position in
@@ -300,27 +299,41 @@ struct WhatsNewView: View {
                                 .frame(width: position == step ? 14 : 5, height: 5)
                         }
                     }
-                    .animation(Motion.spring, value: step)
+                    .animation(reduceMotion ? nil : Motion.spring, value: step)
                     .accessibilityHidden(true)
                 }
             }
             .accessibilityLabel(Text(label))
-            // Keyed on the image set so switching cards restarts the sequence from its
-            // first step, and leaving the card cancels it.
-            .task(id: images.count) {
+            // Keyed on the URLs so moving to a card with different art restarts the
+            // sequence, and leaving the sheet cancels it. `reduceMotion` is part of the key
+            // because the loop below reads it: toggling it mid-sequence must take effect.
+            .task(id: TaskKey(urls: urls, reduceMotion: reduceMotion)) {
+                images = urls.compactMap { url in
+                    guard let image = NSImage(contentsOf: url) else {
+                        // A packaging problem, not a user-facing one — the card still reads.
+                        Self.logger.error("Unreadable What's New art: \(url.lastPathComponent, privacy: .public)")
+                        return nil
+                    }
+                    return image
+                }
                 step = 0
+
                 guard images.count > 1 else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: AppConstants.Delays.whatsNewSequenceStep)
                     guard !Task.isCancelled else { return }
                     let next = (step + 1) % images.count
-                    if reduceMotion {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: Self.crossfade)) {
                         step = next
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.35)) { step = next }
                     }
                 }
             }
+        }
+
+        /// Restarts the sequence when either the art or the motion preference changes.
+        private struct TaskKey: Equatable {
+            let urls: [URL]
+            let reduceMotion: Bool
         }
     }
 
