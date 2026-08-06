@@ -13,14 +13,27 @@ struct UnifiedSidebarView<Tool: ToolbarTool, PanelContent: View>: View {
     @Binding var panelWidths: [String: CGFloat]
     @ViewBuilder var panelContent: (Tool) -> PanelContent
 
+    /// Set by the workspace this sidebar lives in — see `measuringWorkspaceWidth()`.
+    @Environment(\.workspaceWidth) private var workspaceWidth
+
     // Internal resize state
     @State private var dragStartWidth: CGFloat?
     @State private var dragStartX: CGFloat?
     @State private var currentWidth: CGFloat = 320
 
     private let defaultWidth: CGFloat = 320
-    private let minWidth: CGFloat = 260
-    private let maxWidth: CGFloat = 520
+    private let limit = SidebarWidthLimit.inspector
+
+    /// The width actually rendered, clamped to what the window currently allows.
+    ///
+    /// Held separate from `currentWidth` so a *window resize* does not overwrite the width the
+    /// user chose: shrinking narrows the panel on screen, and growing the window back returns
+    /// it to the chosen width. A *drag* does overwrite it — `onChanged` stores the clamped
+    /// value and `onEnded` persists it — which is intended, because a drag re-chooses the width
+    /// from wherever the handle actually is.
+    private var effectiveWidth: CGFloat {
+        limit.clamping(currentWidth, inContainerOfWidth: workspaceWidth)
+    }
 
     var body: some View {
         if !isCollapsed {
@@ -44,7 +57,7 @@ struct UnifiedSidebarView<Tool: ToolbarTool, PanelContent: View>: View {
                         }
                     }
                 }
-                .frame(width: currentWidth)
+                .frame(width: effectiveWidth)
                 .clipped()
             }
             .onAppear {
@@ -81,7 +94,10 @@ struct UnifiedSidebarView<Tool: ToolbarTool, PanelContent: View>: View {
                         DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { value in
                                 if dragStartWidth == nil {
-                                    dragStartWidth = currentWidth
+                                    // Seeded from what is on screen, not from the stored
+                                    // width, so a drag in a shrunken window starts where
+                                    // the handle actually is.
+                                    dragStartWidth = effectiveWidth
                                     dragStartX = value.startLocation.x
                                 }
                                 let delta = (dragStartX ?? value.startLocation.x) - value.location.x
@@ -89,7 +105,9 @@ struct UnifiedSidebarView<Tool: ToolbarTool, PanelContent: View>: View {
                                 var transaction = Transaction()
                                 transaction.disablesAnimations = true
                                 withTransaction(transaction) {
-                                    currentWidth = min(max(proposed, minWidth), maxWidth)
+                                    currentWidth = limit.clamping(
+                                        proposed, inContainerOfWidth: workspaceWidth
+                                    )
                                 }
                             }
                             .onEnded { _ in
