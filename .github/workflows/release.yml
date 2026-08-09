@@ -52,9 +52,10 @@ env:
 jobs:
   build-and-release:
     name: Build, Sign, Notarize, Release
-    # GitHub-hosted runner (matches CI). Swap to a self-hosted runner if your
-    # required Xcode/SDK isn't available on the hosted image.
-    runs-on: macos-15
+    # GitHub-hosted runner. The third of the three pins — see the Lint Check job in
+    # ci.yml for why they are pinned and why to 26. Swap to a self-hosted runner if
+    # your required Xcode/SDK isn't available on the hosted image.
+    runs-on: macos-26
     timeout-minutes: 90
 
     steps:
