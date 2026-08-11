@@ -22,6 +22,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 struct DocumentSidebarView: View {
     @Environment(DocumentStore.self) private var store
     @Environment(MeetingStore.self) private var meetingStore
+    @Environment(SpaceStore.self) private var spaceStore
     @Environment(\.openSettings) private var openSettings
     @State private var searchText = ""
     @State private var activeSection: SidebarSection = .all
@@ -156,7 +157,10 @@ struct DocumentSidebarView: View {
                     .tag(doc.id)
                     .accessibilityLabel("\(doc.title)\(doc.isPinned ? ", pinned" : "")")
                     .accessibilityHint("Opens this document")
-                    .sidebarRowMenu(revealed: $revealedRowID.isRevealed(doc.id)) {
+                    .sidebarRowMenu(
+                        isSelected: store.selectedDocumentID == doc.id,
+                        revealed: $revealedRowID.isRevealed(doc.id)
+                    ) {
                         docContextMenu(for: doc)
                     }
             }
@@ -188,12 +192,29 @@ struct DocumentSidebarView: View {
     @ViewBuilder
     private func docContextMenu(for doc: WritingDocument) -> some View {
         Button {
+            store.selectedDocumentID = doc.id
+        } label: {
+            Label("Open", systemImage: "doc.text")
+        }
+        Button {
             store.togglePin(id: doc.id)
         } label: {
             Label(
                 doc.isPinned ? "Unpin" : "Pin",
                 systemImage: doc.isPinned ? "pin.slash" : "pin"
             )
+        }
+        if !spaceStore.topLevelSpaces.isEmpty || doc.spaceID != nil {
+            Menu("Move to") {
+                HierarchicalSpaceMenu(currentSpaceID: doc.spaceID) { newSpaceID in
+                    store.moveDocument(id: doc.id, toSpace: newSpaceID)
+                }
+            }
+        }
+        Button {
+            PDFExportService.export(document: doc)
+        } label: {
+            Label("Export as PDF", systemImage: "arrow.down.doc")
         }
         Divider()
         Button(role: .destructive) {

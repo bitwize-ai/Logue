@@ -71,6 +71,7 @@ enum DocFilterMode: String, CaseIterable {
 struct DocumentListPane: View {
     // Extension-visible: +Organise
     @Environment(DocumentStore.self) var store
+    @Environment(SpaceStore.self) private var spaceStore
     @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedItem: ContentListItem?
     // Extension-visible: +Organise
@@ -397,7 +398,10 @@ struct DocumentListPane: View {
                         .tag(ContentListItem.document(doc.id))
                         .accessibilityLabel("\(doc.title)\(doc.isPinned ? ", pinned" : "")")
                         .accessibilityHint("Opens this document")
-                        .sidebarRowMenu(revealed: $revealedRowID.isRevealed(doc.id)) {
+                        .sidebarRowMenu(
+                            isSelected: selectedItem == .document(doc.id),
+                            revealed: $revealedRowID.isRevealed(doc.id)
+                        ) {
                             docContextMenu(for: doc)
                         }
                 }
@@ -487,6 +491,13 @@ struct DocumentListPane: View {
             renamingDocID = doc.id
         } label: {
             Label("Rename", systemImage: "pencil")
+        }
+        if !spaceStore.topLevelSpaces.isEmpty || doc.spaceID != nil {
+            Menu("Move to") {
+                HierarchicalSpaceMenu(currentSpaceID: doc.spaceID) { newSpaceID in
+                    store.moveDocument(id: doc.id, toSpace: newSpaceID)
+                }
+            }
         }
         Button {
             PDFExportService.export(document: doc)

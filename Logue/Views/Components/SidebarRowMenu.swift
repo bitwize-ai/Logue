@@ -15,6 +15,9 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
     /// count, a date — in step with the button rather than a beat before or after it.
     let revealed: Binding<Bool>?
 
+    /// Whether the list already paints this row as the selected one.
+    let isSelected: Bool
+
     @State private var isHovering = false
     @State private var isMenuOpen = false
     @State private var hoverOutTask: Task<Void, Never>?
@@ -90,12 +93,17 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
         .accessibilityHint("Opens the same actions as Control-clicking this row")
     }
 
-    /// The row's own hover highlight. Drawn behind the row's content, so a row that already paints
-    /// itself — a trash card — keeps the look it has.
+    /// The row's own hover highlight: the accent the selected row is painted in, at the lighter
+    /// end of it, so hovering reads as the same gesture as selecting rather than a second colour.
+    ///
+    /// The selected row is skipped — it already carries that fill, and laying another over it
+    /// would make selected-and-hovered look like a third state. Drawn behind the row's content, so
+    /// a row that paints itself — a trash card — keeps the look it has.
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
-            .fill(Color.primary.opacity(isRevealed ? AppThemeConstants.hoverOpacity : 0))
-            .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isRevealed)
+        let showsHighlight = isRevealed && !isSelected
+        return RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
+            .fill(AppThemeConstants.accent.opacity(showsHighlight ? AppThemeConstants.hoverOpacity : 0))
+            .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: showsHighlight)
     }
 
 }
@@ -108,11 +116,13 @@ extension View {
     /// Pass `revealed` on a row that draws something at its own trailing edge, and fade that
     /// content out on it: the button has no backdrop, so the two would otherwise sit on top of
     /// each other.
+    /// Pass `isSelected` so the hover highlight stands down on the row the list already paints.
     func sidebarRowMenu(
+        isSelected: Bool = false,
         revealed: Binding<Bool>? = nil,
         @ViewBuilder _ menu: @escaping () -> some View
     ) -> some View {
-        modifier(SidebarRowMenu(menu: menu, revealed: revealed))
+        modifier(SidebarRowMenu(menu: menu, revealed: revealed, isSelected: isSelected))
     }
 }
 

@@ -63,6 +63,7 @@ enum MeetingFilterMode: String, CaseIterable {
 /// Shows search, filter/sort/view menus, tag chips, upcoming events, and a selectable meeting list or gallery.
 struct MeetingListPane: View {
     @Environment(MeetingStore.self) private var store
+    @Environment(SpaceStore.self) private var spaceStore
     @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedItem: ContentListItem?
 
@@ -402,7 +403,10 @@ struct MeetingListPane: View {
                             .tag(ContentListItem.meeting(meeting.id))
                             .accessibilityLabel("\(meeting.title)\(meeting.isPinned ? ", pinned" : "")")
                             .accessibilityHint("Opens this meeting")
-                            .sidebarRowMenu(revealed: $revealedRowID.isRevealed(meeting.id)) {
+                            .sidebarRowMenu(
+                                isSelected: selectedItem == .meeting(meeting.id),
+                                revealed: $revealedRowID.isRevealed(meeting.id)
+                            ) {
                                 meetingContextMenu(for: meeting)
                             }
                     }
@@ -505,6 +509,13 @@ struct MeetingListPane: View {
                 meeting.isArchived ? "Unarchive" : "Archive",
                 systemImage: meeting.isArchived ? "tray.and.arrow.up" : "archivebox"
             )
+        }
+        if !spaceStore.topLevelSpaces.isEmpty || meeting.spaceID != nil {
+            Menu("Move to") {
+                HierarchicalSpaceMenu(currentSpaceID: meeting.spaceID) { newSpaceID in
+                    store.moveMeeting(id: meeting.id, toSpace: newSpaceID)
+                }
+            }
         }
         Divider()
         Button(role: .destructive) {
