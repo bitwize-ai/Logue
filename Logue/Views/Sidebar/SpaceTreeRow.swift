@@ -90,9 +90,7 @@ struct SpaceTreeRow: View {
             }
             .tag(SidebarItem.space(space.id))
             .onHover { isHovered = $0 }
-            .contextMenu {
-                spaceContextMenu
-            }
+            .sidebarRowMenu { spaceContextMenu }
             .accessibilityLabel("\(space.name) space, \(totalCount) items")
             .popover(isPresented: Binding(
                 get: { iconPickerSpaceID == space.id },
@@ -135,27 +133,7 @@ struct SpaceTreeRow: View {
                     }
                     .tag(SidebarItem.document(doc.id))
                     .padding(.leading, 12)
-                    .contextMenu {
-                        Button {
-                            selection = .document(doc.id)
-                        } label: {
-                            Label("Open", systemImage: "doc.text")
-                        }
-                        Button {
-                            documentStore.togglePin(id: doc.id)
-                        } label: {
-                            Label(
-                                doc.isPinned ? "Unpin" : "Pin",
-                                systemImage: doc.isPinned ? "pin.slash" : "pin"
-                            )
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            documentStore.deleteDocument(id: doc.id)
-                        } label: {
-                            Label("Move to Trash", systemImage: "trash")
-                        }
-                    }
+                    .sidebarRowMenu { documentContextMenu(for: doc) }
                 }
 
                 // Meetings in this space
@@ -168,29 +146,57 @@ struct SpaceTreeRow: View {
                     }
                     .tag(SidebarItem.meeting(meeting.id))
                     .padding(.leading, 12)
-                    .contextMenu {
-                        Button {
-                            selection = .meeting(meeting.id)
-                        } label: {
-                            Label("Open", systemImage: meeting.recordingMode.iconName)
-                        }
-                        Button {
-                            meetingStore.togglePin(id: meeting.id)
-                        } label: {
-                            Label(
-                                meeting.isPinned ? "Unpin" : "Pin",
-                                systemImage: meeting.isPinned ? "pin.slash" : "pin"
-                            )
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            meetingStore.toggleArchive(id: meeting.id)
-                        } label: {
-                            Label("Move to Trash", systemImage: "trash")
-                        }
-                    }
+                    .sidebarRowMenu { meetingContextMenu(for: meeting) }
                 }
             }
+        }
+    }
+
+    // MARK: - Child Row Menus
+
+    @ViewBuilder
+    private func documentContextMenu(for doc: WritingDocument) -> some View {
+        Button {
+            selection = .document(doc.id)
+        } label: {
+            Label("Open", systemImage: "doc.text")
+        }
+        Button {
+            documentStore.togglePin(id: doc.id)
+        } label: {
+            Label(
+                doc.isPinned ? "Unpin" : "Pin",
+                systemImage: doc.isPinned ? "pin.slash" : "pin"
+            )
+        }
+        Divider()
+        Button(role: .destructive) {
+            documentStore.deleteDocument(id: doc.id)
+        } label: {
+            Label("Move to Trash", systemImage: "trash")
+        }
+    }
+
+    @ViewBuilder
+    private func meetingContextMenu(for meeting: MeetingNote) -> some View {
+        Button {
+            selection = .meeting(meeting.id)
+        } label: {
+            Label("Open", systemImage: meeting.recordingMode.iconName)
+        }
+        Button {
+            meetingStore.togglePin(id: meeting.id)
+        } label: {
+            Label(
+                meeting.isPinned ? "Unpin" : "Pin",
+                systemImage: meeting.isPinned ? "pin.slash" : "pin"
+            )
+        }
+        Divider()
+        Button(role: .destructive) {
+            meetingStore.toggleArchive(id: meeting.id)
+        } label: {
+            Label("Move to Trash", systemImage: "trash")
         }
     }
 
