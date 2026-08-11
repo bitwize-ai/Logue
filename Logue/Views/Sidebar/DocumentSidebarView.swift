@@ -154,7 +154,7 @@ struct DocumentSidebarView: View {
                     .tag(doc.id)
                     .accessibilityLabel("\(doc.title)\(doc.isPinned ? ", pinned" : "")")
                     .accessibilityHint("Opens this document")
-                    .contextMenu { docContextMenu(for: doc) }
+                    .sidebarRowMenu { docContextMenu(for: doc) }
             }
             .listStyle(.sidebar)
             .tint(AppThemeConstants.accent)

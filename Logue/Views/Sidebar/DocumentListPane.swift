@@ -395,7 +395,7 @@ struct DocumentListPane: View {
                         .tag(ContentListItem.document(doc.id))
                         .accessibilityLabel("\(doc.title)\(doc.isPinned ? ", pinned" : "")")
                         .accessibilityHint("Opens this document")
-                        .contextMenu { docContextMenu(for: doc) }
+                        .sidebarRowMenu { docContextMenu(for: doc) }
                 }
             }
         }

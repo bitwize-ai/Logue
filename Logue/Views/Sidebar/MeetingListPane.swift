@@ -399,7 +399,7 @@ struct MeetingListPane: View {
                             .tag(ContentListItem.meeting(meeting.id))
                             .accessibilityLabel("\(meeting.title)\(meeting.isPinned ? ", pinned" : "")")
                             .accessibilityHint("Opens this meeting")
-                            .contextMenu { meetingContextMenu(for: meeting) }
+                            .sidebarRowMenu { meetingContextMenu(for: meeting) }
                     }
                 }
             } header: {
