@@ -12,6 +12,7 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
     let menu: () -> MenuContent
 
     @State private var isHovering = false
+    @State private var isButtonHovered = false
     @State private var isMenuOpen = false
     @State private var hoverOutTask: Task<Void, Never>?
 
@@ -22,6 +23,9 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // Rows whose content is narrower than the row — a plain `Label` in the space tree —
+            // would otherwise anchor the button just past their text rather than at the edge.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .trailing) { menuButton }
             .contextMenu { menu() }
             .onHover { hovering in
@@ -53,26 +57,41 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
             menu()
         } label: {
             Image(systemName: "ellipsis")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 18)
-                // Opaque enough to sit over whatever the row already draws at its trailing edge
-                // (a date, a count) without the two reading as one smudge.
-                .background(
-                    .regularMaterial,
-                    in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusXSmall)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: AppThemeConstants.radiusXSmall))
+                .font(.callout.weight(.semibold))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .padding(.trailing, 2)
+        // The list tints its rows, which would paint the glyph in the accent colour and read as
+        // something to act on rather than a way in to the actions.
+        .tint(Color.secondary)
+        // Both of these sit on the menu rather than on its label. A `Menu` renders the label it is
+        // handed as chrome of its own — a background attached inside never draws, and hover never
+        // reaches in.
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .background(buttonBackground)
+        .onHover { isButtonHovered = $0 }
+        .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isButtonHovered)
+        .padding(.trailing, 4)
         .opacity(isRevealed ? 1 : 0)
         .allowsHitTesting(isRevealed)
         .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isRevealed)
         .accessibilityLabel("More actions")
         .accessibilityHint("Opens the same actions as Control-clicking this row")
+    }
+
+    /// A material floor so the row's own trailing content — a date, an item count — does not read
+    /// through the glyph, and a fill on top of it once the pointer is actually on the button, so
+    /// it looks like something to press rather than a decoration.
+    private var buttonBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
+        return shape
+            .fill(.thickMaterial)
+            .overlay {
+                shape
+                    .fill(Color.primary.opacity(isButtonHovered ? AppThemeConstants.opacityMedium : 0))
+            }
     }
 }
 
