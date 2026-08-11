@@ -66,6 +66,9 @@ struct SpaceTreeRow: View {
                         Text("\(totalCount)")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
+                            // Steps aside for the "⋯" rather than sitting under it.
+                            .opacity(isHovered ? 0 : 1)
+                            .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isHovered)
                     }
                 }
             } icon: {
@@ -89,8 +92,10 @@ struct SpaceTreeRow: View {
                 .animation(.easeInOut(duration: 0.15), value: isHovered)
             }
             .tag(SidebarItem.space(space.id))
-            .onHover { isHovered = $0 }
-            .sidebarRowMenu { spaceContextMenu }
+            // `isHovered` also swaps the folder icon for the disclosure chevron, and is now driven
+            // by the menu rather than by its own `onHover`, so the chevron, the count and the
+            // button all move together.
+            .sidebarRowMenu(revealed: $isHovered) { spaceContextMenu }
             .accessibilityLabel("\(space.name) space, \(totalCount) items")
             .popover(isPresented: Binding(
                 get: { iconPickerSpaceID == space.id },

@@ -25,6 +25,8 @@ struct DocumentSidebarView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var searchText = ""
     @State private var activeSection: SidebarSection = .all
+    /// Which row is showing its "⋯", so that row's trailing badges can step aside for it.
+    @State private var revealedRowID: UUID?
 
     private var filteredDocs: [WritingDocument] {
         let base: [WritingDocument] = switch activeSection {
@@ -150,11 +152,13 @@ struct DocumentSidebarView: View {
                 get: { store.selectedDocumentID },
                 set: { store.selectedDocumentID = $0 }
             )) { doc in
-                DocumentListRow(document: doc)
+                DocumentListRow(document: doc, isRevealed: revealedRowID == doc.id)
                     .tag(doc.id)
                     .accessibilityLabel("\(doc.title)\(doc.isPinned ? ", pinned" : "")")
                     .accessibilityHint("Opens this document")
-                    .sidebarRowMenu { docContextMenu(for: doc) }
+                    .sidebarRowMenu(revealed: $revealedRowID.isRevealed(doc.id)) {
+                        docContextMenu(for: doc)
+                    }
             }
             .listStyle(.sidebar)
             .tint(AppThemeConstants.accent)
@@ -231,6 +235,8 @@ private struct SectionPillButton: View {
 
 struct DocumentListRow: View {
     let document: WritingDocument
+    /// Whether the row's "⋯" button is showing, so the trailing badges and date can step aside.
+    var isRevealed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -243,11 +249,13 @@ struct DocumentListRow: View {
                     Image(systemName: "pin.fill")
                         .font(.caption2)
                         .foregroundStyle(AppThemeConstants.pinnedColor)
+                        .opacity(isRevealed ? 0 : 1)
                 }
                 if let score = document.score {
                     Text("\(Int(score.overall))")
                         .font(.caption2.bold())
                         .foregroundStyle(scoreColor(score.overall))
+                        .opacity(isRevealed ? 0 : 1)
                 }
             }
             Text(document.snippet.isEmpty ? "Empty document" : document.snippet)
@@ -262,9 +270,11 @@ struct DocumentListRow: View {
                 Text(document.modifiedAt.formatted(.relative(presentation: .named)))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .opacity(isRevealed ? 0 : 1)
             }
         }
         .padding(.vertical, 4)
+        .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isRevealed)
     }
 
     private func scoreColor(_ score: Double) -> Color {

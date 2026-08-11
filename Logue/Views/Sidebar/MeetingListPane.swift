@@ -75,6 +75,9 @@ struct MeetingListPane: View {
     @State private var sortOrder: MeetingSortOrder = .modifiedNewest
     @State private var selectedTagFilter: String?
 
+    /// Which row is showing its "⋯", so that row's trailing date can step aside for it.
+    @State private var revealedRowID: UUID?
+
     // Rename state
     @State private var renamingMeetingID: UUID?
     @State private var renameText = ""
@@ -395,11 +398,13 @@ struct MeetingListPane: View {
                         renameField(for: meeting)
                             .tag(ContentListItem.meeting(meeting.id))
                     } else {
-                        MeetingListRow(meeting: meeting)
+                        MeetingListRow(meeting: meeting, isRevealed: revealedRowID == meeting.id)
                             .tag(ContentListItem.meeting(meeting.id))
                             .accessibilityLabel("\(meeting.title)\(meeting.isPinned ? ", pinned" : "")")
                             .accessibilityHint("Opens this meeting")
-                            .sidebarRowMenu { meetingContextMenu(for: meeting) }
+                            .sidebarRowMenu(revealed: $revealedRowID.isRevealed(meeting.id)) {
+                                meetingContextMenu(for: meeting)
+                            }
                     }
                 }
             } header: {
@@ -514,6 +519,8 @@ struct MeetingListPane: View {
 
 struct MeetingListRow: View {
     let meeting: MeetingNote
+    /// Whether the row's "⋯" button is showing, so the trailing pin and date can step aside for it.
+    var isRevealed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -529,6 +536,7 @@ struct MeetingListRow: View {
                     Image(systemName: "pin.fill")
                         .font(.caption2)
                         .foregroundStyle(AppThemeConstants.pinnedColor)
+                        .opacity(isRevealed ? 0 : 1)
                 }
             }
             HStack(spacing: 6) {
@@ -541,8 +549,10 @@ struct MeetingListRow: View {
                 Text(meeting.createdAt.formatted(.relative(presentation: .named)))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .opacity(isRevealed ? 0 : 1)
             }
         }
         .padding(.vertical, 2)
+        .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isRevealed)
     }
 }

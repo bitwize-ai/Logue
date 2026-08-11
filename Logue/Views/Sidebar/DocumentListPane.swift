@@ -81,6 +81,8 @@ struct DocumentListPane: View {
     @State var sortOrder: DocSortOrder = .modifiedNewest
     @State private var renamingDocID: UUID?
     @State private var renameText = ""
+    /// Which row is showing its "⋯", so that row's trailing badges can step aside for it.
+    @State private var revealedRowID: UUID?
     @FocusState private var isRenameFieldFocused: Bool
     @State private var hasAutoSelected = false
     // Extension-visible: +Organise
@@ -391,11 +393,13 @@ struct DocumentListPane: View {
                     renameField(for: doc)
                         .tag(ContentListItem.document(doc.id))
                 } else {
-                    DocumentListRow(document: doc)
+                    DocumentListRow(document: doc, isRevealed: revealedRowID == doc.id)
                         .tag(ContentListItem.document(doc.id))
                         .accessibilityLabel("\(doc.title)\(doc.isPinned ? ", pinned" : "")")
                         .accessibilityHint("Opens this document")
-                        .sidebarRowMenu { docContextMenu(for: doc) }
+                        .sidebarRowMenu(revealed: $revealedRowID.isRevealed(doc.id)) {
+                            docContextMenu(for: doc)
+                        }
                 }
             }
         }
