@@ -87,6 +87,17 @@ final class AudioRecorder {
         // Enabled before the format is read, because enabling it changes that format.
         do {
             try inputNode.setVoiceProcessingEnabled(true)
+
+            // Voice processing puts macOS into voice-chat mode, which ducks everything else so the
+            // far end can be heard over it. For a meeting recorder that is backwards twice over: the
+            // remote participants get quieter to listen to, and because the system-audio tap reads
+            // the output, the recording of them may be quieter too. Ducking is configurable
+            // separately from echo cancellation, so it is turned down to keep the one and drop the
+            // other.
+            inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
+                enableAdvancedDucking: false,
+                duckingLevel: .min
+            )
         } catch {
             logger.error("Voice processing unavailable, continuing raw: \(error.localizedDescription, privacy: .public)")
         }

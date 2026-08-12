@@ -246,17 +246,19 @@ extension MeetingWorkspaceView {
                 RecordingStatusView(
                     elapsedTime: recorder.elapsedTime,
                     audioLevel: recorder.audioLevel,
-                    isMicActive: recorder.isMicActive,
                     isCapturingSystemAudio: recorder.isCapturingSystemAudio
                 )
             }
         }
     }
 
+    /// The single capture control: mute.
+    ///
+    /// There is no system-audio button. The tap arms itself when something starts playing, and the
+    /// recording status capsule says so — offering a switch for it would be offering to undo a
+    /// decision the app is making correctly on its own.
     @ToolbarContentBuilder
     func audioToggleToolbarItems() -> some ToolbarContent {
-        // Mute (during recording). The microphone runs for the whole session; this silences it, and
-        // is the only capture control the user has.
         ToolbarItem(placement: .primaryAction) {
             if recorder.isRecording {
                 Button {
@@ -267,16 +269,6 @@ extension MeetingWorkspaceView {
                         .foregroundStyle(recorder.isMicActive ? .primary : .secondary)
                 }
                 .help(recorder.isMicActive ? "Mute microphone" : "Unmute microphone")
-            }
-        }
-
-        // System audio is status, not a control — it arms itself when something starts playing.
-        ToolbarItem(placement: .primaryAction) {
-            if recorder.isRecording, recorder.isCapturingSystemAudio {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .help("Capturing system audio")
             }
         }
     }
@@ -826,10 +818,14 @@ extension MeetingWorkspaceView {
 // MARK: - Recording Status View (toolbar inline)
 
 /// Compact recording status shown in the macOS toolbar during active recording.
+///
+/// Says what is being captured; it does not offer to change it. The microphone has no indicator
+/// here because the mute button sitting beside this capsule already shows its state and is the one
+/// control for it — two mic glyphs an inch apart was what made automatic capture still look like a
+/// pair of toggles.
 struct RecordingStatusView: View {
     let elapsedTime: TimeInterval
     let audioLevel: Float
-    var isMicActive: Bool = false
     var isCapturingSystemAudio: Bool = false
 
     var body: some View {
@@ -846,17 +842,11 @@ struct RecordingStatusView: View {
             AudioLevelMeter(level: audioLevel)
                 .frame(width: 64, height: 14)
 
-            HStack(spacing: 4) {
-                if isMicActive {
-                    Image(systemName: "mic.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if isCapturingSystemAudio {
-                    Image(systemName: "display")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            if isCapturingSystemAudio {
+                Image(systemName: "display")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Also capturing system audio")
             }
         }
         .padding(.horizontal, 12)

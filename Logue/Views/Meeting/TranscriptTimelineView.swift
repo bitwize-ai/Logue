@@ -381,6 +381,28 @@ private struct SpeakerBlockView: View {
         return block.segments.contains { $0.id == activeID }
     }
 
+    /// Which segments print a time in the left gutter, and what it says.
+    ///
+    /// One per stretch of the meeting rather than one per sentence. A timestamp against every line
+    /// is noise — the gutter exists so someone can scan for roughly when something was said, and a
+    /// column of near-identical numbers makes that harder, not easier. Segments in between are
+    /// blank, so a run of sentences reads as a paragraph belonging to the time above it.
+    private var gutterTimestamps: [UUID: String] {
+        var stamps: [UUID: String] = [:]
+        var lastStamped: TimeInterval?
+        for segment in block.segments {
+            let isFirst = lastStamped == nil
+            let advanced = (segment.startTime - (lastStamped ?? 0)) >= Self.gutterInterval
+            guard isFirst || advanced else { continue }
+            stamps[segment.id] = TranscriptSegment.formatTime(segment.startTime)
+            lastStamped = segment.startTime
+        }
+        return stamps
+    }
+
+    /// How far the meeting must move on before the gutter prints another time.
+    private static let gutterInterval: TimeInterval = 10
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Header: speaker name + timestamp + bookmark chips + add button
@@ -474,16 +496,27 @@ private struct SpeakerBlockView: View {
             // Segment text — only first/last lines are draggable (boundary lines)
             VStack(alignment: .leading, spacing: 5) {
                 let segmentCount = block.segments.count
+                let gutter = gutterTimestamps
                 ForEach(Array(block.segments.enumerated()), id: \.element.id) { index, segment in
                     let isBoundary = index == 0 || index == segmentCount - 1
-                    SegmentTextRow(
-                        segment: segment,
-                        searchText: searchText,
-                        onEditSegment: onEditSegment,
-                        onSeekToTime: onSeekToTime,
-                        isActive: activeSegmentID == segment.id,
-                        isDraggable: isBoundary
-                    )
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        // Blank for most lines, so a run of sentences reads as one paragraph under
+                        // the time it started rather than as a stack of separately stamped lines.
+                        Text(gutter[segment.id] ?? "")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 38, alignment: .trailing)
+                            .accessibilityHidden(gutter[segment.id] == nil)
+
+                        SegmentTextRow(
+                            segment: segment,
+                            searchText: searchText,
+                            onEditSegment: onEditSegment,
+                            onSeekToTime: onSeekToTime,
+                            isActive: activeSegmentID == segment.id,
+                            isDraggable: isBoundary
+                        )
+                    }
                     .draggable(isBoundary ? segment.id.uuidString : "")
                     .id(segment.id)
                 }
