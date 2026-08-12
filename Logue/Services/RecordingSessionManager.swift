@@ -222,9 +222,6 @@ final class RecordingSessionManager {
     /// Replaces per-buffer `Task { @MainActor }` creation to prevent MainActor flooding.
     var audioBufferContinuation: AsyncStream<CapturedAudio>.Continuation?
     private var audioBufferConsumerTask: Task<Void, Never>?
-    /// Separate stream for mic-only buffers when a dedicated mic engine is active (in-person enableMic).
-    private var micBufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
-    private var micBufferConsumerTask: Task<Void, Never>?
 
     // MARK: - Computed
 
@@ -542,10 +539,6 @@ final class RecordingSessionManager {
         audioBufferContinuation = nil
         audioBufferConsumerTask?.cancel()
         audioBufferConsumerTask = nil
-        micBufferContinuation?.finish()
-        micBufferContinuation = nil
-        micBufferConsumerTask?.cancel()
-        micBufferConsumerTask = nil
 
         // Stop all audio sources immediately
         if systemCapture.isCapturing {
