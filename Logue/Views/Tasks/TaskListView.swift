@@ -12,6 +12,9 @@ struct TaskListView: View {
     private var sortOrderRaw = TaskSortOrder.dueDateAsc.rawValue
 
     @State private var selectedTag: String?
+    @State private var triageService = TaskTriageService.shared
+    @State private var engineStatus = LLMEngineStatus.shared
+    @State private var showTriage = false
 
     private var filterMode: TaskFilterMode {
         TaskFilterMode(rawValue: filterModeRaw) ?? .all
@@ -44,6 +47,36 @@ struct TaskListView: View {
         }
         .padding(16)
         .navigationTitle("Tasks")
+        .sheet(isPresented: $showTriage) {
+            triageSheet
+        }
+    }
+
+    private var triageSheet: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            TaskTriagePanelView()
+            Button("Done") {
+                showTriage = false
+                triageService.clear()
+            }
+            .keyboardShortcut(.defaultAction)
+            .padding([.trailing, .bottom], 16)
+        }
+    }
+
+    private var triageButton: some View {
+        Button {
+            showTriage = true
+            Task {
+                await triageService.run(tasks: store.tasks, knownTags: store.allTags)
+            }
+        } label: {
+            Label("Triage", systemImage: "sparkles")
+        }
+        // Concurrent inference races on the shared session; this is the project-wide guard
+        // for any control that reaches the engine.
+        .disabled(engineStatus.isBusy || store.openTasks.isEmpty)
+        .help("Ask Logue to review your open tasks")
     }
 
     private var taskList: some View {
@@ -92,6 +125,7 @@ struct TaskListView: View {
 
             Spacer()
 
+            triageButton
             sortMenu
         }
     }

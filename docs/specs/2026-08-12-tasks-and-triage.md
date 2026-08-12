@@ -204,7 +204,7 @@ survives validation:
 
 - `taskId` resolves to a currently-open task in the batch that was sent;
 - `kind` is one of the five;
-- the `apply` patch contains exactly one whitelisted field, of the right type
+- the `apply` patch contains exactly one allowed field, of the right type
   (`priority` an enum case, `due` a valid `yyyy-MM-dd` that is not in the past,
   `tag` matching the tag charset and length, `status` only ever `done`);
 - `duplicate` carries no patch at all — the user decides which of two tasks dies.
@@ -224,7 +224,48 @@ These are project standards, restated because triage is a new prompt site:
   truncated review never reads as a complete one.
 - The triage button is disabled while `LLMEngineStatus.shared.isBusy`.
 
-## 9. Success criteria
+## 9. What implementation actually cost — guardrails
+
+Four things bit during the build. They are recorded here because each cost real rework and
+none is obvious from reading the code afterwards.
+
+### A new file type in `~/Logue` must be excluded by identity, and at every walk
+
+`MarkdownFolderScan` reads every directory as a space and every `.md` as a document. Adding
+filtered accessors to `FolderSnapshot` was **not sufficient** — `MarkdownStorageMigrator.importAll`
+and the file index walk `snapshot.files` directly and had to be routed through them.
+
+The sharp edge: a task file carries `_logue_task_id`, not `_logue_id`, so `importAll` could not
+parse it as a document and dropped it into `unidentifiedFiles`. The scan **adopts** those,
+stamping document frontmatter onto them once they settle. Every task in the library would have
+become a document about two seconds after it was written.
+
+Anything else that puts a new file type in that folder inherits this. Grep for `snapshot.files`
+before assuming a filter is enough.
+
+### A due date is a calendar day, not an instant
+
+Stored as `yyyy-MM-dd` and formatted in the **local** timezone. UTC storage is off by one for
+every positive-offset timezone — a Tokyo user's "tomorrow" is still today in UTC. A test that
+builds a UTC-midnight date and asserts against a UTC calendar is testing something production
+never does.
+
+### `/var` is a symlink to `/private/var`
+
+`appendingPathComponent` and `contentsOfDirectory` spell the same file differently. In
+`TaskFolderStore.save`, a "did the filename change?" check read same-file as different-file and
+trashed the file it had just written, so a task vanished on every re-save. The store resolves
+symlinks on its root, and the delete branch compares standardized URLs.
+
+### The prompt's delimiters need their own charset rule
+
+Titles are JSON-encoded into the prompt and Foundation *happens* to escape `/`, so `</tasks>`
+comes out as `<\/tasks>` — an implementation detail, not a guarantee. Tags are joined as plain
+text and had no such accident: a hand-edited `tags:` entry containing `</tasks>` closed the
+delimiter meant to contain it. Both now strip angle brackets, and tags are reduced to the
+charset `validTag` accepts on the way back.
+
+## 10. Success criteria
 
 1. A task created in the app appears as a readable `.md` in `~/Logue/Tasks/`, and a
    task edited in another editor is picked up by the app.

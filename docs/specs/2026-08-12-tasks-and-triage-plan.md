@@ -3593,7 +3593,7 @@ struct TaskTriageTests {
         """)).isEmpty)
     }
 
-    @Test("A field outside the whitelist never reaches a patch")
+    @Test("A field outside the allowed set never reaches a patch")
     func nonWhitelistedFieldIgnored() throws {
         let parsed = parse(response("""
         {"taskId":"\(openID.uuidString)","kind":"priority","suggestion":"x","apply":{"title":"Owned","priority":"high"}}
@@ -4410,7 +4410,7 @@ never reads as a complete one."
 
 Checked against `docs/specs/2026-08-12-tasks-and-triage.md`:
 
-**Spec coverage.** §4.2 shape → Task 1. §4.3 tags-not-projects → Task 1 (`extractingTags`) and Task 6 (`.tag` kind). §4.4 priority deviation → Task 1 (`extractingPriority`) plus its test. §5 storage modes → Task 3. §5.1 file format → Task 2. §5.2 folder collision → Task 2 (`FolderSnapshot.taskFolders`). §6 recurrence → Task 1 (arithmetic) and Task 3 (`completing`). §7 promotion incl. idempotency → Task 5. §8 triage incl. the validation whitelist → Task 6. §9 success criteria 1–6 map to Task 4 Step 9, Task 2 Step 6, Task 3, Task 3 Step 1, Task 5 Step 6, Task 6 Step 1 respectively.
+**Spec coverage.** §4.2 shape → Task 1. §4.3 tags-not-projects → Task 1 (`extractingTags`) and Task 6 (`.tag` kind). §4.4 priority deviation → Task 1 (`extractingPriority`) plus its test. §5 storage modes → Task 3. §5.1 file format → Task 2. §5.2 folder collision → Task 2 (`FolderSnapshot.taskFolders`). §6 recurrence → Task 1 (arithmetic) and Task 3 (`completing`). §7 promotion incl. idempotency → Task 5. §8 triage incl. the validation allowlist → Task 6. §9 success criteria 1–6 map to Task 4 Step 9, Task 2 Step 6, Task 3, Task 3 Step 1, Task 5 Step 6, Task 6 Step 1 respectively.
 
 **Known gaps, stated rather than hidden:**
 
