@@ -101,17 +101,31 @@ extension BrowserBridgeServer {
 
     /// The handshake exists because the extension asks for one, not because it secures anything.
     ///
-    /// The token it returns is a fresh random string the server does not check on later requests —
-    /// there is no authentication here by design. It is worth being blunt about that rather than
-    /// letting the ceremony imply a guarantee it does not provide.
+    /// **`session` is not a credential and nothing checks it.** The server does not store it or
+    /// compare it, and `X-Logue-Session` on a later request is ignored — there is no
+    /// authentication here by design, because on loopback any local process could complete this
+    /// same handshake for itself. What it *is* is an identifier for this run of the server, so a
+    /// client can tell whether it is still talking to the process it handshook with.
+    ///
+    /// It used to be a fresh UUID per call, which was worse in both directions: it implied a
+    /// per-client nonce while being useless as one, and it could not answer the only question a
+    /// client actually has — "did Logue restart?". Stable per process, it can.
+    ///
+    /// The key keeps its name because the shipped extension reads `handshake.session` and
+    /// re-handshakes when it is missing; renaming it would send that client into a handshake on
+    /// every request. Renaming is a coordinated change with the extension, not a free one.
     private func handshakePayload() -> [String: Any] {
         [
             "app": Self.appIdentifier,
-            "session": UUID().uuidString,
+            "session": Self.instanceIdentifier,
             "port": Int(activePort ?? 0),
             "version": Self.appVersion,
         ]
     }
+
+    /// Stable for the lifetime of the process. Not a secret, and not checked on any request —
+    /// see `handshakePayload`.
+    static let instanceIdentifier = UUID().uuidString
 
     private func modelsPayload() -> [String: Any] {
         let manager = ModelManager.shared
@@ -224,7 +238,9 @@ extension BrowserBridgeServer {
     /// the printable range, and DEL, does not.
     nonisolated private static func isPrintable(_ character: Character) -> Bool {
         guard let ascii = character.asciiValue else { return true }
-        if ascii == 0x0A || ascii == 0x09 { return true }
+        if ascii == 0x0A || ascii == 0x09 {
+            return true
+        }
         return ascii >= 0x20 && ascii != 0x7F
     }
 

@@ -146,39 +146,39 @@ final class BrowserBridgeServer {
 
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            // Resumed exactly once: `NWListener` can report further state changes after it is
-            // ready, and resuming a continuation twice is a crash.
-            let hasResumed = OSAllocatedUnfairLock(initialState: false)
+                // Resumed exactly once: `NWListener` can report further state changes after it is
+                // ready, and resuming a continuation twice is a crash.
+                let hasResumed = OSAllocatedUnfairLock(initialState: false)
 
-            listener.stateUpdateHandler = { [weak self] state in
-                let shouldResume = hasResumed.withLock { resumed -> Bool in
-                    guard !resumed, state.isSettled else { return false }
-                    resumed = true
-                    return true
-                }
-
-                switch state {
-                case .ready:
-                    if shouldResume {
-                        continuation.resume()
+                listener.stateUpdateHandler = { [weak self] state in
+                    let shouldResume = hasResumed.withLock { resumed -> Bool in
+                        guard !resumed, state.isSettled else { return false }
+                        resumed = true
+                        return true
                     }
-                case let .failed(error):
-                    if shouldResume {
-                        continuation.resume(throwing: error)
-                    } else {
-                        // Failed after it had been serving. Nothing to hand back, so tear down.
-                        Task { @MainActor [weak self] in
-                            self?.logger.error(
-                                "Browser bridge listener failed: \(error.localizedDescription, privacy: .public)"
-                            )
-                            self?.stop()
+
+                    switch state {
+                    case .ready:
+                        if shouldResume {
+                            continuation.resume()
                         }
+                    case let .failed(error):
+                        if shouldResume {
+                            continuation.resume(throwing: error)
+                        } else {
+                            // Failed after it had been serving. Nothing to hand back, so tear down.
+                            Task { @MainActor [weak self] in
+                                self?.logger.error(
+                                    "Browser bridge listener failed: \(error.localizedDescription, privacy: .public)"
+                                )
+                                self?.stop()
+                            }
+                        }
+                    default:
+                        break
                     }
-                default:
-                    break
                 }
-            }
-            listener.start(queue: queue)
+                listener.start(queue: queue)
             }
         } onCancel: {
             // Without this a cancelled start sits here until the bind settles, and the socket

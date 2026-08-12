@@ -72,6 +72,23 @@ enum HTTPMessage {
         let path = String(parts[1])
         guard !method.isEmpty, path.hasPrefix("/") else { throw ParseError.malformed }
 
+        let headers = try parseHeaders(from: lines)
+        let declaredLength = try bodyLength(from: headers)
+
+        let bodyStart = headEnd.upperBound
+        let available = buffer.distance(from: bodyStart, to: buffer.endIndex)
+        guard available >= declaredLength else { throw ParseError.incomplete }
+
+        let bodyEnd = buffer.index(bodyStart, offsetBy: declaredLength)
+        let body = Data(buffer[bodyStart ..< bodyEnd])
+        let consumed = buffer.distance(from: buffer.startIndex, to: bodyEnd)
+
+        return (Request(method: method, path: path, headers: headers, body: body), consumed)
+    }
+
+    /// Header lines into a dictionary, refusing the shapes that let two parties disagree about
+    /// where a request ends.
+    private static func parseHeaders(from lines: [String]) throws -> [String: String] {
         var headers: [String: String] = [:]
         for line in lines where !line.isEmpty {
             // An obs-fold continuation — a line starting with SP or HTAB — belongs to the header
@@ -84,10 +101,14 @@ enum HTTPMessage {
             guard !name.isEmpty else { throw ParseError.malformed }
             // Last-wins on a repeated `Content-Length` is how a framing disagreement becomes a
             // smuggled request. Two of them is a malformed message, not a preference.
-            guard headers[name] == nil || name != "content-length" else { throw ParseError.malformed }
+            guard name != "content-length" || headers[name] == nil else { throw ParseError.malformed }
             headers[name] = value
         }
+        return headers
+    }
 
+    /// How many bytes of body the head says follow it.
+    private static func bodyLength(from headers: [String: String]) throws -> Int {
         // Not supported, and silence was the dangerous answer: a chunked body was read as length
         // zero, leaving the chunk data in the buffer to be parsed as the *next* request on a
         // connection that deliberately supports pipelining.
@@ -95,24 +116,11 @@ enum HTTPMessage {
 
         // Absent means no body. Present-but-unparseable is a framing disagreement, and `?? 0`
         // resolved it in the sender's favour.
-        let declaredLength: Int
-        if let raw = headers["content-length"] {
-            guard let parsed = Int(raw) else { throw ParseError.malformed }
-            declaredLength = parsed
-        } else {
-            declaredLength = 0
+        guard let raw = headers["content-length"] else { return 0 }
+        guard let declared = Int(raw), declared >= 0, declared <= maxBodyBytes else {
+            throw ParseError.malformed
         }
-        guard declaredLength >= 0, declaredLength <= maxBodyBytes else { throw ParseError.malformed }
-
-        let bodyStart = headEnd.upperBound
-        let available = buffer.distance(from: bodyStart, to: buffer.endIndex)
-        guard available >= declaredLength else { throw ParseError.incomplete }
-
-        let bodyEnd = buffer.index(bodyStart, offsetBy: declaredLength)
-        let body = Data(buffer[bodyStart ..< bodyEnd])
-        let consumed = buffer.distance(from: buffer.startIndex, to: bodyEnd)
-
-        return (Request(method: method, path: path, headers: headers, body: body), consumed)
+        return declared
     }
 
     /// The blank line separating head from body. Only `\r\n\r\n` — a bare `\n\n` is not HTTP, and

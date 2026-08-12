@@ -91,7 +91,7 @@ enum BrowserBridgeRoute {
     static func isAllowed(host: String?, port: UInt16) -> Bool {
         guard let host else { return false }
         let normalised = host.trimmingCharacters(in: .whitespaces).lowercased()
-        return loopbackHostNames.contains { "\($0):\(port)" == normalised }
+        return loopbackHostNames.contains { normalised == "\($0):\(port)" }
     }
 
     /// Decides how to answer, without doing any of the work.
