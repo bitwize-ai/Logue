@@ -43,6 +43,8 @@ extension RecordingSessionManager {
         guard !isMicActive else { return }
 
         let resumedAt = sessionElapsed
+        // A device change is the same discontinuity a mute is — see `setMicMuted`.
+        speechGate.reset()
         diarizationManager?.beginSource(.microphone, atSessionTime: resumedAt)
         let continuation = audioBufferContinuation
         audioRecorder.onAudioBuffer = { buffer in

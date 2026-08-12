@@ -123,9 +123,10 @@ final class RecordingSessionManager {
     /// rather than waiting to be switched on.
     private let systemAudioArming = SystemAudioArmingMonitor()
 
+    // Extension-visible: +DeviceLoss
     /// Keeps silence out of the transcriber. Only ever consulted for microphone audio, and never
     /// for what is written to disk or handed to the diarizer.
-    private let speechGate = MicrophoneSpeechGate()
+    let speechGate = MicrophoneSpeechGate()
 
     /// Notices when the microphone we are recording from goes away.
     private let deviceMonitor = CaptureDeviceMonitor()
@@ -688,6 +689,12 @@ final class RecordingSessionManager {
         }
 
         let resumedAt = sessionElapsed
+        // The gap is a discontinuity in the audio the voice-activity model was tracking, and its
+        // streaming state does not survive one: speech that was in progress when the microphone
+        // went quiet leaves the model still "in speech", so the resumed audio never produces the
+        // start event the gate opens on, and the transcriber hears nothing for the rest of the
+        // session. Resuming means starting that model again from silence.
+        speechGate.reset()
         diarizationManager?.beginSource(.microphone, atSessionTime: resumedAt)
         let continuation = audioBufferContinuation
         audioRecorder.onAudioBuffer = { buffer in
