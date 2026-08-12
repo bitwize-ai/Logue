@@ -472,6 +472,19 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         saveMeeting(id: meetingID)
     }
 
+    /// Puts back what a session held in memory when the app stopped.
+    ///
+    /// The checkpointed segments replace whatever is on the meeting rather than appending to it: a
+    /// checkpoint is a snapshot of the whole session's transcript, so appending would duplicate
+    /// every line that had already been saved.
+    func restoreRecoveredSession(for meetingID: UUID, segments: [TranscriptSegment], duration: TimeInterval) {
+        guard let index = meetingIndex(for: meetingID) else { return }
+        meetings[index].segments = segments
+        meetings[index].duration = max(meetings[index].duration, duration)
+        meetings[index].wasRecovered = true
+        saveMeeting(id: meetingID)
+    }
+
     func setAudioFileURL(_ url: URL, for meetingID: UUID) {
         guard let index = meetingIndex(for: meetingID) else { return }
         meetings[index].audioFileURL = url

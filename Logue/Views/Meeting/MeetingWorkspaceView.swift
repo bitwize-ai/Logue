@@ -57,6 +57,20 @@ struct MeetingWorkspaceView: View {
                 // What is left is capture telling the user something it did on its own — a headset
                 // that dropped, a fallback it took. Non-blocking and self-clearing: recording is
                 // still running, and there is nothing to decide.
+                if meeting.wasRecovered {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise.circle")
+                            .foregroundStyle(.secondary)
+                        Text("Recovered after an unexpected quit — the last few seconds may be missing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(AppThemeConstants.categoryBlue.opacity(0.08))
+                }
+
                 if let notice = recorder.captureNotice, recorder.isRecording {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle")

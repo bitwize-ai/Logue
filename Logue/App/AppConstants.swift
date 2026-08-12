@@ -357,6 +357,12 @@ enum AppConstants {
         /// says nothing about audio that was already playing when recording started.
         static let systemAudioArmingPoll: Duration = .seconds(2)
 
+        /// How often a recording in progress writes down where it has got to.
+        ///
+        /// What a crash costs is bounded by this. The write is a small JSON file, so the interval is
+        /// set by how much of a meeting it is acceptable to lose rather than by what it costs.
+        static let recordingCheckpointInterval: Duration = .seconds(30)
+
         /// How often a missing capture device is re-checked while its grace period runs.
         ///
         /// The device-list listener fires when a device appears or disappears. Nothing fires to say

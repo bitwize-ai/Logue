@@ -95,6 +95,8 @@ final class RecordingSessionManager {
     /// user is not looking at the screen.
     var captureNotice: String?
     private var postRecordingTask: Task<Void, Never>?
+    // Extension-visible: +Checkpoint
+    var checkpointTask: Task<Void, Never>?
     private var diarizationInitTask: Task<Void, Never>?
 
     /// Handles AI title/summary/space-suggestion after recording stops.
@@ -128,17 +130,23 @@ final class RecordingSessionManager {
     /// Notices when the microphone we are recording from goes away.
     private let deviceMonitor = CaptureDeviceMonitor()
 
+    /// This session's durable working directory, holding the audio and the checkpoint until the
+    /// recording stops cleanly.
+    private var inProgressDirectory: URL?
+
     private var recordingLocale: Locale?
 
+    // Extension-visible: +Checkpoint
     /// Time offset applied when continuing recording on a meeting that already has segments.
     /// New segment timestamps and elapsed time are shifted forward by this amount.
-    private var timeOffset: TimeInterval = 0
+    var timeOffset: TimeInterval = 0
 
+    // Extension-visible: +Checkpoint
     /// When the current recording session began. Capture sources are placed on the diarization
     /// timeline against this rather than against their own clocks, because a device's clock
     /// restarts from zero every time it is toggled and would put resumed audio back at the start
     /// of the meeting.
-    private var sessionStartDate: Date?
+    var sessionStartDate: Date?
 
     // Extension-visible: +DeviceLoss
     /// Seconds since this recording session started, independent of any one capture device.
@@ -152,24 +160,27 @@ final class RecordingSessionManager {
     /// mix has to lay each activation down separately or everything after the first mute plays early.
     var micSegments = CaptureSegmentTimeline()
 
+    // Extension-visible: +Checkpoint
     /// The same, for the system-audio tap. It can join a meeting already in progress, in which case
     /// its file starts then and laying it down at zero would play the remote side early.
-    private var systemSegments = CaptureSegmentTimeline()
+    var systemSegments = CaptureSegmentTimeline()
 
     /// Seconds written to the system-audio file, accumulated on the capture thread as each buffer
     /// lands. Counted rather than read back from the file, which that thread is concurrently writing.
     private let systemWrittenSeconds = OSAllocatedUnfairLock<TimeInterval>(initialState: 0)
 
+    // Extension-visible: +Checkpoint
     /// Seconds of audio the system-audio file holds right now.
-    private var systemRecordedDuration: TimeInterval {
+    var systemRecordedDuration: TimeInterval {
         systemWrittenSeconds.withLock { $0 }
     }
 
     /// Open AVAudioFile for writing system audio in online meeting mode.
     /// Kept open during recording; set to nil in teardownAudioPipeline() to flush and close it.
     private var systemAudioFile: AVAudioFile?
+    // Extension-visible: +Checkpoint
     /// Temp path for the system audio recording file. Preserved after teardown so stopRecording() can move it.
-    private var systemAudioTempURL: URL?
+    var systemAudioTempURL: URL?
 
     /// Installs the system-audio callback: write to disk, count what landed, forward to transcription.
     ///
@@ -333,6 +344,17 @@ final class RecordingSessionManager {
         systemWrittenSeconds.withLock { $0 = 0 }
         speechGate.reset()
 
+        // Somewhere the audio survives the app not reaching stopRecording(). The directory existing
+        // afterwards is what tells the next launch this session was interrupted.
+        do {
+            inProgressDirectory = try InProgressRecordingStore.directory(for: meetingID)
+            audioRecorder.inProgressDirectory = inProgressDirectory
+        } catch {
+            inProgressDirectory = nil
+            audioRecorder.inProgressDirectory = nil
+            logger.error("No durable location for this recording: \(error.localizedDescription, privacy: .public)")
+        }
+
         // Start audio capture IMMEDIATELY — don't wait for diarization models.
         //
         // The microphone always runs. What kind of session this is — a call, a room, a voice note —
@@ -386,6 +408,7 @@ final class RecordingSessionManager {
             deviceMonitor.start { [weak self] decision, deviceName in
                 self?.handleMicrophoneLoss(decision, deviceName: deviceName)
             }
+            startCheckpointing()
             logger.info("Recording started for meeting \(meetingID)")
         }
     }
@@ -445,6 +468,12 @@ final class RecordingSessionManager {
 
         MeetingStore.shared.updateDuration(finalElapsedTime, for: meetingID)
 
+        // The session reached its end, so there is nothing to recover. Clearing this is what stops
+        // the next launch treating it as an interrupted recording.
+        InProgressRecordingStore.clear(meetingID: meetingID)
+        inProgressDirectory = nil
+        audioRecorder.inProgressDirectory = nil
+
         // Clear session state. Both diarizers time their output from the start of this session's
         // own audio buffer, so post-recording needs the offset the session began at.
         currentMeetingID = nil
@@ -495,9 +524,11 @@ final class RecordingSessionManager {
 
     /// Tears down audio callbacks, buffer streams, capture devices, and transcription engines.
     private func teardownAudioPipeline() async {
-        // Nothing left to arm or to watch once the session is over.
+        // Nothing left to arm, to watch, or to write down once the session is over.
         systemAudioArming.stop()
         deviceMonitor.stop()
+        checkpointTask?.cancel()
+        checkpointTask = nil
         captureNotice = nil
 
         // Null out callbacks BEFORE stopping engines to prevent in-flight buffers
@@ -570,13 +601,12 @@ final class RecordingSessionManager {
         // Open a file to persist system audio for playback. Without this, systemAudioTempURL stays
         // nil and stopRecording() saves only mic audio.
         if systemAudioFile == nil, let captureFormat = systemCapture.captureFormat {
-            let fileURL = FileManager.default.temporaryDirectory
+            let fileURL = (inProgressDirectory ?? FileManager.default.temporaryDirectory)
                 .appending(component: UUID().uuidString)
                 .appendingPathExtension("caf")
             systemAudioTempURL = fileURL
             do {
                 systemAudioFile = try AVAudioFile(forWriting: fileURL, settings: captureFormat.settings)
-                try? (fileURL as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
             } catch {
                 logger.error("Failed to create system audio file while arming: \(error.localizedDescription, privacy: .public)")
             }

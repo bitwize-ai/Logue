@@ -188,6 +188,11 @@ private struct AppRootView: View {
             .environment(RecordingSessionManager.shared)
             .environment(TemplateStore.shared)
             .environment(CalendarManager.shared)
+            .task {
+                // After the store has loaded and after SandboxContainerMigrator has run in init():
+                // recovery reads files whose location that migration may just have changed.
+                await RecordingSessionManager.shared.recoverInterruptedSessions()
+            }
             .sheet(isPresented: Binding(
                 get: { !hasCompletedOnboarding },
                 set: {
