@@ -358,6 +358,17 @@ enum AppConstants {
         static let systemAudioArmingPoll: Duration = .seconds(2)
     }
 
+    enum Transcription {
+        /// How much audio ahead of detected speech is kept and released when the gate opens.
+        ///
+        /// Voice activity is recognised slightly after a word has begun, so releasing only from the
+        /// moment of recognition clips the first consonant off every utterance.
+        static let gatePreRoll: TimeInterval = 0.3
+
+        /// How long the gate stays open past the end of speech, so trailing consonants survive.
+        static let gateTail: TimeInterval = 0.4
+    }
+
     enum Support {
         static let email = "support@bitwize.ai"
     }

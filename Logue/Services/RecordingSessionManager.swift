@@ -115,6 +115,10 @@ final class RecordingSessionManager {
     /// rather than waiting to be switched on.
     private let systemAudioArming = SystemAudioArmingMonitor()
 
+    /// Keeps silence out of the transcriber. Only ever consulted for microphone audio, and never
+    /// for what is written to disk or handed to the diarizer.
+    private let speechGate = MicrophoneSpeechGate()
+
     private var recordingLocale: Locale?
 
     /// Time offset applied when continuing recording on a meeting that already has segments.
@@ -315,6 +319,7 @@ final class RecordingSessionManager {
         micSegments = CaptureSegmentTimeline()
         systemSegments = CaptureSegmentTimeline()
         systemWrittenSeconds.withLock { $0 = 0 }
+        speechGate.reset()
 
         // Start audio capture IMMEDIATELY — don't wait for diarization models.
         //
@@ -656,13 +661,35 @@ final class RecordingSessionManager {
         let (stream, continuation) = AsyncStream<CapturedAudio>.makeStream()
         audioBufferContinuation = continuation
 
-        audioBufferConsumerTask = Task { [weak engine, weak diarizer] in
+        audioBufferConsumerTask = Task { [weak self, weak engine, weak diarizer] in
             for await captured in stream {
                 guard !Task.isCancelled else { break }
-                engine?.streamAudio(captured.buffer)
+
+                // The diarizer and the file get every buffer, always. Only the transcriber is
+                // gated, and only on the microphone: the system tap is already silent when nothing
+                // is playing, and gating it could cost a remote speaker's opening word for nothing.
                 diarizer?.processAudioBuffer(captured.buffer, from: captured.source)
+
+                guard captured.source == .microphone, let self else {
+                    engine?.streamAudio(captured.buffer)
+                    continue
+                }
+
+                for buffer in await admitToTranscriber(captured.buffer, diarizer: diarizer) {
+                    engine?.streamAudio(buffer)
+                }
             }
         }
+    }
+
+    /// Runs a microphone buffer past the voice-activity gate, falling back to passing it straight
+    /// through whenever the model is not available.
+    private func admitToTranscriber(
+        _ buffer: AVAudioPCMBuffer,
+        diarizer: DiarizationManager?
+    ) async -> [AVAudioPCMBuffer] {
+        guard let vad = await diarizer?.ensureVadManager() else { return [buffer] }
+        return await speechGate.admit(buffer, at: sessionElapsed, vad: vad)
     }
 
     // MARK: - Permissions

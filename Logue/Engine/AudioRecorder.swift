@@ -69,6 +69,23 @@ final class AudioRecorder {
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+
+        // Acoustic echo cancellation, noise suppression and automatic gain, from the OS.
+        //
+        // The echo cancellation is the point. Without it the microphone re-hears the remote
+        // participants coming out of the speakers, so every remote sentence is transcribed twice —
+        // once from the system tap and once from the mic — and the diarizer is shown one person's
+        // voice arriving on two channels and clusters them as two people.
+        //
+        // This transforms the input node itself, so the microphone audio saved for playback is
+        // processed too. That is the intent: a recording without echo is the one worth keeping.
+        // Enabled before the format is read, because enabling it changes that format.
+        do {
+            try inputNode.setVoiceProcessingEnabled(true)
+        } catch {
+            logger.error("Voice processing unavailable, continuing raw: \(error.localizedDescription, privacy: .public)")
+        }
+
         let inputFormat = inputNode.outputFormat(forBus: 0)
         recordingFormat = inputFormat
 
