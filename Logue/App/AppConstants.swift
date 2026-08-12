@@ -26,6 +26,10 @@ enum AppConstants {
         static let documentSortOrder = "documentSortOrder"
         static let meetingSortOrder = "meetingSortOrder"
         static let actionItemSortOrder = "actionItemSortOrder"
+        /// How the Tasks list is sorted, remembered between launches.
+        static let taskSortOrder = "taskSortOrder"
+        /// Which filter the Tasks list opens on.
+        static let taskFilterMode = "taskFilterMode"
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"

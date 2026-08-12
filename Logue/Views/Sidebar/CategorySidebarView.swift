@@ -15,6 +15,7 @@ struct CategorySidebarView: View {
 
     /// `@State` rather than `@ObservedObject`: `DocumentStorage` is `@Observable`.
     @State private var documentStorage = DocumentStorage.shared
+    @State private var taskStore = TaskStore.shared
 
     @State private var isAddingSpace = false
     @State private var newSpaceName = ""
@@ -124,6 +125,28 @@ struct CategorySidebarView: View {
                         .tag(SidebarItem.actionItems)
                         .accessibilityLabel(actionItemsAccessibilityLabel)
                         .accessibilityHint("View all action items across meetings")
+
+                        Label {
+                            HStack {
+                                Text("Tasks")
+                                Spacer()
+                                let openCount = taskStore.openTasks.count
+                                if openCount > 0 {
+                                    Text("\(openCount)")
+                                        .font(.caption2)
+                                        .foregroundStyle(
+                                            hasOverdueTasks
+                                                ? AnyShapeStyle(AppThemeConstants.error)
+                                                : AnyShapeStyle(HierarchicalShapeStyle.tertiary)
+                                        )
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: "checkmark.circle")
+                        }
+                        .tag(SidebarItem.tasks)
+                        .accessibilityLabel("Tasks, \(taskStore.openTasks.count) open")
+                        .accessibilityHint("View and capture your own tasks")
 
                         Label {
                             HStack {
@@ -276,6 +299,11 @@ struct CategorySidebarView: View {
         meetingStore.activeMeetings
             .filter { !$0.isArchived }
             .reduce(0) { $0 + $1.actionItems.filter { !$0.isCompleted }.count }
+    }
+
+    /// Whether any open task is past its due date, so the count reads as urgent.
+    private var hasOverdueTasks: Bool {
+        taskStore.openTasks.contains { $0.isOverdue }
     }
 
     private var hasOverdueItems: Bool {

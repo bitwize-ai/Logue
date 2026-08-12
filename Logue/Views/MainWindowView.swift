@@ -11,6 +11,7 @@ enum SidebarItem: Hashable {
     case allDocuments
     case allMeetings
     case actionItems
+    case tasks
     case templates
     case space(UUID)
     case document(UUID)
@@ -193,6 +194,7 @@ struct MainWindowView: View {
                     case .allDocuments: "documents"
                     case .allMeetings: "meetings"
                     case .actionItems: "action_items"
+                    case .tasks: "tasks"
                     case .templates: "templates"
                     case .space: "space"
                     case .document: "document"
@@ -367,6 +369,8 @@ struct MainWindowView: View {
             MeetingListContentView(spaceID: nil)
         case .actionItems:
             ActionItemDashboardView()
+        case .tasks:
+            TaskListView()
         case .templates:
             TemplateGalleryView()
         case let .space(id):
@@ -488,6 +492,7 @@ struct MainWindowView: View {
         case .allDocuments: return "All Documents"
         case .allMeetings: return "All Meetings"
         case .actionItems: return "Action Items"
+        case .tasks: return "Tasks"
         case .templates: return "Templates"
         case let .space(id): return spaceStore.space(for: id)?.name ?? "Space"
         case .trash: return "Trash"
@@ -578,54 +583,5 @@ struct MainWindowView: View {
                     meetingStore.selectedMeetingID = meeting.id
                 }
             }
-    }
-
-    // MARK: - Sidebar selection persistence
-
-    /// UserDefaults key for the last-stable sidebar surface. Document and
-    /// meeting selections are restored separately via the per-store
-    /// `selectedDocumentID` / `selectedMeetingID` so we only persist coarse
-    /// surfaces here.
-    private static let lastSidebarKey = "MainWindow.lastSidebarSelection"
-
-    /// Loads the last-stable sidebar surface, or `nil` on a fresh install.
-    /// `MainWindowView` falls back to `.agentChat` when this returns `nil`.
-    static func loadLastSidebarSelection() -> SidebarItem? {
-        guard let raw = UserDefaults.standard.string(forKey: lastSidebarKey) else { return nil }
-        switch raw {
-        case "agentChat": return .agentChat
-        case "overview": return .overview
-        case "pinned": return .pinned
-        case "recent": return .recent
-        case "allDocuments": return .allDocuments
-        case "allMeetings": return .allMeetings
-        case "actionItems": return .actionItems
-        case "templates": return .templates
-        case "trash": return .trash
-        default: return nil
-        }
-    }
-
-    /// Persists only "stable" sidebar surfaces. Per-document and per-meeting
-    /// selections are intentionally not persisted — those are restored via
-    /// the store's `selectedDocumentID` / `selectedMeetingID`, and a
-    /// deleted-document landing screen is worse than landing in chat.
-    static func persistSidebarSelection(_ item: SidebarItem?) {
-        let raw: String? = switch item {
-        case .agentChat: "agentChat"
-        case .overview: "overview"
-        case .pinned: "pinned"
-        case .recent: "recent"
-        case .allDocuments: "allDocuments"
-        case .allMeetings: "allMeetings"
-        case .actionItems: "actionItems"
-        case .templates: "templates"
-        case .trash: "trash"
-        // Per-item selections aren't persisted — see doc comment.
-        case .space, .document, .meeting, .none: nil
-        }
-        if let raw {
-            UserDefaults.standard.setValue(raw, forKey: lastSidebarKey)
-        }
     }
 }
