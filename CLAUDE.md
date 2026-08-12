@@ -18,6 +18,46 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 > flag. `project.yml` ships `DEVELOPMENT_TEAM: ""` deliberately, so the team is passed on the
 > command line and never committed.
 
+## Running the build you just made
+
+Three separate things will each hand you a *different* build than the one you compiled, and all
+three fail silently — the app launches, looks right, and simply does not contain your change. Every
+"my edit isn't showing up" report so far has been one of these, not a bug in the code.
+
+- **Never pick the app by timestamp.** More than one DerivedData root exists for this project (the
+  command line's and Xcode's). Ask the build system where it writes, rather than guessing:
+
+  ```bash
+  APP=$(xcodebuild -project Logue.xcodeproj -scheme Logue -configuration Debug \
+    -destination 'platform=macOS' -showBuildSettings 2>/dev/null \
+    | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/Logue.app
+  ```
+
+- **`open` may launch a different copy.** LaunchServices resolves by bundle identifier, so with a
+  release build installed in `/Applications`, `open <path-to-dev-build>` can start — or merely
+  re-activate — the installed one instead. Quit every running instance first, then exec the binary
+  directly, in its own session so it outlives the shell that started it:
+
+  ```bash
+  pkill -x Logue; sleep 2
+  "$APP/Contents/MacOS/Logue" &
+  ```
+
+- **Confirm what is running, by process, not by path you passed.**
+
+  ```bash
+  PID=$(pgrep -x Logue); ps -p $PID -o args=          # which bundle
+  lsof -p $PID | grep Logue.debug.dylib               # which code, actually loaded
+  ```
+
+  `Contents/MacOS/Logue` is a ~60 KB stub; the app's code lives in `Contents/MacOS/Logue.debug.dylib`.
+  Searching the stub for a string you just added always comes back empty and proves nothing.
+
+**Rebuilding revokes Screen Recording permission.** macOS ties that grant to the code signature, so
+each rebuild drops it and system-audio capture stops until Logue is re-enabled under System Settings
+→ Privacy & Security → Screen Recording. A signed release build keeps a stable signature and does not
+have this problem.
+
 ## Where documentation goes
 
 - **`docs/specs/`** — design and specification documents. Checked in.
