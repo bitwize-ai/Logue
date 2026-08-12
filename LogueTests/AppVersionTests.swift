@@ -62,6 +62,15 @@ struct AppVersionTests {
         #expect(patchNinth < patchTenth)
     }
 
+    @Test("Build metadata is ignored rather than making the version unreadable")
+    func parsesSemverBuildMetadata() throws {
+        // Rejecting "+456" made the whole version nil, which reads as "unknown" — and
+        // the gate then shows nothing at all, on every launch of that build.
+        #expect(try #require(AppVersion("1.2.3+456")) == AppVersion(major: 1, minor: 2, patch: 3))
+        // Semver puts metadata after the pre-release suffix, so both have to come off.
+        #expect(try #require(AppVersion("1.2.3-beta.1+456")) == AppVersion(major: 1, minor: 2, patch: 3))
+    }
+
     @Test("Equal versions are neither newer nor older")
     func ordersEqualVersions() throws {
         let left = try #require(AppVersion("1.2.3"))

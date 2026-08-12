@@ -16,15 +16,23 @@ struct AppVersion: Comparable, Equatable, Sendable, CustomStringConvertible {
         self.patch = patch
     }
 
-    /// Parses "1", "1.2", "1.2.3" and "1.2.3-beta.1"; absent components are zero, and a
-    /// pre-release suffix orders as the release it leads up to, so a beta tester is not
-    /// shown the same notes again on the final build.
+    /// Parses "1", "1.2", "1.2.3", "1.2.3-beta.1" and "1.2.3+456"; absent components are
+    /// zero, and a pre-release suffix orders as the release it leads up to, so a beta
+    /// tester is not shown the same notes again on the final build.
+    ///
+    /// Build metadata is dropped for the same reason semver ignores it in ordering: it
+    /// says which build, not which release. Rejecting it instead made the whole version
+    /// unparseable, which reads as "unknown" — and then the gate shows nothing at all,
+    /// on every launch of that build.
     ///
     /// Returns nil for anything else, so a garbled Info.plist reads as "unknown" rather
     /// than as 0.0.0 — which would compare as older than every real release and replay
     /// the notes on every launch.
     init?(_ string: String) {
-        let core = string.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        // Metadata first: semver puts it after the pre-release suffix ("1.2.3-beta+456"),
+        // so splitting on "-" first would leave the "+456" attached to "beta".
+        let withoutMetadata = string.split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        let core = withoutMetadata.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
         let parts = core.trimmingCharacters(in: .whitespaces)
             .split(separator: ".", omittingEmptySubsequences: false)
         guard (1 ... 3).contains(parts.count) else { return nil }
