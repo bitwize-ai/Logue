@@ -7,6 +7,7 @@ import SwiftUI
 struct PrivacySettingsTab: View {
     @State private var storage = DocumentStorage.shared
     @Environment(DocumentStore.self) private var documentStore
+    @State private var taskStore = TaskStore.shared
     @Environment(SpaceStore.self) private var spaceStore
     @State private var showingEnableWarning = false
     @State private var showingDisableConfirmation = false
@@ -111,7 +112,9 @@ struct PrivacySettingsTab: View {
         storageError = nil
         do {
             try storage.switchToMarkdown(
-                documents: documentStore.documents, spaces: spaceStore.spaces
+                documents: documentStore.documents,
+                spaces: spaceStore.spaces,
+                tasks: taskStore.tasks
             )
         } catch {
             // Nothing was changed: the switch verifies every file before flipping.
@@ -130,6 +133,10 @@ struct PrivacySettingsTab: View {
                 // deleted, and switching would prune the encrypted copies of the difference.
                 expectedDocumentCount: documentStore.activeDocuments.count
             )
+
+            // The switch already re-encrypted these; adopting them now means the list on
+            // screen matches what encrypted storage holds before the folder can be trashed.
+            taskStore.replaceAll(with: storage.restoredTasks)
 
             Task {
                 // In this order, and awaited: the folder is the only copy of anything created while

@@ -309,9 +309,17 @@ final class DocumentStorage {
     /// kilobytes and they are what makes turning this on reversible. They stop being read
     /// the moment the mode flips, and `DocumentStore.pruneStoredDocuments` clears the ones
     /// that have gone stale when markdown storage is turned off again.
+    /// - Parameter tasks: written to the folder before the mode flips.
+    ///
+    ///   Tasks follow this mode rather than having one of their own, so the instant it flips
+    ///   `TaskStorage` starts reading `~/Logue/Tasks` — and an empty folder there is
+    ///   indistinguishable from "the user has no tasks". Exporting first, and failing the
+    ///   whole switch if it cannot, is what stops turning the setting on from looking like
+    ///   it erased the task list.
     func switchToMarkdown(
         documents: [WritingDocument],
-        spaces: [Space]
+        spaces: [Space],
+        tasks: [TaskItem] = []
     ) throws {
         adoptLegacyFolderIfNeeded()
 
@@ -339,6 +347,10 @@ final class DocumentStorage {
         for document in documents where !document.derived.isEmpty {
             saveDerived(document.derived)
         }
+
+        // Before the flip, and allowed to abort it: after the flip an unwritten task is a
+        // task that has vanished from the app.
+        try TaskStorage.shared.exportAll(tasks)
 
         mode = .markdown
         // `reconcile` just wrote a file for every document, so nothing is outstanding. Without
@@ -440,6 +452,11 @@ final class DocumentStorage {
             )
         }
 
+        // Read and re-encrypted while the folder is still the live one, and before the mode
+        // flips: a task created during markdown mode has no encrypted copy at all, so this is
+        // the only thing carrying it across. Afterwards the folder may go to the Trash.
+        restoredTasks = TaskStorage.shared.reEncryptFromFolder()
+
         // The folder is no longer the library, so a record of which documents it failed to hold
         // means nothing — and `save` returns early in encrypted mode, so nothing else could ever
         // clear it. Left set, it would still be exempt from the deletion check on the way back.
@@ -450,6 +467,13 @@ final class DocumentStorage {
         logger.info("Switched document storage back to encrypted")
         return documents
     }
+
+    /// The tasks read back by the most recent `switchToEncrypted`.
+    ///
+    /// Returned out-of-band rather than in the return value so the switch's signature — and
+    /// the four failure modes documented on it — stay about documents. The caller reads this
+    /// immediately after a successful switch.
+    private(set) var restoredTasks: [TaskItem] = []
 
     /// Empties the plain-markdown folder without changing the setting.
     ///
