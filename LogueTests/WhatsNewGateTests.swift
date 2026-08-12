@@ -165,16 +165,19 @@ struct WhatsNewGateTests {
     // MARK: - Stamp
 
     /// A scratch defaults suite, so tests never touch the real preferences.
-    private func withScratchDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
+    ///
+    /// `#require` rather than a `guard ... else { return }`: returning without running
+    /// the body would pass every test that uses this having asserted nothing at all.
+    private func withScratchDefaults(_ body: (UserDefaults) throws -> Void) throws {
         let name = "WhatsNewGateTests-\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: name) else { return }
+        let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         try body(defaults)
     }
 
     @Test("Marking a version seen records it")
-    func markSeenRecordsVersion() {
-        withScratchDefaults { defaults in
+    func markSeenRecordsVersion() throws {
+        try withScratchDefaults { defaults in
             WhatsNewGate.markSeen(upTo: version(1, 1, 0), defaults: defaults)
             let stored = defaults.string(forKey: AppConstants.UserDefaultsKeys.lastSeenWhatsNewVersion)
             #expect(stored == "1.1.0")
@@ -182,8 +185,8 @@ struct WhatsNewGateTests {
     }
 
     @Test("The stamp only ever rises")
-    func markSeenNeverLowersStamp() {
-        withScratchDefaults { defaults in
+    func markSeenNeverLowersStamp() throws {
+        try withScratchDefaults { defaults in
             WhatsNewGate.markSeen(upTo: version(1, 2, 0), defaults: defaults)
             // Re-opening the notes on an older build must not make 1.2.0 unseen again.
             WhatsNewGate.markSeen(upTo: version(1, 0, 0), defaults: defaults)
@@ -193,8 +196,8 @@ struct WhatsNewGateTests {
     }
 
     @Test("Marking with no readable version leaves the stamp alone")
-    func markSeenIgnoresNilVersion() {
-        withScratchDefaults { defaults in
+    func markSeenIgnoresNilVersion() throws {
+        try withScratchDefaults { defaults in
             WhatsNewGate.markSeen(upTo: version(1, 1, 0), defaults: defaults)
             WhatsNewGate.markSeen(upTo: nil, defaults: defaults)
             let stored = defaults.string(forKey: AppConstants.UserDefaultsKeys.lastSeenWhatsNewVersion)
@@ -203,15 +206,14 @@ struct WhatsNewGateTests {
     }
 
     @Test("The stamp is what was shown, not what the build is")
-    func stampRecordsOnlyWhatWasDisplayed() {
+    func stampRecordsOnlyWhatWasDisplayed() throws {
         // The Help menu and Settings open one release, not the whole backlog. Stamping
         // the running version there marks everything older as seen without showing it,
         // and because the stamp only rises those releases are gone for good.
-        let catalog = self.catalog
         let shown = WhatsNewView.Mode.whatsNew([release(1, 1, 0)])
         #expect(shown.seenThrough == version(1, 1, 0))
 
-        withScratchDefaults { defaults in
+        try withScratchDefaults { defaults in
             defaults.set(true, forKey: AppConstants.UserDefaultsKeys.hasCompletedOnboarding)
             WhatsNewGate.markSeen(upTo: shown.seenThrough, defaults: defaults)
 
@@ -232,11 +234,13 @@ struct WhatsNewGateTests {
         #expect(shown.seenThrough == version(1, 2, 0))
     }
 
-    @Test("The tour stamps the running build")
-    func tourStampsCurrentVersion() {
-        // A fresh install has been told what Logue is; it is not owed the catch-up deck.
-        #expect(WhatsNewView.Mode.discover.seenThrough == AppVersion.current)
-    }
+    // `Mode.discover.seenThrough` is deliberately not tested here. It is defined as
+    // `AppVersion.current`, so any assertion about it has to compute the expected value
+    // with the expression under test — it would pass whatever that returned, including
+    // nil. Making it falsifiable needs an injectable version on `Mode`, which is a
+    // change to production shape for a test's benefit; the decision it encodes is
+    // recorded on the property itself instead. The `.whatsNew` branch, which is the one
+    // that can be got wrong, is covered above.
 
     // MARK: - The real catalog
 
