@@ -356,6 +356,12 @@ enum AppConstants {
         /// A backstop for the Core Audio property listener, which only fires on transitions and so
         /// says nothing about audio that was already playing when recording started.
         static let systemAudioArmingPoll: Duration = .seconds(2)
+
+        /// How often a missing capture device is re-checked while its grace period runs.
+        ///
+        /// The device-list listener fires when a device appears or disappears. Nothing fires to say
+        /// one has *stayed* missing, which is the thing the grace period is waiting to find out.
+        static let deviceLossPoll: Duration = .milliseconds(500)
     }
 
     enum Transcription {

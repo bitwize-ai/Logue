@@ -35,8 +35,8 @@ enum RecordingError: LocalizedError {
 /// Cohesive recording state machine: start, stop, microphone mute, and arming the system-audio tap.
 /// Which sources a session uses is not asked of the user — the microphone always runs, and the tap
 /// arms itself the first time anything plays through the speakers.
-/// Splitting into extensions would require widening ~20 private members to internal, which
-/// weakens encapsulation more than it helps; kept as one unit.
+/// Device-loss handling lives in `+DeviceLoss`; the rest is kept as one unit, because splitting it
+/// further would require widening most of the private state to internal.
 @Observable
 @MainActor
 final class RecordingSessionManager {
@@ -89,6 +89,11 @@ final class RecordingSessionManager {
 
     var isCapturingSystemAudio = false
     var isMicActive = false
+
+    /// A short, non-blocking note about capture — a device that went away, a fallback that was
+    /// taken. Nil when there is nothing to say. Never a dialog: a meeting keeps running while the
+    /// user is not looking at the screen.
+    var captureNotice: String?
     private var postRecordingTask: Task<Void, Never>?
     private var diarizationInitTask: Task<Void, Never>?
 
@@ -109,7 +114,8 @@ final class RecordingSessionManager {
     let audioRecorder = AudioRecorder()
     let systemCapture = SystemAudioCapture()
     private var speechEngine: SpeechTranscriberEngine?
-    private var diarizationManager: DiarizationManager?
+    // Extension-visible: +DeviceLoss, +Diarization
+    var diarizationManager: DiarizationManager?
 
     /// Watches for anything playing through the speakers, so the system-audio tap can arm itself
     /// rather than waiting to be switched on.
@@ -118,6 +124,9 @@ final class RecordingSessionManager {
     /// Keeps silence out of the transcriber. Only ever consulted for microphone audio, and never
     /// for what is written to disk or handed to the diarizer.
     private let speechGate = MicrophoneSpeechGate()
+
+    /// Notices when the microphone we are recording from goes away.
+    private let deviceMonitor = CaptureDeviceMonitor()
 
     private var recordingLocale: Locale?
 
@@ -131,15 +140,17 @@ final class RecordingSessionManager {
     /// of the meeting.
     private var sessionStartDate: Date?
 
+    // Extension-visible: +DeviceLoss
     /// Seconds since this recording session started, independent of any one capture device.
-    private var sessionElapsed: TimeInterval {
+    var sessionElapsed: TimeInterval {
         sessionStartDate.map { Date().timeIntervalSince($0) } ?? 0
     }
 
+    // Extension-visible: +DeviceLoss
     /// Where each stretch of the mic recording belongs on the meeting's timeline. The mic writes one
     /// file across every mute and unmute, with the muted stretches absent from it, so the playback
     /// mix has to lay each activation down separately or everything after the first mute plays early.
-    private var micSegments = CaptureSegmentTimeline()
+    var micSegments = CaptureSegmentTimeline()
 
     /// The same, for the system-audio tap. It can join a meeting already in progress, in which case
     /// its file starts then and laying it down at zero would play the remote side early.
@@ -195,9 +206,10 @@ final class RecordingSessionManager {
         let source: AudioSource
     }
 
+    // Extension-visible: +DeviceLoss
     /// Single-consumer stream that coalesces audio buffers from the audio thread.
     /// Replaces per-buffer `Task { @MainActor }` creation to prevent MainActor flooding.
-    private var audioBufferContinuation: AsyncStream<CapturedAudio>.Continuation?
+    var audioBufferContinuation: AsyncStream<CapturedAudio>.Continuation?
     private var audioBufferConsumerTask: Task<Void, Never>?
     /// Separate stream for mic-only buffers when a dedicated mic engine is active (in-person enableMic).
     private var micBufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
@@ -371,6 +383,9 @@ final class RecordingSessionManager {
             systemAudioArming.start { [weak self] in
                 Task { @MainActor in await self?.armSystemAudio() }
             }
+            deviceMonitor.start { [weak self] decision, deviceName in
+                self?.handleMicrophoneLoss(decision, deviceName: deviceName)
+            }
             logger.info("Recording started for meeting \(meetingID)")
         }
     }
@@ -480,8 +495,10 @@ final class RecordingSessionManager {
 
     /// Tears down audio callbacks, buffer streams, capture devices, and transcription engines.
     private func teardownAudioPipeline() async {
-        // Nothing left to arm once the session is over.
+        // Nothing left to arm or to watch once the session is over.
         systemAudioArming.stop()
+        deviceMonitor.stop()
+        captureNotice = nil
 
         // Null out callbacks BEFORE stopping engines to prevent in-flight buffers
         // from racing with engine teardown (weak refs could become nil mid-callback)

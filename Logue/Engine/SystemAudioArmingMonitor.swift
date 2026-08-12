@@ -227,6 +227,52 @@ enum CoreAudioProperty {
         deviceID(for: defaultInputDevice)
     }
 
+    /// Every audio device the system currently knows about.
+    static func allDeviceIDs() -> [AudioDeviceID] {
+        var address = devices
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size
+        ) == noErr
+        else { return [] }
+
+        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+        guard count > 0 else { return [] }
+
+        var ids = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids
+        ) == noErr
+        else { return [] }
+        return ids
+    }
+
+    static func name(of device: AudioDeviceID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var name: CFString = "" as CFString
+        var size = UInt32(MemoryLayout<CFString>.size)
+        let status = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &name)
+        guard status == noErr else { return nil }
+        return name as String
+    }
+
+    static func transportType(of device: AudioDeviceID) -> UInt32? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport)
+        guard status == noErr else { return nil }
+        return transport
+    }
+
     private static func deviceID(for address: AudioObjectPropertyAddress) -> AudioDeviceID? {
         var address = address
         var device = AudioDeviceID(0)

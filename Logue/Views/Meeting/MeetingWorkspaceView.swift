@@ -54,6 +54,24 @@ struct MeetingWorkspaceView: View {
                 // The tip that used to sit here explained the System Audio button to users who could
                 // not find it. The tap arms itself now, so there is nothing left to explain.
 
+                // What is left is capture telling the user something it did on its own — a headset
+                // that dropped, a fallback it took. Non-blocking and self-clearing: recording is
+                // still running, and there is nothing to decide.
+                if let notice = recorder.captureNotice, recorder.isRecording {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Text(notice)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(AppThemeConstants.categoryYellow.opacity(0.08))
+                    .transition(.opacity)
+                }
+
                 // Main content area
                 HStack(spacing: 0) {
                     // Center: transcript timeline
