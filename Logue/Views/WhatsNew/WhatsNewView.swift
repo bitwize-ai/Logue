@@ -16,9 +16,22 @@ struct WhatsNewView: View {
         case whatsNew([WhatsNewRelease])
 
         /// What "What's New" opens when the user asks for it by name, from the Help menu
-        /// or Settings: the notes for the release this build is. Falls back to the tour
-        /// when this build predates every catalogued release.
-        static var latestNotes: Mode {
+        /// or Settings.
+        ///
+        /// It shows the same backlog a launch would, and only falls back to the single
+        /// newest release once there is no backlog left. Showing just the newest would
+        /// be a trap, because dismissing stamps what was shown and the stamp only ever
+        /// rises: a user two releases behind who opens this from Settings — reachable
+        /// from the menu bar while the launch deck is still up, or on a launch where the
+        /// main window never appeared — would have the releases in between marked as
+        /// seen without ever having been shown them. Asking for it by name is therefore
+        /// a superset of what launch offers, never a subset.
+        ///
+        /// Falls back to the tour when this build predates every catalogued release.
+        static func askedForByName(defaults: UserDefaults = .standard) -> Mode {
+            if case let .whatsNew(releases) = WhatsNewGate.presentationForLaunch(defaults: defaults) {
+                return .whatsNew(releases)
+            }
             guard let latest = WhatsNewCatalog.latestRelease(notNewerThan: AppVersion.current) else {
                 return .discover
             }

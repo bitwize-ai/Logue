@@ -203,7 +203,7 @@ private struct AppRootView: View {
                 // a multi-release catch-up deck for a single-release one mid-read, and
                 // during onboarding AppKit would drop the sheet while leaving this set.
                 guard hasCompletedOnboarding, whatsNew == nil else { return }
-                whatsNew = WhatsNewSheetItem(mode: .latestNotes)
+                whatsNew = WhatsNewSheetItem(mode: .askedForByName())
             }
             .environment(ModelManager.shared)
             .environment(DocumentStore.shared)

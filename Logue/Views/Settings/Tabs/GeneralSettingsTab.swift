@@ -26,6 +26,20 @@ enum AppearanceMode: String, CaseIterable {
 
 /// Combined settings tab: Startup, Theme, Editor, Shortcuts, Data.
 struct GeneralSettingsTab: View {
+    /// The sheets this tab can put up. One case is showing at a time, which is what
+    /// lets a single `.sheet(item:)` present all of them.
+    enum Sheet: Identifiable {
+        case welcomeTour
+        case whatsNew(WhatsNewView.Mode)
+
+        var id: String {
+            switch self {
+            case .welcomeTour: "welcomeTour"
+            case .whatsNew: "whatsNew"
+            }
+        }
+    }
+
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("editorFontSize") private var editorFontSize: Double = 15
@@ -46,8 +60,13 @@ struct GeneralSettingsTab: View {
 
     @State private var showClearConfirmation = false
     @State private var showLoadConfirmation = false
-    @State private var showWelcomeTour = false
-    @State private var showWhatsNew = false
+    /// The one sheet this tab presents, if any.
+    ///
+    /// Item-driven rather than two booleans: `LogueApp` records that two boolean
+    /// `.sheet` modifiers on one view do not reliably both present, and this tab had
+    /// exactly that pair — so one of these buttons was relying on behaviour the app
+    /// documents as unreliable. One modifier cannot have the problem.
+    @State private var sheet: Sheet?
 
     var body: some View {
         Form {
@@ -65,13 +84,16 @@ struct GeneralSettingsTab: View {
                         }
                     }
                 Button {
-                    showWelcomeTour = true
+                    sheet = .welcomeTour
                 } label: {
                     Label("Show welcome tour", systemImage: "sparkles")
                 }
                 .buttonStyle(.borderless)
                 Button {
-                    showWhatsNew = true
+                    // Resolved when the button is pressed, not when the tab is built:
+                    // the backlog it shows depends on the stamp, which the launch deck
+                    // may have moved since.
+                    sheet = .whatsNew(WhatsNewView.Mode.askedForByName())
                 } label: {
                     Label(UICopy.WhatsNew.settingsButton, systemImage: "gift")
                 }
@@ -218,10 +240,12 @@ struct GeneralSettingsTab: View {
             }
         }
         .formStyle(.grouped)
-        .sheet(isPresented: $showWelcomeTour) {
-            OnboardingV2View()
+        .sheet(item: $sheet) { sheet in
+            switch sheet {
+            case .welcomeTour: OnboardingV2View()
+            case let .whatsNew(mode): WhatsNewView(mode: mode)
+            }
         }
-        .sheet(isPresented: $showWhatsNew) { WhatsNewView(mode: .latestNotes) }
         .onAppear { applyAppearance() }
         .confirmationDialog(
             "Clear all example data?",

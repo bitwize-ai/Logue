@@ -313,11 +313,38 @@ struct WhatsNewGateTests {
     func latestReleaseIsNilBeforeTheFirstRelease() throws {
         // True of the shipping catalog on any 1.0.x build: What's New arrives in 1.1.0,
         // so there is nothing for it to open until MARKETING_VERSION says 1.1.0.
-        // `WhatsNewView.Mode.latestNotes` falls back to the tour rather than a blank sheet.
+        // `WhatsNewView.Mode.askedForByName()` falls back to the tour, not a blank sheet.
         let oldest = try #require(WhatsNewCatalog.releases.first)
         let before = AppVersion(major: oldest.version.major, minor: 0, patch: 0)
         #expect(before < oldest.version)
         #expect(WhatsNewCatalog.latestRelease(notNewerThan: before) == nil)
+    }
+
+    @Test("Asking for the notes by name offers the whole backlog, not just the newest")
+    func askedForByNameOffersEveryUnseenRelease() throws {
+        // The trap this closes: Settings → What's New showed exactly one release and
+        // then stamped it, and the stamp only rises. A user two releases behind lost
+        // the one in between — permanently, without it ever being drawn. Settings is
+        // reachable from the menu bar while the launch deck is still up, and on a
+        // launch where the main window never appears it is the first thing to touch
+        // the stamp at all.
+        try withScratchDefaults { defaults in
+            // No stamp and onboarding done: the launch gate owes this user every
+            // release the build is old enough to announce.
+            defaults.set(true, forKey: AppConstants.UserDefaultsKeys.hasCompletedOnboarding)
+            let asked = WhatsNewView.Mode.askedForByName(defaults: defaults)
+
+            switch WhatsNewGate.presentationForLaunch(defaults: defaults) {
+            case let .whatsNew(owed):
+                #expect(asked == .whatsNew(owed))
+            case .none:
+                // Nothing owed — this build predates the catalog, or its version is
+                // unreadable. Asking by name then falls back to the newest notes, and
+                // to the tour when there are none.
+                let newest = WhatsNewCatalog.latestRelease(notNewerThan: AppVersion.current)
+                #expect(asked == newest.map { WhatsNewView.Mode.whatsNew([$0]) } ?? .discover)
+            }
+        }
     }
 
     @Test("An unreadable build version opens the newest notes rather than nothing")
