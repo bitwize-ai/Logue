@@ -50,7 +50,9 @@ already seen everything before it, and `WhatsNewGate` will hand a user who skipp
 releases all three decks at once, newest first, each card badged with the version that
 brought it. Repeating older features means seeing them twice.
 
-Four rules the tests enforce, so a slip fails CI rather than shipping:
+Four rules the tests enforce, so a slip fails CI rather than shipping. `WhatsNewGateTests`
+and `AppVersionTests` run in the Build job of `.github/workflows/ci.yml` — they need no
+model, unlike `LogueTests/LLMIntegration`, so they run on every pull request:
 
 - **The first card in a block has art.** A deck that opens on a symbol-only card reads as
   though the screenshots are broken — the bug reported against the first version of this
@@ -111,8 +113,10 @@ at six cards or fewer; a test enforces that.
    to add by hand.
 
 Resize to **900px wide**. The image well is 250pt tall, so 900px covers Retina with room
-to spare and keeps each file near 200 KB rather than 500 KB. Every screenshot ships inside
-the app, so this is download size for every user.
+to spare. Width is the rule; file size follows from what is in the frame and is not worth
+holding to a number — the shipped art runs from 190 KB for a mostly-empty pane to 700 KB
+for a dense one, all of it at 900px. Every screenshot ships inside the app, so this is
+download size for every user: prefer a tighter crop over a wider one.
 
 ```sh
 sips --resampleWidth 900 Logue/Resources/whatsnew-<slug>.png
@@ -129,9 +133,8 @@ with a step indicator under the image:
 
 ```swift
 screenshots: [
-    "whatsnew-asklogue-1-button",   // where the button is
-    "whatsnew-asklogue-2-menu",     // opening it
-    "whatsnew-asklogue-3-answer",   // what it does
+    "whatsnew-asklogue-1-where",    // where it lives
+    "whatsnew-asklogue-2-answer",   // what it does
 ]
 ```
 
@@ -178,8 +181,10 @@ has been told nothing in-app — everything shipped so far is new *to them*. Its
 therefore the full feature set rather than only what 1.1.0 added.
 
 **It is a one-off. Do not copy it as the pattern.** Every release after it lists only its
-own additions, which is a handful of cards. The 12-card cap exists to make an accidental
-repeat fail the build.
+own additions, which is a handful of cards. The caps exist to make an accidental repeat
+fail CI: 6 cards for an ordinary release, and 13 for 1.1.0 — which has exactly 13, so it
+sits on its cap rather than under it. Adding a card to that block means moving it to the
+release that actually introduced the feature.
 
 ## Checklist for cutting X.Y.Z
 
@@ -188,7 +193,8 @@ repeat fail the build.
       release added
 - [ ] `WhatsNewCatalog.tour`: only if this release changes what Logue is
 - [ ] `project.yml`: `MARKETING_VERSION` → X.Y.Z, then `xcodegen generate`
-- [ ] Tests pass: `xcodebuild test -only-testing:LogueTests/WhatsNewGateTests`
+- [ ] Tests pass: `xcodebuild test -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS' -only-testing:LogueTests/WhatsNewGateTests -only-testing:LogueTests/AppVersionTests` (CI runs the same two)
+- [ ] Release-notes extraction passes: `cd scripts && python3 test_extract_release_notes.py`
 - [ ] Tag `vX.Y.Z` and let `.github/workflows/release.yml` do the rest
 
 To see the whole thing as a first-time user would, on a build whose `MARKETING_VERSION` is
