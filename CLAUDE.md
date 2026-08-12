@@ -8,9 +8,25 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 - **Source:** `Logue/`, **Tests:** `LogueTests/`
 - **Swift 5.9 + SwiftUI + AppKit**
 - **Build system:** XcodeGen — run `xcodegen generate` after adding new `.swift` files or changing `project.yml`
-- **Build:** `xcodebuild build -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS'`
+- **Build (runnable):** `xcodebuild build -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS' DEVELOPMENT_TEAM=HC5R66SXM5 CODE_SIGN_STYLE=Automatic`
+- **Build / test (compile-check only):** append `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""`
 - **MLX prerequisite:** `xcodebuild -downloadComponent MetalToolchain`
 - **Test (LLM integration):** `xcodebuild test -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS' -only-testing:LogueTests/<SuiteName>`
+
+> **`xcodebuild` with no signing arguments fails**, and the error — `"Logue" has entitlements that
+> require signing with a development certificate` — reads like a code error rather than a missing
+> flag. `project.yml` ships `DEVELOPMENT_TEAM: ""` deliberately, so the team is passed on the
+> command line and never committed.
+
+## Where documentation goes
+
+- **`docs/specs/`** — design and specification documents. Checked in.
+- **`docs/plans/`** — implementation plans and other working notes. **Deliberately gitignored**;
+  they are scaffolding for building the thing, not part of it. Do not move a plan into `docs/specs/`
+  to get it committed, and do not `git add -f` it.
+- `.gitignore` ignores `docs/*` wholesale and then re-admits specific subdirectories, so **a new
+  documentation directory is invisible to git until `.gitignore` re-admits it.** Check with
+  `git check-ignore -v <path>` before assuming a doc was committed.
 
 ## Dependencies
 

@@ -338,6 +338,21 @@ enum AppConstants {
         static let relaunchTerminationInterval: TimeInterval = 0.5
         /// Brief delay before hiding selection toolbar (checks if selection cleared)
         static let selectionToolbarHideInterval: TimeInterval = 0.08
+
+        // -- Automatic capture --
+
+        /// How long something must keep playing before it arms the system-audio tap.
+        ///
+        /// A notification chime and a video call both make the default output device report that
+        /// it is running; only one of them is a meeting. A second of continuous playback separates
+        /// them without making the tap noticeably late to a call that has already started.
+        static let systemAudioArmingDebounce: TimeInterval = 1.0
+
+        /// How often the arming monitor re-reads playback state.
+        ///
+        /// A backstop for the Core Audio property listener, which only fires on transitions and so
+        /// says nothing about audio that was already playing when recording started.
+        static let systemAudioArmingPoll: Duration = .seconds(2)
     }
 
     enum Support {
