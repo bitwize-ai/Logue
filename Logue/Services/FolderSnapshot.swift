@@ -57,13 +57,58 @@ struct FolderSnapshot: Sendable {
         self.isComplete = isComplete
     }
 
-    /// The files that are not `_space.md`.
-    var documentFiles: [URL] {
-        files.filter { !SpaceFile.isSpaceFile(filename: $0.lastPathComponent) }
+    /// Directories that carry the tasks marker, as components relative to the root.
+    ///
+    /// By marker presence rather than by name, matching the rule spaces already follow: a
+    /// folder is found by its identity, never by recomputing a path from its name. So
+    /// renaming `Tasks/` in Finder keeps tasks working *and* keeps them out of the document
+    /// library, while a folder merely *called* `Tasks` stays an ordinary space.
+    ///
+    /// More than one is possible — a copied folder — and all of them are excluded. Being
+    /// conservative about what counts as a document is the safe direction: the cost is a
+    /// task folder that does not appear as a space, and the alternative is a user's tasks
+    /// silently becoming documents.
+    var taskFolders: [[String]] {
+        files.compactMap { url in
+            guard TaskFile.isFolderMarker(filename: url.lastPathComponent),
+                  let contents = contents[url],
+                  TaskFile.markerIdentifier(in: contents) != nil
+            else { return nil }
+            return componentsByFile[url]
+        }
     }
 
-    /// The `_space.md` files.
+    /// Whether `components` is one of `folders` or sits inside one.
+    private static func isContained(_ components: [String], in folders: [[String]]) -> Bool {
+        folders.contains { folder in
+            components.count >= folder.count && Array(components.prefix(folder.count)) == folder
+        }
+    }
+
+    /// The files that are neither `_space.md` nor anything inside a task folder.
+    var documentFiles: [URL] {
+        let folders = taskFolders
+        return files.filter { url in
+            guard !SpaceFile.isSpaceFile(filename: url.lastPathComponent) else { return false }
+            guard let components = componentsByFile[url] else { return true }
+            return !Self.isContained(components, in: folders)
+        }
+    }
+
+    /// The `_space.md` files, excluding any inside a task folder.
     var spaceFiles: [URL] {
-        files.filter { SpaceFile.isSpaceFile(filename: $0.lastPathComponent) }
+        let folders = taskFolders
+        return files.filter { url in
+            guard SpaceFile.isSpaceFile(filename: url.lastPathComponent) else { return false }
+            guard let components = componentsByFile[url] else { return true }
+            return !Self.isContained(components, in: folders)
+        }
+    }
+
+    /// The directories a scan may treat as spaces — everything except task folders and
+    /// anything nested inside one.
+    var spaceDirectories: [[String]] {
+        let folders = taskFolders
+        return directories.filter { !Self.isContained($0, in: folders) }
     }
 }

@@ -1696,15 +1696,46 @@ In `Logue/Services/FolderSnapshot.swift`, replace the computed properties at lin
     }
 ```
 
-- [ ] **Step 9: Point space creation at `spaceDirectories`**
+- [ ] **Step 9: Route the scan through the filtered accessors**
 
-In `Logue/Services/MarkdownFolderScan.swift`, find every read of `snapshot.directories` (the `spaceCreations`, `folderRenames` and `duplicatedSpaceFolders` paths around lines 99–135) and change each to `snapshot.spaceDirectories`. Verify none are missed:
+Adding the computed properties is **not sufficient on its own** — the migrator walks `snapshot.files` and `snapshot.directories` directly, bypassing them. Three edits in `Logue/Services/MarkdownStorageMigrator.swift`:
 
-```bash
-grep -n "\.directories" Logue/Services/MarkdownFolderScan.swift Logue/Services/MarkdownStorageMigrator*.swift Logue/Engine/SpaceFolder*.swift
+**9a — the adoption hazard (the important one).** In `importAll`, change the loop from `snapshot.files` to `snapshot.documentFiles`:
+
+```swift
+        // `documentFiles` rather than `files`, which excludes anything inside a task folder.
+        // Not a tidiness change: a task file carries no `_logue_id`, so it would fall through
+        // to `unidentifiedFiles` — and the scan *adopts* those, stamping our frontmatter onto
+        // them once they settle. Every task in the library would become a document about two
+        // seconds after it was written.
+        for url in snapshot.documentFiles {
 ```
 
-Every hit outside `FolderSnapshot.swift` itself must read `spaceDirectories`. A missed one means a task folder still becomes a space.
+Trace it to see why this matters: `importAll` → `unidentifiedFiles` → `MarkdownFolderScan.plan` line ~178 → `hasSettled` → `migrator.adopt(fileAt:)`. A task file has `_logue_task_id`, not `_logue_id`, so `MarkdownDocumentFile.content(from:)` returns nil and the file is treated as a hand-dropped note awaiting adoption.
+
+**9b — `documentFiles`.** Same change in the index builder, for defence in depth:
+
+```swift
+        // Task files carry `_logue_task_id`, so they could not claim a document identifier
+        // anyway; iterating `documentFiles` says so structurally rather than relying on it.
+        for url in snapshot.documentFiles {
+```
+
+**9c — space creation.** `directories(using:)` is the single chokepoint feeding `SpaceFolderAdoption.creations`; return the filtered list from it rather than editing the caller:
+
+```swift
+    func directories(using snapshot: FolderSnapshot? = nil) -> [[String]] {
+        (snapshot ?? self.snapshot()).spaceDirectories
+    }
+```
+
+Verify nothing else walks the raw collections:
+
+```bash
+grep -rn "snapshot.files\|\.directories" Logue/ --include="*.swift"
+```
+
+Expected remaining hits: `FolderSnapshot.swift` itself (the stored properties), and `walk()` which legitimately wants every file.
 
 - [ ] **Step 10: Run both suites plus the existing scan suites**
 

@@ -347,7 +347,9 @@ struct MarkdownStorageMigrator {
         let snapshot = snapshot ?? self.snapshot()
         var index: [UUID: URL] = [:]
         var duplicates: [URL] = []
-        for url in snapshot.files {
+        // Task files carry `_logue_task_id`, so they could not claim a document identifier
+        // anyway; iterating `documentFiles` says so structurally rather than relying on it.
+        for url in snapshot.documentFiles {
             guard let contents = snapshot.contents[url],
                   let id = MarkdownDocumentFile.identifier(in: contents)
             else { continue }
@@ -481,7 +483,12 @@ struct MarkdownStorageMigrator {
 
         result.isComplete = snapshot.isComplete
 
-        for url in snapshot.files {
+        // `documentFiles` rather than `files`, which excludes anything inside a task folder.
+        // Not a tidiness change: a task file carries no `_logue_id`, so it would fall through
+        // to `unidentifiedFiles` — and the scan *adopts* those, stamping our frontmatter onto
+        // them once they settle. Every task in the library would become a document about two
+        // seconds after it was written.
+        for url in snapshot.documentFiles {
             guard let contents = snapshot.contents[url] else {
                 // Unreadable is not absent. Recording it keeps the document out of the deletion set,
                 // and one more read here is worth it: the snapshot could not get the contents, but the
@@ -607,12 +614,14 @@ struct MarkdownStorageMigrator {
         return (snapshot.files, snapshot.isComplete)
     }
 
-    /// Every directory under the root, as components relative to it.
+    /// Every directory under the root that could be a space, as components relative to it.
     ///
     /// Includes empty ones: a folder someone made in Finder and has not put anything in yet
-    /// is still a space they created.
+    /// is still a space they created. Excludes the tasks folder and anything inside it —
+    /// its only caller turns these into spaces, and a "Tasks" space full of one-line
+    /// documents is precisely what the marker exists to prevent.
     func directories(using snapshot: FolderSnapshot? = nil) -> [[String]] {
-        (snapshot ?? self.snapshot()).directories
+        (snapshot ?? self.snapshot()).spaceDirectories
     }
 
     /// Reads the folder once, for every question a scan needs to ask of it.
