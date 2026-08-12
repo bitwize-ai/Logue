@@ -131,11 +131,16 @@ about one word should cost a wrong word, not a hole in the meeting.
 Live timestamps derive from `sessionStartDate`, not from streamed frame counts
 (`useAudioDrivenTiming` is false in the live path), so withholding buffers cannot skew them.
 
-**Known risk.** `SpeechAnalyzer` may not tolerate discontinuous input; this has not been verified
-against the real API. The implementation plan front-loads this as a spike. If it does not tolerate
-it, the fallback is to feed the analyzer continuously as today and use the VAD result to filter
-*emitted* segments instead. That is weaker — it saves no inference — but it is safe, and it keeps
-the benefit of not showing the user transcribed room tone.
+**Verified.** `SpeechAnalyzer` was measured against discontinuous input before this was settled:
+two synthesised utterances separated by eight seconds of silence, transcribed once with the silence
+streamed and once with it withheld. Both utterances survived being withheld, and the gated run was
+the *more* accurate of the two — the continuous run rendered "The quarterly numbers came in higher"
+as "that ours came in higher", where the gated run got it right. Silence is not context the model
+needs; it is material it can misread.
+
+The probe also established a second thing worth writing down: the analyzer returns nothing at all
+when a session is fed faster than real time. Anything that replays captured audio through it has to
+pace itself.
 
 ### 3. Device loss
 
