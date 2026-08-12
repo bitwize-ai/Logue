@@ -11,6 +11,9 @@ enum AppConstants {
         /// Set once `SandboxContainerMigrator` has moved data out of the legacy
         /// (pre-1.0.1, sandboxed) container. See that type for why the sandbox went away.
         static let sandboxContainerMigrationCompleted = "sandboxContainerMigrationCompleted"
+        /// Set once we have asked for screen-recording access. Prevents re-prompting at the start of
+        /// every meeting now that the system-audio tap arms itself rather than being switched on.
+        static let screenRecordingAccessRequested = "screenRecordingAccessRequested"
 
         static let writingGoalMode = "writingGoalMode"
         static let actionModelMap = "ActionModelMap"

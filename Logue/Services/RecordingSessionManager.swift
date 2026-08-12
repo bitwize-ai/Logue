@@ -32,12 +32,13 @@ enum RecordingError: LocalizedError {
 /// Owns AudioRecorder, SystemAudioCapture, SpeechTranscriberEngine, and DiarizationManager.
 /// Audio buffers stream directly to Apple's SpeechTranscriber — no chunking or backpressure needed.
 /// After recording stops, FluidAudio performs speaker diarization on accumulated audio.
-/// Cohesive recording state machine (start/stop + mid-recording mic/system-audio toggles).
+/// Cohesive recording state machine: start, stop, microphone mute, and arming the system-audio tap.
+/// Which sources a session uses is not asked of the user — the microphone always runs, and the tap
+/// arms itself the first time anything plays through the speakers.
 /// Splitting into extensions would require widening ~20 private members to internal, which
 /// weakens encapsulation more than it helps; kept as one unit.
 @Observable
 @MainActor
-// swiftlint:disable:next type_body_length
 final class RecordingSessionManager {
     static let shared = RecordingSessionManager()
     private init() {
@@ -95,14 +96,12 @@ final class RecordingSessionManager {
     let postRecordingPipeline = PostRecordingPipeline()
 
     /// Current volatile transcription text (in-progress, not yet finalized).
-    /// In online meeting mode, prioritizes mic text (lower latency) when both engines are active.
+    ///
+    /// One engine, so one source of text. There used to be a second engine for the case where a
+    /// session started on system audio and the microphone was switched on later; the microphone now
+    /// always starts first, so that case cannot arise and the engine it needed is gone.
     var volatileText: String {
-        let systemText = speechEngine?.volatileText ?? ""
-        let micText = micSpeechEngine?.volatileText ?? ""
-        if !micText.isEmpty {
-            return micText
-        }
-        return systemText
+        speechEngine?.volatileText ?? ""
     }
 
     // MARK: - Engines
@@ -110,9 +109,11 @@ final class RecordingSessionManager {
     let audioRecorder = AudioRecorder()
     let systemCapture = SystemAudioCapture()
     private var speechEngine: SpeechTranscriberEngine?
-    /// Second speech engine for real-time mic transcription during online meetings.
-    private var micSpeechEngine: SpeechTranscriberEngine?
     private var diarizationManager: DiarizationManager?
+
+    /// Watches for anything playing through the speakers, so the system-audio tap can arm itself
+    /// rather than waiting to be switched on.
+    private let systemAudioArming = SystemAudioArmingMonitor()
 
     private var recordingLocale: Locale?
 
@@ -213,13 +214,11 @@ final class RecordingSessionManager {
         return sessionElapsed + timeOffset
     }
 
+    /// The louder of the two sources. A source that is not running reports zero, so this needs to
+    /// know nothing about what kind of session this is.
     var audioLevel: Float {
-        guard let meetingID = currentMeetingID else { return 0 }
-        let mode = MeetingStore.shared.meetings.first { $0.id == meetingID }?.recordingMode ?? .inPerson
-        switch mode {
-        case .inPerson, .voiceNote: return audioRecorder.audioLevel
-        case .onlineMeeting: return max(systemCapture.audioLevel, audioRecorder.audioLevel)
-        }
+        guard currentMeetingID != nil else { return 0 }
+        return max(systemCapture.audioLevel, audioRecorder.audioLevel)
     }
 
     // MARK: - Start Recording
@@ -256,15 +255,13 @@ final class RecordingSessionManager {
         errorMessage = nil
 
         // Check microphone permission FIRST — before any heavy setup or waiting
-        // This ensures the OS permission dialog appears immediately on first use
-        let needsMic = meeting.recordingMode != .onlineMeeting
-        if needsMic {
-            let hasPermission = await checkMicrophonePermission()
-            guard hasPermission else {
-                errorMessage = RecordingError.micPermissionDenied.localizedDescription
-                recordingState = .idle
-                return
-            }
+        // This ensures the OS permission dialog appears immediately on first use.
+        // Every session captures the microphone, so this is never conditional.
+        let hasPermission = await checkMicrophonePermission()
+        guard hasPermission else {
+            errorMessage = RecordingError.micPermissionDenied.localizedDescription
+            recordingState = .idle
+            return
         }
 
         await awaitPreviousPostRecordingTask()
@@ -319,14 +316,12 @@ final class RecordingSessionManager {
         systemSegments = CaptureSegmentTimeline()
         systemWrittenSeconds.withLock { $0 = 0 }
 
-        // Start audio capture IMMEDIATELY — don't wait for diarization models
-        switch meeting.recordingMode {
-        case .inPerson, .voiceNote:
-            await startMicrophoneRecording(engine: engine, diarizer: diarizer)
-
-        case .onlineMeeting:
-            await startSystemAudioRecording(engine: engine, diarizer: diarizer)
-        }
+        // Start audio capture IMMEDIATELY — don't wait for diarization models.
+        //
+        // The microphone always runs. What kind of session this is — a call, a room, a voice note —
+        // is something we find out from what actually gets captured, not something the user is asked
+        // to declare before they have started.
+        await startMicrophoneRecording(engine: engine, diarizer: diarizer)
 
         // If audio capture failed to start, clean up and bail
         if recordingState != .recording {
@@ -367,6 +362,10 @@ final class RecordingSessionManager {
         }
 
         if isRecording {
+            // From here on the session decides for itself whether it is also a call.
+            systemAudioArming.start { [weak self] in
+                Task { @MainActor in await self?.armSystemAudio() }
+            }
             logger.info("Recording started for meeting \(meetingID)")
         }
     }
@@ -391,56 +390,6 @@ final class RecordingSessionManager {
             speechEngine = nil
             diarizationManager = nil
         }
-    }
-
-    private func startSystemAudioRecording(engine: SpeechTranscriberEngine, diarizer: DiarizationManager) async {
-        guard let meetingID = currentMeetingID else { return }
-        let offset = timeOffset
-
-        // Start system audio capture
-        do {
-            try await systemCapture.startCapture()
-        } catch {
-            if let audioError = error as? SystemAudioError, case .tapCreationFailed = audioError {
-                errorMessage = RecordingError.systemAudioPermissionDenied.localizedDescription
-            } else {
-                errorMessage = RecordingError.systemAudioStartFailed(error.localizedDescription).localizedDescription
-            }
-            logger.error("System capture failed: \(error.localizedDescription, privacy: .public)")
-            speechEngine = nil
-            diarizationManager = nil
-            return
-        }
-
-        // Record system audio to disk so the Recording panel can play it back.
-        if let captureFormat = systemCapture.captureFormat {
-            let fileURL = FileManager.default.temporaryDirectory
-                .appending(component: UUID().uuidString)
-                .appendingPathExtension("caf")
-            systemAudioTempURL = fileURL
-            do {
-                systemAudioFile = try AVAudioFile(forWriting: fileURL, settings: captureFormat.settings)
-                try? (fileURL as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
-            } catch {
-                logger.error("Failed to create system audio recording file: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-
-        // System audio callback: write to file AND feed to transcription stream.
-        if audioBufferContinuation == nil {
-            startAudioBufferConsumer(engine: engine, diarizer: diarizer)
-        }
-        diarizer.beginSource(.system, atSessionTime: 0)
-        // Capture is already running by this point — startCapture() returned above.
-        systemSegments.sourceStarted(atSessionTime: 0, fileDuration: 0)
-        installSystemAudioTap()
-
-        // Mic is NOT auto-started for system audio recordings.
-        // User can manually enable it via the mic toggle (enableMic()).
-        // This avoids duplicate transcription from system audio bleed-through into the mic.
-
-        recordingState = .recording
-        isCapturingSystemAudio = true
     }
 
     // MARK: - Stop Recording
@@ -526,6 +475,9 @@ final class RecordingSessionManager {
 
     /// Tears down audio callbacks, buffer streams, capture devices, and transcription engines.
     private func teardownAudioPipeline() async {
+        // Nothing left to arm once the session is over.
+        systemAudioArming.stop()
+
         // Null out callbacks BEFORE stopping engines to prevent in-flight buffers
         // from racing with engine teardown (weak refs could become nil mid-callback)
         audioRecorder.onAudioBuffer = nil
@@ -556,18 +508,24 @@ final class RecordingSessionManager {
             await engine.finish()
         }
         speechEngine = nil
-
-        if let micEngine = micSpeechEngine {
-            await micEngine.finish()
-        }
-        micSpeechEngine = nil
     }
 
-    // MARK: - Mid-Recording System Audio Toggle
+    // MARK: - Arming System Audio
 
-    /// Enable system audio capture mid-recording (e.g., user joins an online meeting).
-    func enableSystemAudio() async {
-        guard isRecording, let meetingID = currentMeetingID, !isCapturingSystemAudio else { return }
+    /// Starts the system-audio tap for the rest of the session.
+    ///
+    /// Called by the arming monitor the first time anything plays through the speakers, never by the
+    /// user. Once armed the tap stays up: a meeting has quiet stretches, and stopping and restarting
+    /// across them would open a `CaptureSegmentTimeline` placement for each one and gain nothing.
+    private func armSystemAudio() async {
+        guard isRecording, !isStopping, let meetingID = currentMeetingID, !isCapturingSystemAudio else { return }
+
+        guard await ensureScreenRecordingAccess() else {
+            logger.info("System audio not armed — screen recording access not granted")
+            return
+        }
+        // Access may have been asked for interactively; the session can have ended meanwhile.
+        guard isRecording, !isStopping, !isCapturingSystemAudio else { return }
 
         do {
             try await systemCapture.startCapture()
@@ -577,12 +535,18 @@ final class RecordingSessionManager {
             } else {
                 errorMessage = RecordingError.systemAudioStartFailed(error.localizedDescription).localizedDescription
             }
-            logger.error("Mid-recording system capture failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Arming system capture failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 
-        // Open a file to persist system audio for playback (same as startSystemAudioRecording).
-        // Without this, systemAudioTempURL stays nil and stopRecording() saves only mic audio.
+        // ScreenCaptureKit takes a moment to come up, and the session can stop inside it.
+        guard isRecording, !isStopping else {
+            systemCapture.stopCapture()
+            return
+        }
+
+        // Open a file to persist system audio for playback. Without this, systemAudioTempURL stays
+        // nil and stopRecording() saves only mic audio.
         if systemAudioFile == nil, let captureFormat = systemCapture.captureFormat {
             let fileURL = FileManager.default.temporaryDirectory
                 .appending(component: UUID().uuidString)
@@ -592,7 +556,7 @@ final class RecordingSessionManager {
                 systemAudioFile = try AVAudioFile(forWriting: fileURL, settings: captureFormat.settings)
                 try? (fileURL as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
             } catch {
-                logger.error("Failed to create system audio file in enableSystemAudio: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to create system audio file while arming: \(error.localizedDescription, privacy: .public)")
             }
         }
 
@@ -603,130 +567,81 @@ final class RecordingSessionManager {
         systemSegments.sourceStarted(atSessionTime: systemJoinedAt, fileDuration: systemRecordedDuration)
         installSystemAudioTap()
 
-        // Update meeting mode to reflect system audio capture
-        if let idx = MeetingStore.shared.meetings.firstIndex(where: { $0.id == meetingID }) {
+        // The mode is a description of what this session turned out to be, and this is the only
+        // place it is decided. A voice note is a statement of intent made at creation and is not
+        // overwritten by having played something aloud.
+        if let idx = MeetingStore.shared.meetings.firstIndex(where: { $0.id == meetingID }),
+           MeetingStore.shared.meetings[idx].recordingMode != .voiceNote
+        {
             MeetingStore.shared.meetings[idx].recordingMode = .onlineMeeting
         }
 
         isCapturingSystemAudio = true
-        logger.info("System audio enabled mid-recording for meeting \(meetingID)")
+        logger.info("System audio armed for meeting \(meetingID)")
     }
 
-    /// Disable system audio capture mid-recording.
-    func disableSystemAudio() {
-        guard isRecording, isCapturingSystemAudio else { return }
-        systemSegments.sourceStopped(fileDuration: systemRecordedDuration)
-        systemCapture.stopCapture()
-        systemCapture.onAudioBuffer = nil
-        isCapturingSystemAudio = false
-        logger.info("System audio disabled mid-recording")
+    /// Whether the ScreenCaptureKit tap may run, asking for access at most once per install.
+    ///
+    /// Access used to be requested when the user pressed the system-audio button, which made the
+    /// prompt their own doing. Arming happens on its own now, so an ungranted permission must not
+    /// turn into a dialog at the start of every meeting.
+    private func ensureScreenRecordingAccess() async -> Bool {
+        if CGPreflightScreenCaptureAccess() {
+            return true
+        }
+
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: AppConstants.UserDefaultsKeys.screenRecordingAccessRequested) else {
+            return false
+        }
+        defaults.set(true, forKey: AppConstants.UserDefaultsKeys.screenRecordingAccessRequested)
+        return CGRequestScreenCaptureAccess()
     }
 
-    /// Enable microphone mid-recording (e.g., user started with system audio only).
-    func enableMic() async {
-        guard isRecording, !isMicActive, !isStopping else { return }
+    // MARK: - Microphone Mute
 
-        let hasPermission = await checkMicrophonePermission()
-        // Re-check recording state after async permission check — recording may have stopped.
-        guard hasPermission else {
-            errorMessage = RecordingError.micPermissionDenied.localizedDescription
+    /// Mutes or unmutes the microphone mid-session.
+    ///
+    /// A mute, not a mode. The session is a microphone session either way, and the one engine that
+    /// started with it keeps running — muting only stops the tap feeding it. The diarization
+    /// timeline and the segment timeline record the silence as a gap where it belongs, because a
+    /// capture device's own clock restarts at zero every time it is toggled and would otherwise put
+    /// everything after the mute back at the start of the meeting.
+    func setMicMuted(_ muted: Bool) {
+        guard isRecording, !isStopping, muted == isMicActive else { return }
+
+        if muted {
+            // Close the activation at the file's current length before the tap stops, so the
+            // playback mix knows how much of the file belongs to the stretch just recorded.
+            micSegments.sourceStopped(fileDuration: audioRecorder.recordedDuration)
+            // stopTap() stops the engine and tap but keeps the audio file open, so unmuting
+            // continues appending to the same file.
+            audioRecorder.stopTap()
+            audioRecorder.onAudioBuffer = nil
+            isMicActive = false
+            logger.info("Microphone muted")
             return
         }
-        guard isRecording, !isMicActive else { return }
 
-        let micJoinedAt = sessionElapsed
-
-        if isCapturingSystemAudio {
-            // Single-engine approach (Otter-style): feed mic audio to the SAME primary
-            // speech engine + diarizer. No separate mic engine — avoids duplicate transcription
-            // from system audio bleed-through. Sortformer handles speaker separation.
-            // The mic joins the diarization timeline where the meeting is now, not at its start.
-            diarizationManager?.beginSource(.microphone, atSessionTime: micJoinedAt)
-            let continuation = audioBufferContinuation
-            audioRecorder.onAudioBuffer = { buffer in
-                continuation?.yield(CapturedAudio(buffer: buffer, source: .microphone))
-            }
-        } else {
-            // In-person mode: mic is the only source, needs its own engine
-            guard let meetingID = currentMeetingID else { return }
-            let offset = timeOffset
-            let micEngine = SpeechTranscriberEngine()
-            micEngine.onFinalSegment = { @MainActor segment in
-                var tagged = segment
-                tagged.startTime += offset
-                tagged.endTime += offset
-                tagged.audioSource = .microphone
-                tagged.speakerLabel = "You"
-                MeetingStore.shared.appendSegment(tagged, to: meetingID, persistImmediately: false)
-            }
-
-            do {
-                try await micEngine.setup(locale: recordingLocale)
-                micSpeechEngine = micEngine
-                // Dedicated mic stream for the separate mic engine. It also feeds the diarizer:
-                // this is the only source in this mode, so without it speaker detection would go
-                // quiet for the rest of the recording the moment the mic was toggled once.
-                diarizationManager?.beginSource(.microphone, atSessionTime: micJoinedAt)
-                let (micStream, micCont) = AsyncStream<AVAudioPCMBuffer>.makeStream()
-                micBufferContinuation = micCont
-                micBufferConsumerTask = Task { [weak micEngine, weak diarizer = diarizationManager] in
-                    for await buffer in micStream {
-                        guard !Task.isCancelled else { break }
-                        micEngine?.streamAudio(buffer)
-                        diarizer?.processAudioBuffer(buffer, from: .microphone)
-                    }
-                }
-                audioRecorder.onAudioBuffer = { buffer in
-                    micCont.yield(buffer)
-                }
-            } catch {
-                errorMessage = RecordingError.micStartFailed(error.localizedDescription).localizedDescription
-                logger.error("Mid-recording mic start failed: \(error.localizedDescription, privacy: .public)")
-                micSpeechEngine = nil
-                return
-            }
+        let resumedAt = sessionElapsed
+        diarizationManager?.beginSource(.microphone, atSessionTime: resumedAt)
+        let continuation = audioBufferContinuation
+        audioRecorder.onAudioBuffer = { buffer in
+            continuation?.yield(CapturedAudio(buffer: buffer, source: .microphone))
         }
 
         do {
             try audioRecorder.startRecording()
             isMicActive = true
-            // Opened only now: everything above can fail, and an activation opened against a mic
+            // Opened only now: `startRecording` can fail, and an activation opened against a mic
             // that never started would swallow the next successful one.
-            micSegments.sourceStarted(atSessionTime: micJoinedAt, fileDuration: audioRecorder.recordedDuration)
-            // swiftformat:disable:next redundantSelf
-            logger.info("Mic enabled mid-recording (single-engine: \(self.isCapturingSystemAudio))")
+            micSegments.sourceStarted(atSessionTime: resumedAt, fileDuration: audioRecorder.recordedDuration)
+            logger.info("Microphone unmuted")
         } catch {
+            audioRecorder.onAudioBuffer = nil
             errorMessage = RecordingError.micStartFailed(error.localizedDescription).localizedDescription
-            logger.error("Mid-recording mic start failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Microphone unmute failed: \(error.localizedDescription, privacy: .public)")
         }
-    }
-
-    /// Disable microphone mid-recording.
-    func disableMic() {
-        guard isRecording, isMicActive else { return }
-        // Close this activation at the file's current length before the tap stops, so the playback
-        // mix knows how much of the file belongs to the stretch of meeting just recorded.
-        micSegments.sourceStopped(fileDuration: audioRecorder.recordedDuration)
-        // stopTap() stops the engine and tap but keeps the audio file open so a subsequent
-        // enableMic() → startRecording() can continue appending to the same file.
-        audioRecorder.stopTap()
-        audioRecorder.onAudioBuffer = nil
-
-        // Clean up dedicated mic buffer stream
-        micBufferContinuation?.finish()
-        micBufferContinuation = nil
-        micBufferConsumerTask?.cancel()
-        micBufferConsumerTask = nil
-
-        // Only clean up mic engine if we created a separate one (in-person mode).
-        // In system audio mode, mic feeds the primary engine — no separate engine to clean up.
-        if !isCapturingSystemAudio, let micEngine = micSpeechEngine {
-            Task { await micEngine.finish() }
-            micSpeechEngine = nil
-        }
-
-        isMicActive = false
-        logger.info("Mic disabled mid-recording")
     }
 
     // MARK: - Audio Buffer Stream
