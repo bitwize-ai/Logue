@@ -27,6 +27,10 @@ enum HelpMenuActions {
         NotificationCenter.default.post(name: .openSettingsAboutAndCheckUpdates, object: nil)
     }
 
+    static func showWhatsNew() {
+        NotificationCenter.default.post(name: .showWhatsNew, object: nil)
+    }
+
     static func openResourceUsage() {
         NotificationCenter.default.post(name: .openResourceUsageWindow, object: nil)
     }
