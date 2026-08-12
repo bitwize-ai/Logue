@@ -40,18 +40,21 @@ struct WhatsNewGateTests {
 
     // MARK: - Fresh install
 
-    @Test("An install that has not finished onboarding gets the tour")
-    func freshInstallGetsTour() {
+    @Test("An install that has not finished onboarding is owed nothing at launch")
+    func freshInstallIsOwedNothing() {
         let presentation = WhatsNewGate.presentation(
             current: version(1, 2, 0),
             lastSeen: nil,
             hasCompletedOnboarding: false,
             releases: catalog
         )
-        #expect(presentation == .discoverTour)
+        // The tour belongs to the onboarding sheet's `onDismiss`, which is the only
+        // thing that knows the wizard has actually gone. A second source for it here
+        // would race that one to present the same sheet.
+        #expect(presentation == .none)
     }
 
-    @Test("A stamp does not turn the tour into release notes before onboarding is done")
+    @Test("A stamp does not turn a fresh install into release notes")
     func freshInstallIgnoresStamp() {
         let presentation = WhatsNewGate.presentation(
             current: version(1, 2, 0),
@@ -59,7 +62,7 @@ struct WhatsNewGateTests {
             hasCompletedOnboarding: false,
             releases: catalog
         )
-        #expect(presentation == .discoverTour)
+        #expect(presentation == .none)
     }
 
     // MARK: - Bootstrap (installs predating this feature)

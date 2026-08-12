@@ -10,8 +10,6 @@ enum WhatsNewGate {
     enum Presentation: Equatable {
         /// Nothing to show.
         case none
-        /// A fresh install: a tour of what Logue does, shown once onboarding is finished.
-        case discoverTour
         /// Releases this user has not seen, newest first.
         case whatsNew([WhatsNewRelease])
     }
@@ -31,14 +29,18 @@ enum WhatsNewGate {
         hasCompletedOnboarding: Bool,
         releases: [WhatsNewRelease]
     ) -> Presentation {
+        // A fresh install is owed the tour, not release notes — and the tour is not this
+        // function's to hand out. It has to be sequenced after the onboarding wizard's
+        // sheet has actually gone, which only that sheet's `onDismiss` knows; returning
+        // a `.discoverTour` here would be a second, earlier source for the same sheet
+        // and the two would race to present it.
+        guard hasCompletedOnboarding else { return .none }
+
         // Guessing would replay the notes on every launch.
         guard let current else {
             logger.error("No parseable app version; skipping What's New")
             return .none
         }
-
-        // The caller sequences the tour after the wizard, not this.
-        guard hasCompletedOnboarding else { return .discoverTour }
 
         let unseen = releases
             .filter { release in
