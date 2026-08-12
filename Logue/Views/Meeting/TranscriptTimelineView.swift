@@ -136,7 +136,7 @@ struct TranscriptTimelineView: View {
                 ZStack(alignment: .bottom) {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 22) {
+                            LazyVStack(alignment: .leading, spacing: 14) {
                                 ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
                                     let isLastBlock = index == blocks.count - 1
                                     SpeakerBlockView(
@@ -410,7 +410,7 @@ private struct SpeakerBlockView: View {
                 if isEditingSpeakerName {
                     TextField("Speaker name", text: $speakerNameDraft)
                         .textFieldStyle(.roundedBorder)
-                        .font(.callout.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(accentColor)
                         .frame(maxWidth: 160)
                         .focused($isSpeakerNameFocused)
@@ -440,7 +440,7 @@ private struct SpeakerBlockView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text(highlightedText(speaker, query: searchText, baseFont: .callout.weight(.semibold)))
+                    Text(highlightedText(speaker, query: searchText, baseFont: .caption.weight(.semibold)))
                         .foregroundColor(accentColor)
                         .onTapGesture(count: 2) {
                             if onRenameSpeaker != nil {
@@ -475,12 +475,15 @@ private struct SpeakerBlockView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             // Only rendered when there is something in it. Before diarization has named anyone a
             // block has no speaker and usually no bookmarks, and an empty row holding a single
             // floating button is worse than no row.
             if block.speakerLabel != nil || !blockBookmarks.isEmpty {
+                // Indented past the gutter so the name sits over the text it introduces, and the
+                // transcript keeps the same left edge before and after diarization runs.
                 header
+                    .padding(.leading, 48)
             }
 
             // Segment text — only first/last lines are draggable (boundary lines)
@@ -538,7 +541,8 @@ private struct SpeakerBlockView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         // Floats over the block rather than sitting in a row, so a block with nothing else to
         // put in a header does not grow one just to hold this.
