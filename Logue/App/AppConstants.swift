@@ -302,6 +302,11 @@ enum AppConstants {
         /// sequence completes before the reader has finished the caption and moved on.
         static let whatsNewSequenceStep: Duration = .seconds(2.5)
 
+        /// How long one frame of that sequence takes to fade into the next. A
+        /// `TimeInterval` rather than a `Duration` because it feeds SwiftUI's
+        /// `.easeInOut(duration:)`, which does not take one.
+        static let whatsNewSequenceCrossfade: TimeInterval = 0.35
+
         /// -- Navigation --
         /// Brief yield to let sidebar expand before selecting a space
         static let sidebarNavigationYield: Duration = .milliseconds(150)

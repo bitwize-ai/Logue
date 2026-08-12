@@ -277,7 +277,6 @@ struct WhatsNewView: View {
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         private static let logger = Logger(subsystem: AppConstants.bundleID, category: "WhatsNew")
-        private static let crossfade: TimeInterval = 0.35
 
         var body: some View {
             VStack(spacing: 8) {
@@ -321,8 +320,16 @@ struct WhatsNewView: View {
             // sequence, and leaving the sheet cancels it. `reduceMotion` is part of the key
             // because the loop below reads it: toggling it mid-sequence must take effect.
             .task(id: TaskKey(urls: urls, reduceMotion: reduceMotion)) {
-                images = urls.compactMap { url in
-                    guard let image = NSImage(contentsOf: url) else {
+                // `.task` inherits @MainActor from the View, so reading these files here
+                // would be synchronous I/O on the main actor — several hundred KB per
+                // frame, two frames on some cards, once per card change. Read the bytes
+                // off the actor and build the images back on it: `Data` crosses the
+                // boundary safely, `NSImage` would not.
+                let loaded = await Task.detached(priority: .userInitiated) {
+                    urls.map { url -> (URL, Data?) in (url, try? Data(contentsOf: url)) }
+                }.value
+                images = loaded.compactMap { url, data in
+                    guard let data, let image = NSImage(data: data) else {
                         // A packaging problem, not a user-facing one — the card still reads.
                         Self.logger.error("Unreadable What's New art: \(url.lastPathComponent, privacy: .public)")
                         return nil
@@ -336,7 +343,7 @@ struct WhatsNewView: View {
                     try? await Task.sleep(for: AppConstants.Delays.whatsNewSequenceStep)
                     guard !Task.isCancelled else { return }
                     let next = (step + 1) % images.count
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: Self.crossfade)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: AppConstants.Delays.whatsNewSequenceCrossfade)) {
                         step = next
                     }
                 }
