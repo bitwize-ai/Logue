@@ -352,7 +352,7 @@ enum AppConstants {
         ///
         /// A backstop for the Core Audio property listener, which only fires on transitions and so
         /// says nothing about audio that was already playing when recording started.
-        static let systemAudioArmingPoll: Duration = .seconds(2)
+        static let systemAudioArmingPoll: Duration = .milliseconds(500)
 
         /// How often a recording in progress writes down where it has got to.
         ///

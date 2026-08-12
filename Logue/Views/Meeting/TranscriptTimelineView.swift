@@ -524,9 +524,13 @@ private struct SpeakerBlockView: View {
                             .opacity(0.8)
                             .frame(width: 38, alignment: .trailing)
                             .padding(.trailing, 10 - 6)
+                        // Styled exactly as a finalised line — same font, weight, colour and line
+                        // spacing — so that when the transcriber commits it, the text does not
+                        // visibly change. The dot in the gutter is what says it is still in flight.
                         Text(volatileText)
                             .font(.body)
-                            .foregroundStyle(.secondary)
+                            .lineSpacing(2)
+                            .foregroundStyle(Color.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .id("volatile-text")

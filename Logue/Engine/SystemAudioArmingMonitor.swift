@@ -89,6 +89,11 @@ final class SystemAudioArmingMonitor {
 
         attachToCurrentDefaultDevice()
 
+        // Look immediately. Audio is usually already playing when the user hits record — they join
+        // the call first — and waiting a poll interval before the first look cost the opening
+        // seconds of the meeting, which is exactly the part nobody can reconstruct afterwards.
+        evaluate()
+
         // The property listener fires on transitions. If audio is already playing when recording
         // starts — the common case, since the user hits record after joining the call — there is no
         // transition to observe, so the debounce is also driven by a slow poll.
