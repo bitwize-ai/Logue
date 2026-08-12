@@ -86,6 +86,51 @@ struct BrowserBridgeTests {
         #expect(two.path == "/v1/models")
     }
 
+    // MARK: - Framing
+
+    /// A chunked body was read as length zero, leaving the chunk data in the buffer to be
+    /// parsed as the *next* request — on a connection that deliberately supports pipelining.
+    @Test("A chunked request is refused rather than misframed")
+    func chunkedRequestRefused() {
+        let data = Data(
+            "POST /v1/logue/chat HTTP/1.1\r\nHost: 127.0.0.1:52452\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n".utf8
+        )
+        #expect(throws: HTTPMessage.ParseError.unsupportedFraming) {
+            try HTTPMessage.parseRequest(from: data)
+        }
+    }
+
+    /// `?? 0` resolved a framing disagreement in the sender's favour.
+    @Test("An unparseable Content-Length is malformed, not zero")
+    func unparseableContentLengthRejected() {
+        let data = Data("POST /v1/logue/chat HTTP/1.1\r\nHost: h\r\nContent-Length: abc\r\n\r\n".utf8)
+        #expect(throws: HTTPMessage.ParseError.malformed) {
+            try HTTPMessage.parseRequest(from: data)
+        }
+    }
+
+    @Test("Two Content-Length headers are refused rather than resolved last-wins")
+    func duplicateContentLengthRejected() {
+        let data = Data(
+            "POST /v1/logue/chat HTTP/1.1\r\nHost: h\r\nContent-Length: 0\r\nContent-Length: 5\r\n\r\nhello".utf8
+        )
+        #expect(throws: HTTPMessage.ParseError.malformed) {
+            try HTTPMessage.parseRequest(from: data)
+        }
+    }
+
+    /// An obs-fold continuation line belongs to the header above it; this parser has no notion
+    /// of that, so one containing a colon was smuggled in as a header of its own.
+    @Test("A folded header line is refused")
+    func foldedHeaderRejected() {
+        let data = Data(
+            "GET /v1/logue/status HTTP/1.1\r\nHost: 127.0.0.1:52452\r\n\tX-Smuggled: yes\r\n\r\n".utf8
+        )
+        #expect(throws: HTTPMessage.ParseError.malformed) {
+            try HTTPMessage.parseRequest(from: data)
+        }
+    }
+
     @Test("A malformed request line is rejected")
     func malformedRequestLineRejected() {
         let data = Data("GARBAGE\r\n\r\n".utf8)

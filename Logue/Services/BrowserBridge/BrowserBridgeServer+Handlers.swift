@@ -239,6 +239,14 @@ extension BrowserBridgeServer {
     /// many messages that are each individually within bounds.
     nonisolated static let maxPromptCharacters = 48000
 
+    /// The non-streaming answer.
+    ///
+    /// A client that hangs up mid-generation is honoured here the same way it is on the
+    /// streaming paths, but by cancellation rather than by a liveness check: there is no loop to
+    /// check in. `Connection.close()` cancels this connection's response chain, `complete()`
+    /// unwinds through its own `withTaskCancellationHandler`, and the inference gate is released
+    /// instead of being held for a full `chatMaxTokens` generation nobody will read. This is the
+    /// default path for `/v1/logue/chat`, which is non-streaming unless `stream` is set.
     private func completeChat(prompt: String, origin: String?, on connection: Connection) async {
         do {
             let answer = try await LLMEngine.shared.complete(

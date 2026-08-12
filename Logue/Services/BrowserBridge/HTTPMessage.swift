@@ -34,6 +34,9 @@ enum HTTPMessage {
         case incomplete
         /// The head is complete but malformed. The connection cannot recover.
         case malformed
+        /// Well-formed, but framed a way this server does not implement — `Transfer-Encoding`.
+        /// Answered `501` rather than `400`, because the request is not the client's mistake.
+        case unsupportedFraming
     }
 
     /// Largest request we will hold in memory.
@@ -71,14 +74,34 @@ enum HTTPMessage {
 
         var headers: [String: String] = [:]
         for line in lines where !line.isEmpty {
+            // An obs-fold continuation — a line starting with SP or HTAB — belongs to the header
+            // above it. This parser has no notion of that, so a folded line containing a colon
+            // was smuggled in as a header of its own. Obsolete since RFC 7230; refuse it.
+            guard let first = line.first, first != " ", first != "\t" else { throw ParseError.malformed }
             guard let colon = line.firstIndex(of: ":") else { throw ParseError.malformed }
             let name = line[line.startIndex ..< colon].trimmingCharacters(in: .whitespaces).lowercased()
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { throw ParseError.malformed }
+            // Last-wins on a repeated `Content-Length` is how a framing disagreement becomes a
+            // smuggled request. Two of them is a malformed message, not a preference.
+            guard headers[name] == nil || name != "content-length" else { throw ParseError.malformed }
             headers[name] = value
         }
 
-        let declaredLength = headers["content-length"].flatMap(Int.init) ?? 0
+        // Not supported, and silence was the dangerous answer: a chunked body was read as length
+        // zero, leaving the chunk data in the buffer to be parsed as the *next* request on a
+        // connection that deliberately supports pipelining.
+        guard headers["transfer-encoding"] == nil else { throw ParseError.unsupportedFraming }
+
+        // Absent means no body. Present-but-unparseable is a framing disagreement, and `?? 0`
+        // resolved it in the sender's favour.
+        let declaredLength: Int
+        if let raw = headers["content-length"] {
+            guard let parsed = Int(raw) else { throw ParseError.malformed }
+            declaredLength = parsed
+        } else {
+            declaredLength = 0
+        }
         guard declaredLength >= 0, declaredLength <= maxBodyBytes else { throw ParseError.malformed }
 
         let bodyStart = headEnd.upperBound

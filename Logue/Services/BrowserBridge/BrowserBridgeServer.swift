@@ -72,6 +72,15 @@ final class BrowserBridgeServer {
         for port in AppConstants.BrowserBridge.candidatePorts {
             do {
                 try await listen(on: port)
+                // The user can switch the bridge off while a bind is in flight. `stop()` runs
+                // before `self.listener` is assigned, so it has nothing to cancel — and without
+                // this the cancelled task would carry on and re-arm a server the user just
+                // turned off, holding a socket `stop()` can no longer reach.
+                guard !Task.isCancelled else {
+                    listener?.cancel()
+                    listener = nil
+                    return
+                }
                 activePort = port
                 lastError = nil
                 logger.info("Browser bridge listening on \(port, privacy: .public)")
@@ -135,7 +144,8 @@ final class BrowserBridgeServer {
             }
         }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             // Resumed exactly once: `NWListener` can report further state changes after it is
             // ready, and resuming a continuation twice is a crash.
             let hasResumed = OSAllocatedUnfairLock(initialState: false)
@@ -169,6 +179,11 @@ final class BrowserBridgeServer {
                 }
             }
             listener.start(queue: queue)
+            }
+        } onCancel: {
+            // Without this a cancelled start sits here until the bind settles, and the socket
+            // opens after the user has already switched the bridge off.
+            listener.cancel()
         }
 
         self.listener = listener
@@ -244,6 +259,11 @@ extension BrowserBridgeServer {
         /// from the main actor, while everything else touches it on `queue`.
         private let closed = OSAllocatedUnfairLock(initialState: false)
 
+        /// The tail of this connection's response chain, so pipelined requests are answered in
+        /// the order they arrived. Locked because `drainBuffer` runs on `queue` while the task
+        /// it chains resumes on whatever executor finished the previous one.
+        private let pending = OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
+
         private var isClosed: Bool {
             get { closed.withLock { $0 } }
             set { closed.withLock { $0 = newValue } }
@@ -287,6 +307,13 @@ extension BrowserBridgeServer {
             queue.async { [weak self] in
                 guard let self, !isClosed else { return }
                 isClosed = true
+                // Anything still queued is answering a client that has gone. Cancelling
+                // propagates into `complete()`, which unwinds and releases the inference gate
+                // rather than generating to the end for nobody.
+                pending.withLock { chain in
+                    chain?.cancel()
+                    chain = nil
+                }
                 nwConnection.cancel()
                 onClose(ObjectIdentifier(self))
             }
@@ -331,6 +358,12 @@ extension BrowserBridgeServer {
                     dispatch(request)
                 } catch HTTPMessage.ParseError.incomplete {
                     return
+                } catch HTTPMessage.ParseError.unsupportedFraming {
+                    send(
+                        .error("This bridge does not accept chunked requests.", status: 501),
+                        origin: nil, keepAlive: false, thenClose: true
+                    )
+                    return
                 } catch {
                     send(.error("Bad request.", status: 400), origin: nil, keepAlive: false)
                     close()
@@ -350,11 +383,21 @@ extension BrowserBridgeServer {
             )
             let allowedOrigin = BrowserBridgeRoute.isAllowed(origin: origin) ? origin : nil
 
-            Task { [weak self] in
-                guard let self else { return }
-                await BrowserBridgeServer.shared.handle(
-                    decision: decision, request: request, origin: allowedOrigin, on: self
-                )
+            // Chained rather than spawned loose. `drainBuffer` can take several pipelined
+            // requests out of the buffer in one pass, and handing each to its own Task ran them
+            // concurrently — so responses were written in completion order and a client would
+            // pair response #2 with request #1. Worse with SSE, where a second response would
+            // land in the middle of an in-flight event stream. HTTP/1.1 requires responses in
+            // request order on a persistent connection.
+            pending.withLock { chain in
+                let previous = chain
+                chain = Task { [weak self] in
+                    await previous?.value
+                    guard let self, !isClosed else { return }
+                    await BrowserBridgeServer.shared.handle(
+                        decision: decision, request: request, origin: allowedOrigin, on: self
+                    )
+                }
             }
         }
 
