@@ -42,13 +42,23 @@ struct DocumentWorkspaceView: View {
         AppConstants.Editor.defaultZoom
     @State private var aiChatPendingMessage: String?
     // Extension-visible: +Toolbar
-    @State var isSidebarCollapsed = false
+    /// Starts from the persisted pane layout, then follows ⌘1 / ⌘2 / ⌘3 — but the toolbar's
+    /// own toggle still writes here directly, so a manual show/hide keeps working and simply
+    /// wins until the next time the layout shortcut is used.
+    @State var isSidebarCollapsed = !EditorLayoutMode.stored.showsInspector
+
+    /// Observed rather than read once, so the ⌘1 / ⌘2 / ⌘3 items in the View menu reach the
+    /// inspector while a document is already open.
+    @AppStorage(AppConstants.UserDefaultsKeys.editorLayoutMode) private var layoutModeRaw =
+        EditorLayoutMode.allPanels.rawValue
     @State private var scrollToSuggestion: Suggestion?
     /// Scrolls to and selects arbitrary text in the editor (used by vocab enhancement, etc.)
     @State private var scrollToText: String?
     @State private var toolPanelWidths: [String: CGFloat] = [:]
     // Extension-visible: +Toolbar
     @State var showTagPopover = false
+    // Extension-visible: +Toolbar
+    @State var showIconPicker = false
     @State private var newTagText = ""
     // Extension-visible: +Toolbar
     @State var showRenameAlert = false
@@ -67,6 +77,9 @@ struct DocumentWorkspaceView: View {
 
     var body: some View {
         if let doc = store.selectedDocument {
+            // No spacing: the editor pane runs right up to the sidebar so its scroller
+            // sits on the pane edge. The text column is centred and capped well inside
+            // that, so it keeps its margin without the scroller floating in from the edge.
             HStack(spacing: 0) {
                 // Center: rich text editor
                 VStack(spacing: 0) {
@@ -86,14 +99,11 @@ struct DocumentWorkspaceView: View {
                         onSuggestionAccepted: { acceptFromEditor(suggestion: $0) },
                         onSuggestionDismissed: { dismiss(suggestion: $0) },
                         scrollToSuggestion: $scrollToSuggestion,
-                        scrollToText: $scrollToText
+                        scrollToText: $scrollToText,
+                        contentWidth: focusState.isActive
+                            ? .fixed(focusState.columnWidth)
+                            : .scaling(doc.widthMode)
                     )
-                    .frame(
-                        maxWidth: focusState.isActive
-                            ? focusState.columnWidth
-                            : doc.widthMode.maxContentWidth
-                    )
-                    .frame(maxWidth: .infinity)
 
                     if !focusState.isActive {
                         Divider()
@@ -118,6 +128,7 @@ struct DocumentWorkspaceView: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            .measuringWorkspaceWidth()
             .background(AppThemeConstants.contentBackground)
             .navigationTitle(doc.title)
             .navigationSubtitle(focusState.isActive ? "\(doc.wordCount) words · Focus Mode" : "\(doc.wordCount) words")
@@ -138,6 +149,14 @@ struct DocumentWorkspaceView: View {
             .onChange(of: isSidebarCollapsed) { _, collapsed in
                 if !collapsed, activeTool == nil {
                     activeTool = .proofreader
+                }
+            }
+            .onChange(of: layoutModeRaw) { _, raw in
+                // Reads `showsInspector` rather than testing for a particular mode, so what
+                // each layout means stays a question only `EditorLayoutMode` answers.
+                let mode = EditorLayoutMode(rawValue: raw) ?? .allPanels
+                withAnimation(.spring(duration: 0.25, bounce: 0.1)) {
+                    isSidebarCollapsed = !mode.showsInspector
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .logueAskAI)) { note in

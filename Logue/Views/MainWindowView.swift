@@ -64,14 +64,59 @@ struct MainWindowView: View {
     @State private var lastSeenStoreVersion: Int = 0
 
     @State private var showCommandPalette = false
+    @State private var showQuickOpen = false
+
+    /// Which panes are shown, driven by ⌘1 / ⌘2 / ⌘3 and persisted across launches.
+    ///
+    /// Stored as the raw string so `@AppStorage` can hold it directly; `layoutMode` below is
+    /// the typed view of it, and every layout decision reads `showsList` / `showsInspector`
+    /// from `EditorLayoutMode` rather than re-deriving what each mode means.
+    @AppStorage(AppConstants.UserDefaultsKeys.editorLayoutMode) private var layoutModeRaw =
+        EditorLayoutMode.allPanels.rawValue
+
+    private var layoutMode: EditorLayoutMode {
+        EditorLayoutMode(rawValue: layoutModeRaw) ?? .allPanels
+    }
+
     // Extension-visible: +Navigation
     /// Remembers the sidebar context when entering editing mode (since sidebarSelection is nilled out).
     @State var editingSourceSelection: SidebarItem?
 
+    /// Bridge between `EditorLayoutMode` and the split view's own column visibility.
+    ///
+    /// What a report back from the split view means is decided by
+    /// `EditorLayoutMode.modeAfterVisibilityReport(listIsVisible:current:)` rather than here,
+    /// because that rule is subtle enough to be worth a test — see its doc comment for the bugs
+    /// that made it so.
+    ///
+    /// `current` is `EditorLayoutMode.stored`, read fresh from `UserDefaults`, and not
+    /// `layoutMode`. That is load-bearing: `@AppStorage` caches, so within the update that
+    /// echoes our own write back, `layoutMode` still reads the mode we just replaced.
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { layoutMode.showsList ? .all : .detailOnly },
+            set: { newValue in
+                let next = EditorLayoutMode.modeAfterVisibilityReport(
+                    listIsVisible: newValue != .detailOnly,
+                    current: EditorLayoutMode.stored
+                )
+                guard let next else { return }
+                layoutModeRaw = next.rawValue
+            }
+        )
+    }
+
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: columnVisibility) {
             CategorySidebarView(selection: $sidebarSelection)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
+                // A static ceiling, deliberately: measuring the window to bound this column
+                // means writing state during the split view's first layout, and this split
+                // view persists any `.detailOnly` it reports — see `columnVisibility`. The
+                // window-relative rule would only bind under 960pt anyway.
+                .navigationSplitViewColumnWidth(
+                    min: SidebarWidthLimit.categorySidebar.minimum, ideal: 240,
+                    max: SidebarWidthLimit.categorySidebar.ceiling
+                )
         } detail: {
             contentArea
         }
@@ -97,6 +142,9 @@ struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .chatFocusInput)) { _ in
             sidebarSelection = .agentChat
             isEditing = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openQuickOpenPalette)) { _ in
+            toggleQuickOpen()
         }
         // When sidebar selection changes, handle navigation
         .onChange(of: sidebarSelection) { _, newValue in
@@ -218,9 +266,43 @@ struct MainWindowView: View {
                 .transition(.opacity)
             }
         }
+        // Quick Open (⌘P / ⌘O).
+        //
+        // A sheet rather than an `.overlay` like the command palette above, because an overlay
+        // on this `NavigationSplitView` does not draw: clicking the menu item posted the
+        // notification and flipped the state, and nothing appeared. The same is true of the
+        // ⌘K palette, which is why it does not open either — a separate problem, left alone
+        // here. The issue for this work named a sheet as an acceptable shape, and a sheet is
+        // also the modality quick-open wants: it takes focus, and Esc dismisses it.
+        .sheet(isPresented: $showQuickOpen) {
+            QuickOpenPaletteView(isPresented: $showQuickOpen)
+        }
         .onKeyPress(keys: [KeyEquivalent("k")], phases: .down) { keyPress in
             guard keyPress.modifiers.contains(.command) else { return .ignored }
             showCommandPalette.toggle()
+            return .handled
+        }
+        // ⌘= is the alias for Zoom In. The View menu binds ⌘+, which on any layout where `+`
+        // needs Shift is a chord the menu never matches — so the unshifted key in the same
+        // physical position is handled here instead. It cannot be a second menu item: see
+        // the comment on the zoom group in `LogueApp`.
+        //
+        // The exact `==` is load-bearing, not a stylistic difference from the `.contains` used
+        // for ⌘K below. On a US layout ⌘⇧= *is* ⌘+, which the View menu already binds; with
+        // `.contains(.command)` that one chord would fire the menu item and this handler both,
+        // and zoom would jump two steps.
+        .onKeyPress(keys: [KeyEquivalent("=")], phases: .down) { keyPress in
+            guard keyPress.modifiers == .command else { return .ignored }
+            EditorZoom.mutatePersisted { $0.zoomIn() }
+            return .handled
+        }
+        // ⌘O, the secondary binding. ⌘P arrives as a notification from the File menu instead,
+        // so it fires even when the editor's text view holds focus — a main-menu key equivalent
+        // is handled before the key event reaches any view.
+        .onKeyPress(keys: [KeyEquivalent("o")], phases: .down) { keyPress in
+            // Plain ⌘O only: without the check, ⇧⌘O would open quick-open too.
+            guard keyPress.modifiers == .command else { return .ignored }
+            toggleQuickOpen()
             return .handled
         }
         .onKeyPress(keys: [KeyEquivalent("f")], phases: .down) { keyPress in
@@ -232,6 +314,13 @@ struct MainWindowView: View {
             focusState.toggle()
             return .handled
         }
+    }
+
+    /// Shows or dismisses quick-open, closing the command palette first so the two are never
+    /// stacked on top of each other.
+    private func toggleQuickOpen() {
+        showCommandPalette = false
+        showQuickOpen.toggle()
     }
 
     // MARK: - Content Area

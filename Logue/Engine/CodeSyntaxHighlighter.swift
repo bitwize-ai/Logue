@@ -131,6 +131,56 @@ enum CodeSyntaxHighlighter {
         "template|namespace|using|new|delete|try|catch|throw|this",
     ].joined(separator: "|")
 
+    // MARK: - Supported Languages
+
+    /// A language the highlighter knows, as offered to the user in the code block picker.
+    ///
+    /// `id` is the fence identifier written to markdown, so it has to be one of the
+    /// identifiers `rules(for:)` matches on below — anything else silently falls through to
+    /// the Swift-like default. Aliases (`py`, `js`, `golang`) are deliberately absent: they
+    /// highlight identically to their canonical spelling, and offering both in a menu would
+    /// only make the list longer.
+    struct Language: Identifiable, Hashable, Sendable {
+        let id: String
+        let displayName: String
+    }
+
+    /// The languages the picker offers, in the order it shows them.
+    static let supportedLanguages: [Language] = [
+        Language(id: "swift", displayName: "Swift"),
+        Language(id: "python", displayName: "Python"),
+        Language(id: "javascript", displayName: "JavaScript"),
+        Language(id: "typescript", displayName: "TypeScript"),
+        Language(id: "jsx", displayName: "JSX"),
+        Language(id: "tsx", displayName: "TSX"),
+        Language(id: "go", displayName: "Go"),
+        Language(id: "rust", displayName: "Rust"),
+        Language(id: "c", displayName: "C"),
+        Language(id: "cpp", displayName: "C++"),
+        Language(id: "objc", displayName: "Objective-C"),
+        Language(id: "java", displayName: "Java"),
+        Language(id: "csharp", displayName: "C#"),
+        Language(id: "sql", displayName: "SQL"),
+        Language(id: "bash", displayName: "Shell"),
+        Language(id: "json", displayName: "JSON"),
+        Language(id: "html", displayName: "HTML"),
+        Language(id: "xml", displayName: "XML"),
+        Language(id: "css", displayName: "CSS"),
+        Language(id: "scss", displayName: "SCSS"),
+    ]
+
+    /// How a fence identifier should be labelled in the UI.
+    ///
+    /// Falls back to the identifier itself so a language typed by hand, or one that arrived
+    /// in imported markdown, still reads as what the file actually says rather than as
+    /// nothing at all.
+    static func displayName(forLanguage language: String) -> String? {
+        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let match = supportedLanguages.first { $0.id.caseInsensitiveCompare(trimmed) == .orderedSame }
+        return match?.displayName ?? trimmed
+    }
+
     // MARK: - Rules by Language
 
     private static func rules(for language: String) -> [TokenRule] {

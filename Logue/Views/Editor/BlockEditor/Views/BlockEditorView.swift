@@ -24,6 +24,9 @@ struct BlockEditorView: View {
     @Binding var scrollToSuggestion: Suggestion?
     /// Scrolls to and selects arbitrary text (used by vocab enhancement, etc.)
     @Binding var scrollToText: String?
+    /// How wide the text column should be. Applied to the blocks inside the scroll
+    /// view rather than to the scroll view, so the scroller stays at the pane's edge.
+    var contentWidth: EditorContentWidth = .scaling(.normal)
 
     @Environment(\.undoManager) private var undoManager
     // Extension-visible: +Reorder
@@ -59,7 +62,9 @@ struct BlockEditorView: View {
 
     // Extension-visible: +Reorder
     @State var multiBlockSelection = MultiBlockSelectionState()
-    @State private var blockFrames: [BlockID: CGRect] = [:]
+    /// Block frames for drag hit-testing. Held in a store rather than in view state because
+    /// they change on every frame of a scroll — see `BlockFrameStore`.
+    @State private var blockFrameStore = BlockFrameStore()
     @State private var dragMonitor: Any?
     @State private var mouseUpMonitor: Any?
     @State private var isDraggingAcrossBlocks = false
@@ -111,10 +116,13 @@ struct BlockEditorView: View {
                         }
                         .padding(.horizontal, AppThemeConstants.editorHorizontalInset)
                         .padding(.vertical, AppThemeConstants.editorVerticalInset)
+                        // Outside the insets, so the text measure is unchanged by the move.
+                        .frame(maxWidth: contentWidth.resolved(forPaneWidth: geometry.size.width))
+                        .frame(maxWidth: .infinity)
                     }
                     .coordinateSpace(name: "editorScroll")
-                    .onPreferenceChange(BlockFramePreferenceKey.self) { newFrames in
-                        blockFrames = newFrames
+                    .onPreferenceChange(BlockFramePreferenceKey.self) { [blockFrameStore] newFrames in
+                        blockFrameStore.replaceAll(with: newFrames)
                     }
                     .onScrollPhaseChange { _, newPhase in
                         // Dismiss floating selection toolbar when scrolling starts
@@ -763,16 +771,7 @@ extension BlockEditorView {
 
     /// Hit-tests which block is at the given point (in content view coordinates).
     private func blockAtPoint(_ point: CGPoint) -> BlockID? {
-        // Convert content view point to scroll coordinate space
-        // blockFrames are in the "editorScroll" coordinate space
-        // We need to find which block's frame contains the point
-        for (blockID, frame) in blockFrames {
-            // Use a vertical-only hit test (ignore X since blocks span full width)
-            if point.y >= frame.minY, point.y <= frame.maxY {
-                return blockID
-            }
-        }
-        return nil
+        blockFrameStore.blockID(at: point)
     }
 
     /// Selects all blocks in the contiguous range between two block IDs.

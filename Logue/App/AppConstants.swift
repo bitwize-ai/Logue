@@ -29,6 +29,12 @@ enum AppConstants {
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
+        /// Width mode newly created documents start at. Per-document values still win.
+        static let defaultDocumentWidthMode = "defaultDocumentWidthMode"
+        /// Which panes the main window shows — see `EditorLayoutMode`.
+        static let editorLayoutMode = "editorLayoutMode"
+        /// Language last chosen in a code block, used as the default for the next one.
+        static let lastCodeBlockLanguage = "lastCodeBlockLanguage"
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
         static let unwritableDocuments = "unwritableDocuments"
@@ -134,6 +140,27 @@ enum AppConstants {
         static let offsetThreshold: Float = 0.4
         /// Post-recording pipeline timeout in seconds
         static let postRecordingTimeoutSeconds: TimeInterval = 180
+        /// How much of a recording the post-recording batch pass (Parakeet ASR + Sortformer) can be
+        /// handed in one go, expressed as memory rather than as minutes: the session's audio is held
+        /// as 16 kHz mono Float32 (~230 MB per hour) and given to the models whole, so what bounds
+        /// it is what the machine can hold. A fixed number of minutes would be wasteful on a large
+        /// Mac and reckless on a small one. `AudioTimelineMixer.capacity(forPhysicalMemory:)` reads
+        /// these; audio past the limit is dropped and that stretch keeps its live transcript rather
+        /// than losing it — see `TranscriptReplacement`.
+        static let audioBufferMemoryDivisor: UInt64 = 16 // a sixteenth of installed memory
+        /// …and no more than a quarter of what is actually free, which is the tighter bound on a
+        /// machine that has been running a while.
+        static let audioBufferAvailableDivisor: UInt64 = 4
+        static let audioBufferMinBytes: UInt64 = 256 * 1024 * 1024 // ~1.2 hours
+        static let audioBufferMaxBytes: UInt64 = 1024 * 1024 * 1024 // ~4.6 hours
+        /// Chunk size for the long-recording pass, which streams the persisted file past the
+        /// in-memory limit instead of stopping there. Big enough that per-chunk overhead is
+        /// irrelevant, small enough that a chunk is a few megabytes.
+        static let longRecordingChunkSeconds: Double = 30
+        /// How far short of the session the saved audio may fall before the long-recording pass
+        /// stops speaking for the part it does not hold. Covers the ordinary slack between capture
+        /// stopping and the clock stopping; a real shortfall is far larger than this.
+        static let recordingCoverageTolerance: TimeInterval = 5
         /// Dedup tolerance for overlapping speaker segments in seconds
         static let segmentDedupTolerance: Double = 0.15
         /// Silero VAD model probability threshold — lowered from default 0.85 to catch quiet/distant speakers
@@ -146,6 +173,44 @@ enum AppConstants {
         static let vadSpeechPadding: TimeInterval = 0.25
         /// VAD: hysteresis offset — once speech starts, stays triggered until prob drops this far below threshold
         static let vadNegativeThresholdOffset: Float = 0.25
+
+        // MARK: Timeline normalization
+
+        /// Sortformer segments shorter than this are treated as fragments and discarded
+        static let minSpeakerSegmentDuration: TimeInterval = 0.7
+        /// Consecutive segments from the same speaker within this gap are merged into one
+        static let sameSpeakerMergeGap: TimeInterval = 0.25
+        /// An A-B-A speaker alternation completing within this window is collapsed to the dominant speaker
+        static let alternationWindowSeconds: TimeInterval = 0.8
+        /// Largest silence left between normalized speaker segments before it is closed up
+        static let timelineMaxGap: TimeInterval = 0.5
+        /// Widest silence worth closing at all. Beyond this the pause is real conversation rhythm,
+        /// not model jitter, and pulling the next speaker back over it would hand them time they
+        /// were audibly not speaking for — which alignment would then read as confident overlap for
+        /// anything transcribed in that window. Long silences are left as silence.
+        static let maxClosableGap: TimeInterval = 2.0
+
+        // MARK: Transcript alignment
+
+        /// Transcript segments longer than this are chunked for weighted majority voting
+        static let chunkThresholdSeconds: TimeInterval = 2.0
+        /// Width of each voting chunk when a long transcript segment is subdivided
+        static let chunkDurationSeconds: TimeInterval = 1.5
+        /// A runner-up speaker holding at least this fraction of the winner's overlap makes the
+        /// segment too close to call, so the previous segment's speaker is preferred instead
+        static let ambiguityOverlapRatio: Double = 0.70
+        /// Nearest-speaker fallback window used only when nothing overlaps the segment at all.
+        /// Deliberately far tighter than `speakerLabelTolerance`, which governs text gathering.
+        static let labelFallbackTolerance: TimeInterval = 0.5
+        /// Minimum overlap that makes a second speaker worth splitting a transcript segment for
+        static let minSplitOverlap: TimeInterval = 0.15
+        /// Split parts shorter than this are not worth creating
+        static let minSplitPartDuration: TimeInterval = 0.4
+        /// Upper bound on the parts a single transcript segment may be split into
+        static let maxSplitParts = 5
+        /// A single-segment speaker island longer than this is a real turn, not flapping,
+        /// so smoothing leaves it alone
+        static let maxSmoothedIslandDuration: TimeInterval = 0.8
     }
 
     // A-N13: Default title strings
@@ -270,8 +335,9 @@ enum AppConstants {
         /// -- Diarization --
         /// Polling interval while waiting for Sortformer processing lock to release
         static let sortformerPollInterval: Duration = .milliseconds(10)
-        /// Initial delay before starting periodic batch diarization
-        static let batchDiarizationInitialDelay: Duration = .seconds(15)
+        /// How long stop-recording waits for diarization models to finish initializing before
+        /// giving up and letting post-recording AI proceed without Sortformer
+        static let diarizationInitStopWait: Duration = .seconds(10)
 
         /// -- Audio Device Retry (exponential backoff) --
         /// Initial retry delay for AudioDeviceStart (doubles each attempt)
@@ -300,9 +366,26 @@ enum AppConstants {
 
     enum Editor {
         /// Comfortable measure for prose — roughly 75 characters at the default size.
-        static let normalContentWidth: CGFloat = 720
+        /// The column never goes below this until the pane itself is narrower.
+        static let normalBaseContentWidth: CGFloat = 720
         /// Wide measure for tables, diagrams, and generated documents.
-        static let wideContentWidth: CGFloat = 1100
+        static let wideBaseContentWidth: CGFloat = 1100
+
+        /// Share of the editor pane each mode grows to occupy once the pane is wide
+        /// enough that the base measure would leave the window looking empty.
+        static let normalWidthFraction: CGFloat = 0.70
+        static let wideWidthFraction: CGFloat = 0.90
+
+        /// Ceilings on the grown column. Past these a line is too long to read
+        /// comfortably however much display there is.
+        static let normalMaxContentWidth: CGFloat = 900
+        static let wideMaxContentWidth: CGFloat = 1400
+
+        /// The narrowest a content pane may be squeezed to by widening the inspector
+        /// beside it — the normal reading measure. Past this the editor is giving up
+        /// the column it is designed around, and wide content starts scrolling
+        /// sideways instead of fitting.
+        static let minContentPaneWidth: CGFloat = normalBaseContentWidth
 
         /// Editor text-zoom bounds. 1.0 is the document's natural size.
         static let minZoom: CGFloat = 0.5

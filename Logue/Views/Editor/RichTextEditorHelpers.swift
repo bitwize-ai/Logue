@@ -19,12 +19,13 @@ enum BlockType: String, CaseIterable {
     case heading1, heading2, heading3
     case bulletList, numberedList, todoList
     case quote, divider, codeBlock, table
-    case mermaid, math
+    case mermaid, math, callout
 
     var displayName: String {
         switch self {
         case .mermaid: "Diagram"
         case .math: "Equation"
+        case .callout: "Callout"
         case .text: "Text"
         case .heading1: "Heading 1"
         case .heading2: "Heading 2"
@@ -43,6 +44,7 @@ enum BlockType: String, CaseIterable {
         switch self {
         case .mermaid: "flowchart"
         case .math: "function"
+        case .callout: "exclamationmark.bubble"
         case .text: "text.alignleft"
         case .heading1: "textformat.size.larger"
         case .heading2: "textformat.size"
@@ -61,6 +63,7 @@ enum BlockType: String, CaseIterable {
         switch self {
         case .mermaid: "Mermaid diagram, stored as markdown"
         case .math: "LaTeX equation block"
+        case .callout: "Note, tip, or warning block"
         case .text: "Plain text paragraph"
         case .heading1: "Large section heading"
         case .heading2: "Medium section heading"
@@ -85,7 +88,7 @@ enum BlockType: String, CaseIterable {
         switch self {
         case .text, .heading1, .heading2, .heading3: .text
         case .bulletList, .numberedList, .todoList: .lists
-        case .quote, .divider, .codeBlock, .table, .mermaid, .math: .advanced
+        case .quote, .divider, .codeBlock, .table, .mermaid, .math, .callout: .advanced
         }
     }
 
@@ -114,8 +117,14 @@ enum BlockType: String, CaseIterable {
             return .checkboxList(id: id, items: [CheckboxItem(text: text)])
         case .quote:
             return .blockQuote(id: id, text: text)
+        case .callout:
+            // Any existing text becomes the body, not the title: converting a paragraph should
+            // keep what was written where it reads the same, and the title is decoration.
+            return .callout(id: id, kind: .note, title: "", body: text)
         case .codeBlock:
-            return .codeBlock(id: id, language: "", code: text)
+            // Starts at the language last picked from a code block's menu, so a document
+            // full of snippets in one language does not need choosing block by block.
+            return .codeBlock(id: id, language: CodeBlockLanguageMemory.suggestedLanguage, code: text)
         case .divider:
             return .divider(id: id)
         case .table:
@@ -145,6 +154,7 @@ enum BlockType: String, CaseIterable {
         case .numberedList: "1. "
         case .todoList: "- [ ] "
         case .quote: "> "
+        case .callout: "> [!NOTE]\n> "
         case .divider: "---"
         case .codeBlock: "```"
         case .table: ""

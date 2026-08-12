@@ -5,17 +5,65 @@ import os.log
 /// Diarization-related methods extracted from RecordingSessionManager.
 /// Handles speaker detection, merging, alignment, and Sortformer streaming updates.
 extension RecordingSessionManager {
+    // MARK: - Model Initialization
+
+    /// Waits for diarization model initialization, capped at
+    /// `AppConstants.Delays.diarizationInitStopWait`.
+    ///
+    /// Without this wait, stopping while models are still downloading leaves Sortformer not
+    /// streaming, and diarization silently degrades to the less accurate batch path. The cap keeps a
+    /// slow first-run download from holding up post-recording AI indefinitely.
+    func awaitDiarizationInit(_ initTask: Task<Void, Never>) async {
+        let finished = await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await initTask.value
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(for: AppConstants.Delays.diarizationInitStopWait)
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+
+        if !finished {
+            logger.warning("Diarization model init still running at stop — proceeding without waiting further")
+        }
+    }
+
     // MARK: - Post-Recording Diarization Pipeline
 
     /// Runs the full diarization pipeline after recording stops.
     /// Uses Sortformer's `processComplete()` for maximum accuracy — the model sees the entire conversation.
     /// Falls back to batch DiarizerManager if Sortformer is unavailable.
-    func processDiarization(for meetingID: UUID, diarizer: DiarizationManager) async {
+    ///
+    /// - Parameter sessionStart: Where this recording session begins on the meeting timeline. Both
+    ///   diarizers time their output from the start of the session's own audio buffer, so their
+    ///   timestamps need shifting by this much when a recording resumes into an existing meeting.
+    /// - Parameter savedAudio: What was written to disk for this session, and whether its timings
+    ///   describe the meeting. The long-recording pass may only read a file that does.
+    /// - Parameter sessionDuration: How long this session actually ran, for checking that the saved
+    ///   file covers all of it rather than merely lining up with it.
+    func processDiarization(
+        for meetingID: UUID,
+        diarizer: DiarizationManager,
+        sessionStart: TimeInterval,
+        savedAudio: SavedRecording,
+        sessionDuration: TimeInterval
+    ) async {
         isDiarizing = true
         diarizationStage = "Identifying speakers…"
 
         // Primary path: Sortformer processComplete on full audio buffer
-        if await processSortformerDiarization(for: meetingID, diarizer: diarizer) {
+        if await processSortformerDiarization(
+            for: meetingID,
+            diarizer: diarizer,
+            sessionStart: sessionStart,
+            savedAudio: savedAudio,
+            sessionDuration: sessionDuration
+        ) {
             return
         }
 
@@ -38,7 +86,11 @@ extension RecordingSessionManager {
             return
         }
 
-        var (speakers, speakerSegments) = mergeDiarizationResult(result, into: meeting)
+        var (speakers, speakerSegments) = mergeDiarizationResult(
+            result,
+            into: meeting,
+            sessionStart: sessionStart
+        )
 
         diarizationStage = "Aligning transcript…"
 
@@ -63,32 +115,49 @@ extension RecordingSessionManager {
         logger.info("Diarization complete: \(speakers.count) speakers, \(speakerSegments.count) segments")
     }
 
-    /// Primary diarization path: runs Sortformer `processComplete` and Parakeet TDT ASR
-    /// concurrently on the full audio buffer, then aligns the transcript with speaker segments.
+    /// Primary diarization path: transcribes and diarizes the session, then aligns the transcript
+    /// with the speaker segments.
     /// Returns `true` when it handled diarization (streaming was active); `false` to fall back to batch.
-    private func processSortformerDiarization(for meetingID: UUID, diarizer: DiarizationManager) async -> Bool {
+    private func processSortformerDiarization(
+        for meetingID: UUID,
+        diarizer: DiarizationManager,
+        sessionStart: TimeInterval,
+        savedAudio: SavedRecording,
+        sessionDuration: TimeInterval
+    ) async -> Bool {
         guard diarizer.isStreamingActive else { return false }
         logger.info("Starting parallel Sortformer + batch ASR for meeting \(meetingID)...")
 
-        // Snapshot the buffer once, then run Sortformer diarization and Parakeet TDT ASR
-        // concurrently — both are independent and take ~30-60s each on a 1-hour recording.
-        let audioBuffer = diarizer.takeAudioBuffer()
-        async let sortformerTask = diarizer.processCompleteWith(audioBuffer)
-        async let asrTask = diarizer.transcribeBuffer(audioBuffer)
-        let (sortformerUpdates, batchSegments) = await (sortformerTask, asrTask)
+        let pass = await runBatchPass(
+            diarizer: diarizer,
+            savedAudio: savedAudio,
+            sessionDuration: sessionDuration
+        )
+        let heardDuration = pass.heardDuration
+        let sortformerUpdates = pass.speakers
+        let batchSegments = pass.segments
 
-        if let updates = sortformerUpdates {
-            applySortformerUpdates(updates, for: meetingID, isFinalizing: true)
-            // Renumber all auto-named speakers sequentially (1, 2, 3…) after finalization.
-            // Live-streaming updates may have assigned non-sequential numbers from Sortformer's
-            // internal cluster indices (e.g. Speaker 2, Speaker 4 for a 2-speaker meeting).
-            renumberSpeakers(for: meetingID)
+        // Replace this session's streaming transcript with the accurate Parakeet TDT result before
+        // speakers are assigned, so alignment runs against the final text rather than the draft.
+        if let batchSegments {
+            MeetingStore.shared.replaceTranscript(
+                for: meetingID,
+                with: batchSegments,
+                sessionStart: sessionStart,
+                heardDuration: heardDuration
+            )
+            logger.info("Streaming transcript replaced with batch ASR (\(batchSegments.count) segments)")
         }
 
-        // Replace streaming transcript with accurate Parakeet TDT result.
-        if let batchSegments {
-            MeetingStore.shared.replaceTranscript(for: meetingID, with: batchSegments)
-            logger.info("Streaming transcript replaced with batch ASR (\(batchSegments.count) segments)")
+        if let updates = sortformerUpdates {
+            // Raw Sortformer output is fragmented — sub-second slivers, split turns, and rapid
+            // alternations that would make speaker labels flip mid-sentence.
+            let normalized = SortformerTimeline.normalize(updates)
+            logger.info("Sortformer timeline: \(updates.count) raw segments → \(normalized.count) normalized")
+            applySortformerUpdates(normalized, for: meetingID, sessionStart: sessionStart)
+            // Renumber auto-named speakers sequentially (1, 2, 3…). Sortformer's internal cluster
+            // indices are not contiguous (e.g. Speaker 2, Speaker 4 for a 2-speaker meeting).
+            renumberSpeakers(for: meetingID)
         }
 
         diarizationStage = "Aligning transcript…"
@@ -235,9 +304,11 @@ extension RecordingSessionManager {
     // MARK: - Result Merging
 
     /// Merges diarization result segments into existing speaker data for a meeting.
+    /// Segment times are shifted by `sessionStart` onto the meeting timeline.
     func mergeDiarizationResult(
         _ result: DiarizationResult,
-        into meeting: MeetingNote
+        into meeting: MeetingNote,
+        sessionStart: TimeInterval
     ) -> (speakers: [Speaker], speakerSegments: [SpeakerSegment]) {
         var speakers = meeting.speakers
         var speakerSegments = meeting.speakerSegments
@@ -257,8 +328,8 @@ extension RecordingSessionManager {
 
             speakerSegments.append(SpeakerSegment(
                 speakerId: segment.speakerId,
-                startTime: TimeInterval(segment.startTimeSeconds),
-                endTime: TimeInterval(segment.endTimeSeconds),
+                startTime: TimeInterval(segment.startTimeSeconds) + sessionStart,
+                endTime: TimeInterval(segment.endTimeSeconds) + sessionStart,
                 confidence: segment.qualityScore,
                 embedding: segment.embedding
             ))
@@ -266,33 +337,15 @@ extension RecordingSessionManager {
         return (speakers, speakerSegments)
     }
 
-    /// Apply diarization results to a meeting. Used for both periodic (live) and final (tail) updates.
-    /// - Parameters:
-    ///   - result: The diarization result containing speaker segments.
-    ///   - meetingID: The meeting to update.
-    ///   - isPeriodic: If true, checks `isPeriodicDiarizationStopped` and sets `hasPeriodicDiarizationResults`.
-    func applyDiarizationResult(_ result: DiarizationResult, for meetingID: UUID, isPeriodic: Bool = false) {
-        if isPeriodic {
-            guard !isPeriodicDiarizationStopped else { return }
-        }
-        let store = MeetingStore.shared
-        guard let meeting = store.meetings.first(where: { $0.id == meetingID }) else { return }
+    // MARK: - Sortformer Updates
 
-        let (speakers, speakerSegments) = mergeDiarizationResult(result, into: meeting)
-        store.updateSpeakerData(for: meetingID, speakers: speakers, speakerSegments: speakerSegments)
-
-        if isPeriodic {
-            hasPeriodicDiarizationResults = true
-        }
-        let label = isPeriodic ? "Periodic" : "Final tail"
-        logger.info("\(label) diarization applied: \(speakers.count) speakers, \(speakerSegments.count) total segments")
-    }
-
-    // MARK: - Sortformer Streaming Updates
-
-    /// Apply real-time Sortformer streaming speaker updates to the meeting.
-    func applySortformerUpdates(_ updates: [SortformerSpeakerUpdate], for meetingID: UUID, isFinalizing: Bool = false) {
-        guard isFinalizing || !isPeriodicDiarizationStopped else { return }
+    /// Applies Sortformer speaker segments to the meeting. Runs once, after recording stops —
+    /// segment times are shifted by `sessionStart` onto the meeting timeline.
+    func applySortformerUpdates(
+        _ updates: [SortformerSpeakerUpdate],
+        for meetingID: UUID,
+        sessionStart: TimeInterval
+    ) {
         let store = MeetingStore.shared
         guard let meeting = store.meetings.first(where: { $0.id == meetingID }) else { return }
 
@@ -316,17 +369,20 @@ extension RecordingSessionManager {
                 speakers.append(speaker)
             }
 
+            let startTime = update.startTime + sessionStart
+            let endTime = update.endTime + sessionStart
+
             // Deduplicate: skip if overlapping with an existing segment for the same speaker
             let isDuplicate = speakerSegments.suffix(20).contains { existing in
                 existing.speakerId == speakerID
-                    && abs(existing.startTime - update.startTime) < AppConstants.Diarization.segmentDedupTolerance
+                    && abs(existing.startTime - startTime) < AppConstants.Diarization.segmentDedupTolerance
             }
             guard !isDuplicate else { continue }
 
             let speakerSeg = SpeakerSegment(
                 speakerId: speakerID,
-                startTime: update.startTime,
-                endTime: update.endTime,
+                startTime: startTime,
+                endTime: endTime,
                 confidence: 1.0
             )
             speakerSegments.append(speakerSeg)
@@ -337,8 +393,6 @@ extension RecordingSessionManager {
             speakers: speakers,
             speakerSegments: speakerSegments
         )
-
-        hasPeriodicDiarizationResults = true
     }
 
     // MARK: - Text Alignment

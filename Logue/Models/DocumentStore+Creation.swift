@@ -58,6 +58,13 @@ extension DocumentStore {
         doc.tags = item.tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         doc.spaceID = spaceID
+        // Stamped only when the app-wide default is not `normal`, because `widthMode` already
+        // reads an absent value as `normal`. Writing it regardless would put a redundant
+        // `width:` line in the frontmatter of every new file in markdown storage mode.
+        let defaultWidth = DocumentWidthMode.appDefault
+        if defaultWidth != .normal {
+            doc.widthMode = defaultWidth
+        }
         if !item.properties.isEmpty {
             doc.properties = item.properties
         }

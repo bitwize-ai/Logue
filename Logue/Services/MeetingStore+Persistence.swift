@@ -149,7 +149,10 @@ extension MeetingStore {
                     do {
                         let data = try Data(contentsOf: file)
                         let meeting = try EncryptionManager.decryptCodableWithFallback(MeetingNote.self, from: data)
-                        result.append(meeting)
+                        // Meetings persisted before renaming merged can hold two speaker rows with
+                        // one name. The panel groups by name, so the redundant row is unreachable
+                        // in the UI — repair it on the way in rather than leaving it to the user.
+                        result.append(meeting.collapsingDuplicateSpeakers())
                     } catch {
                         Logger(subsystem: AppConstants.bundleID, category: "MeetingStore")
                             .error("Failed to load meeting from \(file.lastPathComponent): \(error.localizedDescription, privacy: .public)")

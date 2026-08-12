@@ -198,6 +198,7 @@ extension BlockRowView {
                 Button("Heading 2") { turnInto(.heading2) }
                 Button("Heading 3") { turnInto(.heading3) }
                 Button("Quote") { turnInto(.quote) }
+                Button("Callout") { turnInto(.callout) }
                 Button("Code Block") { turnInto(.codeBlock) }
             }
             Divider()
@@ -237,8 +238,16 @@ extension BlockRowView {
             newBlock = .heading(id: block.id, level: 3, text: text)
         case .quote:
             newBlock = .blockQuote(id: block.id, text: text)
+        case .callout:
+            // Keeps the kind and title when the block already is a callout, so "Turn into >
+            // Callout" on a warning does not silently demote it to a note.
+            if case let .callout(_, kind, title, _) = block {
+                newBlock = .callout(id: block.id, kind: kind, title: title, body: text)
+            } else {
+                newBlock = .callout(id: block.id, kind: .note, title: "", body: text)
+            }
         case .codeBlock:
-            newBlock = .codeBlock(id: block.id, language: "", code: text)
+            newBlock = .codeBlock(id: block.id, language: CodeBlockLanguageMemory.suggestedLanguage, code: text)
         default:
             return
         }
@@ -275,6 +284,8 @@ extension BlockRowView {
             return .mermaid(id: newID, source: source)
         case let .math(_, latex):
             return .math(id: newID, latex: latex)
+        case let .callout(_, kind, title, body):
+            return .callout(id: newID, kind: kind, title: title, body: body)
         }
     }
 
