@@ -68,13 +68,28 @@ struct FolderSnapshot: Sendable {
     /// conservative about what counts as a document is the safe direction: the cost is a
     /// task folder that does not appear as a space, and the alternative is a user's tasks
     /// silently becoming documents.
+    /// A folder that already carries a space identity is **never** a task folder, however the
+    /// tasks marker got there. `Tasks` is an obvious name for a space, and users have one: if
+    /// the marker won, that folder would drop out of `spaceDirectories` and `spaceFiles`, the
+    /// space would read as *vanished*, and `trashDocuments(inSpace:)` would take everything in
+    /// it. Space identity is older, holds documents, and misreading it destroys them —
+    /// misreading a task folder as a space costs nothing.
     var taskFolders: [[String]] {
-        files.compactMap { url in
+        let spaceFolders = Set(
+            files
+                .filter { SpaceFile.isSpaceFile(filename: $0.lastPathComponent) }
+                .compactMap { componentsByFile[$0] }
+                .map { $0.joined(separator: "/") }
+        )
+
+        return files.compactMap { url in
             guard TaskFile.isFolderMarker(filename: url.lastPathComponent),
                   let contents = contents[url],
-                  TaskFile.markerIdentifier(in: contents) != nil
+                  TaskFile.markerIdentifier(in: contents) != nil,
+                  let components = componentsByFile[url],
+                  !spaceFolders.contains(components.joined(separator: "/"))
             else { return nil }
-            return componentsByFile[url]
+            return components
         }
     }
 

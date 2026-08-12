@@ -204,19 +204,58 @@ struct TaskFolderIsolationTests {
         #expect(imported.unidentifiedFiles.map(\.lastPathComponent) == ["Dropped.md"])
     }
 
-    @Test("A space file inside a task folder is not read as a space")
-    func spaceFileInsideTaskFolderIgnored() {
+    // MARK: - Collision with an existing space
+
+    /// Found by running the app against a real library.
+    ///
+    /// A user can already have a folder called `Tasks` holding a hundred documents — it is an
+    /// obvious name for a space. If the app wrote its marker into that folder, the folder
+    /// would read as a task folder, drop out of `spaceDirectories` and `spaceFiles`, and the
+    /// space would look **vanished** — which routes to `trashDocuments(inSpace:)`.
+    ///
+    /// So space identity wins. `_space.md` is older, it holds the user's documents, and
+    /// misreading it destroys them; misreading a task folder as a space costs nothing.
+    @Test("A folder that is already a space is never treated as a task folder")
+    func existingSpaceWinsOverTaskMarker() {
         var builder = Builder(root: root)
         builder.addDirectory(["Tasks"])
+        builder.addFile(
+            at: ["Tasks", SpaceFile.filename],
+            body: "---\n\(SpaceFile.identifierKey): \(UUID().uuidString)\n---\n"
+        )
+        builder.addFile(
+            at: ["Tasks", TaskFile.folderMarkerFilename],
+            body: TaskFile.folderMarkerContents(id: UUID())
+        )
+        builder.addFile(at: ["Tasks", "Note.md"], body: document(titled: "Note"))
+
+        let snapshot = builder.snapshot()
+        #expect(snapshot.taskFolders.isEmpty)
+        #expect(snapshot.spaceDirectories.contains(["Tasks"]))
+        #expect(snapshot.spaceFiles.count == 1)
+        #expect(snapshot.documentFiles.map(\.lastPathComponent).contains("Note.md"))
+    }
+
+    /// A `_space.md` in the task folder *itself* makes it a space — see
+    /// `existingSpaceWinsOverTaskMarker`. One nested below it is a different case: the task
+    /// folder's identity is unambiguous, so nothing inside it should surface as a space.
+    @Test("A space file nested below a task folder is not read as a space")
+    func spaceFileBelowTaskFolderIgnored() {
+        var builder = Builder(root: root)
+        builder.addDirectory(["Tasks"])
+        builder.addDirectory(["Tasks", "Archive"])
         builder.addFile(
             at: ["Tasks", TaskFile.folderMarkerFilename],
             body: TaskFile.folderMarkerContents(id: UUID())
         )
         builder.addFile(
-            at: ["Tasks", SpaceFile.filename],
+            at: ["Tasks", "Archive", SpaceFile.filename],
             body: "---\n\(SpaceFile.identifierKey): \(UUID().uuidString)\n---\n"
         )
 
-        #expect(builder.snapshot().spaceFiles.isEmpty)
+        let snapshot = builder.snapshot()
+        #expect(snapshot.taskFolders == [["Tasks"]])
+        #expect(snapshot.spaceFiles.isEmpty)
+        #expect(snapshot.spaceDirectories.isEmpty)
     }
 }

@@ -50,6 +50,55 @@ struct TaskFolderStoreTests {
         }
     }
 
+    // MARK: - Refusing an existing space folder
+
+    /// Found by running the app against a real library that had `~/Logue/Tasks` as a space
+    /// holding a hundred documents.
+    @Test("Preparing refuses a folder that is already a space")
+    func prepareRefusesSpaceFolder() throws {
+        try withFolder { store in
+            try FileManager.default.createDirectory(
+                at: store.rootURL, withIntermediateDirectories: true
+            )
+            try "---\n\(SpaceFile.identifierKey): \(UUID().uuidString)\n---\n".write(
+                to: store.rootURL.appendingPathComponent(SpaceFile.filename),
+                atomically: true,
+                encoding: .utf8
+            )
+
+            #expect(store.isExistingSpaceFolder)
+            #expect(throws: TaskFolderStore.PrepareError.self) { try store.prepare() }
+
+            // And nothing was written, so the space is untouched.
+            let marker = store.rootURL.appendingPathComponent(TaskFile.folderMarkerFilename)
+            #expect(FileManager.default.fileExists(atPath: marker.path) == false)
+        }
+    }
+
+    @Test("Saving into a space folder fails rather than colonising it")
+    func saveRefusesSpaceFolder() throws {
+        try withFolder { store in
+            try FileManager.default.createDirectory(
+                at: store.rootURL, withIntermediateDirectories: true
+            )
+            try "---\n\(SpaceFile.identifierKey): \(UUID().uuidString)\n---\n".write(
+                to: store.rootURL.appendingPathComponent(SpaceFile.filename),
+                atomically: true,
+                encoding: .utf8
+            )
+
+            #expect(store.save(TaskItem(title: "Should not land")) == false)
+        }
+    }
+
+    @Test("An ordinary folder is not mistaken for a space")
+    func ordinaryFolderIsNotASpace() throws {
+        try withFolder { store in
+            try store.prepare()
+            #expect(store.isExistingSpaceFolder == false)
+        }
+    }
+
     @Test("A folder that does not exist reads as empty rather than failing")
     func missingFolderReadsEmpty() {
         withFolder { store in

@@ -23,11 +23,39 @@ struct TaskFolderStore {
 
     // MARK: - Folder
 
+    enum PrepareError: LocalizedError {
+        case folderIsASpace(name: String)
+
+        var errorDescription: String? {
+            switch self {
+            case let .folderIsASpace(name):
+                "The folder \"\(name)\" is already one of your spaces, so tasks cannot be "
+                    + "stored there. Rename that space or its folder and try again."
+            }
+        }
+    }
+
+    /// Whether this folder already carries a space identity.
+    var isExistingSpaceFolder: Bool {
+        let spaceFile = rootURL.appendingPathComponent(SpaceFile.filename)
+        return FileManager.default.fileExists(atPath: spaceFile.path)
+    }
+
     /// Creates the folder and its marker if they are not there.
     ///
     /// The marker is what makes the folder recognisable by identity rather than by name, so
     /// renaming it in Finder keeps tasks working and keeps them out of the document library.
+    ///
+    /// Refuses outright when the folder is already a space. `Tasks` is an obvious name for a
+    /// space and users have one; colonising it would put two identities on one folder. The
+    /// snapshot already resolves that in the space's favour, so this would only ever produce a
+    /// tasks folder the app then declines to read — better to say so than to write nothing and
+    /// look like it worked.
     func prepare() throws {
+        guard !isExistingSpaceFolder else {
+            throw PrepareError.folderIsASpace(name: rootURL.lastPathComponent)
+        }
+
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
         let marker = rootURL.appendingPathComponent(TaskFile.folderMarkerFilename)

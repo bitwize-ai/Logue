@@ -23,10 +23,31 @@ final class TaskStorage {
 
     // MARK: - Locations
 
-    /// `~/Logue/Tasks`.
+    /// Where tasks live, avoiding a folder that is already a space.
+    ///
+    /// `Tasks` is an obvious name for a space and users really do have one — a real library
+    /// turned out to have `~/Logue/Tasks` holding a hundred documents. Writing our marker in
+    /// there would put two identities on one folder, and the loser would be the space, taking
+    /// its documents with it. So an occupied name is stepped over rather than shared.
+    ///
+    /// Resolved by looking, not remembered: the answer changes when the user renames a space,
+    /// and a stale cached path is how a folder stops being found at all.
     nonisolated static var tasksFolderURL: URL {
-        DocumentStorage.markdownRootURL
-            .appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        let root = DocumentStorage.markdownRootURL
+        let preferred = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        guard TaskFolderStore(rootURL: preferred).isExistingSpaceFolder else { return preferred }
+
+        for suffix in 2 ... 20 {
+            let candidate = root.appendingPathComponent(
+                "\(TaskFile.folderName) \(suffix)", isDirectory: true
+            )
+            if !TaskFolderStore(rootURL: candidate).isExistingSpaceFolder {
+                return candidate
+            }
+        }
+        // Twenty spaces all named some variant of "Tasks" is not a real library; take the
+        // preferred name back and let `prepare()` refuse it loudly.
+        return preferred
     }
 
     /// The folder store for the live location.
