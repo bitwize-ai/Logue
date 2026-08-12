@@ -108,6 +108,7 @@ extension DashboardActionItem {
 /// so users can triage accountability without visiting each meeting.
 struct ActionItemDashboardView: View {
     @Environment(MeetingStore.self) private var meetingStore
+    @State private var taskStore = TaskStore.shared
 
     @State private var searchText = ""
     @State private var filterMode: ActionItemFilterMode = .pending
@@ -246,9 +247,27 @@ struct ActionItemDashboardView: View {
 
     // MARK: - Toolbar
 
+    /// The items shown that are not already on the task list.
+    private var promotableItems: [DashboardActionItem] {
+        filteredItems.filter { taskStore.promotedTask(for: $0.actionItem.id) == nil }
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                for item in promotableItems {
+                    taskStore.promote(item.actionItem, from: item.meetingID)
+                }
+            } label: {
+                Image(systemName: "text.badge.plus")
+            }
+            // Promotion is idempotent, so pressing this twice is safe by construction; it is
+            // disabled when there is nothing left to add so the press has a visible effect.
+            .disabled(promotableItems.isEmpty)
+            .help("Add every action item shown to your tasks")
+            .accessibilityLabel("Add all to Tasks")
+
             Menu {
                 Section("Sort By") {
                     ForEach(ActionItemSortOrder.allCases, id: \.rawValue) { order in
@@ -380,7 +399,36 @@ struct ActionItemDashboardView: View {
 private struct ActionItemDashboardRow: View {
     let item: DashboardActionItem
     @Environment(MeetingStore.self) private var meetingStore
+    @State private var taskStore = TaskStore.shared
     @State private var isHovered = false
+
+    /// Reflects the promoted state rather than offering the same action twice.
+    ///
+    /// Promotion is idempotent, so pressing it again would be harmless — but a button that
+    /// looks like it has never been pressed reads as "that did nothing".
+    @ViewBuilder
+    private var promoteControl: some View {
+        if taskStore.promotedTask(for: item.actionItem.id) == nil {
+            Button {
+                taskStore.promote(item.actionItem, from: item.meetingID)
+            } label: {
+                Image(systemName: "arrow.right.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Add this to your tasks")
+            .accessibilityLabel("Add to Tasks")
+            // Shown on hover only: one of these per row, permanently visible, would compete
+            // with the due badge for the eye.
+            .opacity(isHovered ? 1 : 0)
+        } else {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .help("Already on your task list")
+                .accessibilityLabel("Already in Tasks")
+        }
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -412,6 +460,8 @@ private struct ActionItemDashboardRow: View {
             }
 
             Spacer()
+
+            promoteControl
 
             if let dueDate = item.actionItem.dueDate {
                 dueBadge(dueDate)
