@@ -14,7 +14,16 @@ permissions:
 jobs:
   lint-check:
     name: Lint Check
-    runs-on: macos-latest
+    # Pinned for the same reason the tool versions below are: `macos-latest` is an alias
+    # GitHub repoints to a new major macOS on its own schedule, which would move this job
+    # off the runner the Build job uses without anything in the repo changing. It already
+    # had: the alias now serves macOS 26 while Build was pinned to 15.
+    #
+    # Pinned forward to 26 rather than back to 15, because 26 is what the app targets
+    # (`project.yml`: deploymentTarget 26.0, xcodeVersion 26.0) and what this job has
+    # been running on in practice. Bump all three `runs-on` pins together and
+    # deliberately: this job, Build below, and release.yml.
+    runs-on: macos-26
 
     steps:
       - name: Checkout Repository
@@ -73,7 +82,8 @@ jobs:
 
   build:
     name: Build
-    runs-on: macos-15
+    # One of the three pins — see the Lint Check job above.
+    runs-on: macos-26
     timeout-minutes: 30
 
     steps:
