@@ -53,17 +53,40 @@ def strip_link_definitions(markdown: str) -> str:
     )
 
 
+# A code span opens on a run of backticks and closes on a run of the *same* length,
+# per CommonMark. The lookarounds are what enforce "same length": without them a
+# 1-backtick opener happily closes on the first backtick of a ``` run, which left a
+# loose delimiter behind and swallowed the next well-formed span into a <code> of its
+# own — the changelog's own `` ` ```mermaid ` `` line rendered that way.
+#
+# Single-line by design. A fenced block spanning lines is not a code span, and the
+# converter above treats one as a paragraph; the changelog does not contain any.
+CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+
+
+def _code_span_text(content: str) -> str:
+    """Strip the one padding space each side that lets a span hold a backtick run."""
+    if len(content) > 1 and content.startswith(" ") and content.endswith(" ") and content.strip():
+        return content[1:-1]
+    return content
+
+
 def inline_html(text: str) -> str:
     """Escape, then re-introduce the few inline marks the changelog actually uses."""
     escaped = html.escape(text, quote=False)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
-    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = CODE_SPAN.sub(lambda m: "<code>{}</code>".format(_code_span_text(m.group(2))), escaped)
     # Attribution links are all over the changelog; without this they reach Sparkle's
     # pane as literal "[@name](https://…)". Only http(s) targets become links, so a
     # javascript: URL in a changelog cannot execute in the update dialog's web view.
+    #
+    # The URL is already escaped by the pass above — escaping it again would turn the
+    # `&amp;` of a query string into `&amp;amp;`, which a browser resolves back to a
+    # literal "&amp;" and follows to the wrong address. Quotes survive that pass
+    # (quote=False), so closing the attribute is the only escaping left to do.
     escaped = re.sub(
         r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
-        lambda m: '<a href="{}">{}</a>'.format(html.escape(m.group(2), quote=True), m.group(1)),
+        lambda m: '<a href="{}">{}</a>'.format(m.group(2).replace('"', "&quot;"), m.group(1)),
         escaped,
     )
     return escaped
