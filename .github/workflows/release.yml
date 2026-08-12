@@ -454,13 +454,23 @@ jobs:
           python3 scripts/extract_release_notes.py --version "$VERSION" --format html > /tmp/release_notes.html
           python3 scripts/extract_release_notes.py --version "$VERSION" --format markdown > /tmp/release_notes.md
 
+          # The script exits 0 with a stderr warning when it finds no section, because
+          # a changelog slip should not fail a build that is already signed and
+          # notarised. But the decision to publish anyway is this job's to make, and
+          # the answer is no: with empty notes the Sparkle pane and the Release body
+          # both go out blank, every step stays green, and the warning is invisible
+          # inside a passing log — which is the regression this whole step exists to
+          # fix. Stop here, before anything is published.
+          if [[ ! -s /tmp/release_notes.html || ! -s /tmp/release_notes.md ]]; then
+            echo "::error::No release notes extracted for ${VERSION}. Add a '## [${VERSION}]' section to CHANGELOG.md (or move [Unreleased] into one) and re-run."
+            exit 1
+          fi
+
           {
             echo "## Logue ${VERSION}"
             echo
-            if [[ -s /tmp/release_notes.md ]]; then
-              cat /tmp/release_notes.md
-              echo
-            fi
+            cat /tmp/release_notes.md
+            echo
             echo "**Build:** ${{ github.run_number }}"
             echo "**Commit:** ${{ github.sha }}"
             echo
