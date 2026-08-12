@@ -136,7 +136,7 @@ struct TranscriptTimelineView: View {
                 ZStack(alignment: .bottom) {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 10) {
+                            LazyVStack(alignment: .leading, spacing: 22) {
                                 ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
                                     let isLastBlock = index == blocks.count - 1
                                     SpeakerBlockView(
@@ -463,9 +463,8 @@ private struct SpeakerBlockView: View {
                     }
                 }
 
-                Text(block.formattedStartTime)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                // No timestamp here: the gutter prints the block's start time on its first line,
+                // and two copies of it an inch apart is just noise.
 
                 // Inline bookmark chips
                 ForEach(blockBookmarks) { bookmark in
@@ -524,10 +523,13 @@ private struct SpeakerBlockView: View {
                 // Volatile text — in-progress transcription appended to last block
                 if !volatileText.isEmpty {
                     HStack(spacing: 6) {
+                        // Sits in the gutter so the text it precedes lines up with every other line.
                         Circle()
                             .fill(AppThemeConstants.error)
                             .frame(width: 5, height: 5)
                             .opacity(0.8)
+                            .frame(width: 38, alignment: .trailing)
+                            .padding(.trailing, 10 - 6)
                         Text(volatileText)
                             .font(.body)
                             .foregroundStyle(.secondary)
@@ -540,13 +542,16 @@ private struct SpeakerBlockView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Filled only when the block is saying something about itself — being dropped onto, playing
+        // back, or under the pointer. At rest it is the page, so a transcript reads as a document
+        // rather than as a stack of tiles.
         .background(
             RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
                 .fill(isDropTargeted
                     ? accentColor.opacity(AppThemeConstants.opacityLight)
                     : containsActiveSegment
                     ? accentColor.opacity(0.09)
-                    : Color.primary.opacity(isHovered ? AppThemeConstants.opacityLight : AppThemeConstants.opacitySubtle))
+                    : Color.primary.opacity(isHovered ? AppThemeConstants.opacitySubtle : 0))
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
