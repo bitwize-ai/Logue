@@ -110,6 +110,10 @@ struct BrowserBridgeTests {
         #expect(HTTPMessage.route(from: "/v1/models") == "/v1/models")
     }
 
+    /// Stand-ins for a live bridge in the pure routing tests.
+    private static let testPort: UInt16 = 52452
+    private static let testHost = "127.0.0.1:52452"
+
     // MARK: - Origin
 
     /// The browser sets this header itself and a page cannot forge it, so it is what stops an
@@ -125,7 +129,66 @@ struct BrowserBridgeTests {
     @Test("A request with no origin is allowed")
     func missingOriginAllowed() {
         #expect(BrowserBridgeRoute.isAllowed(origin: nil))
-        #expect(BrowserBridgeRoute.isAllowed(origin: ""))
+    }
+
+    /// An opaque origin — a sandboxed iframe, a `data:` document, a cross-origin redirect —
+    /// serialises to the literal string "null", and per the Fetch spec that *matches* an
+    /// `Access-Control-Allow-Origin: null`. Allowing it and echoing it back let any page on the
+    /// internet read this bridge's answers from an iframe, with no preflight to fail on a
+    /// `text/plain` POST.
+    @Test("An opaque origin is refused rather than echoed back")
+    func opaqueOriginRefused() {
+        #expect(!BrowserBridgeRoute.isAllowed(origin: "null"))
+        #expect(BrowserBridgeRoute.decide(
+            method: "POST", path: "/v1/logue/chat", origin: "null",
+            host: Self.testHost, port: Self.testPort
+        ) == .forbiddenOrigin)
+    }
+
+    /// Echoing an empty origin emits a malformed empty ACAO header.
+    @Test("An empty origin is refused")
+    func emptyOriginRefused() {
+        #expect(!BrowserBridgeRoute.isAllowed(origin: ""))
+    }
+
+    // MARK: - Host
+
+    /// The DNS-rebinding guard. `Origin` cannot do this job: a page on `evil.com` rebound to
+    /// 127.0.0.1 fetches its *own* origin, so no `Origin` header is sent and CORS never applies.
+    @Test("Only this bridge's own address is answered")
+    func onlyLoopbackHostAnswered() {
+        #expect(BrowserBridgeRoute.isAllowed(host: "127.0.0.1:\(Self.testPort)", port: Self.testPort))
+        #expect(BrowserBridgeRoute.isAllowed(host: "localhost:\(Self.testPort)", port: Self.testPort))
+        #expect(BrowserBridgeRoute.isAllowed(host: "[::1]:\(Self.testPort)", port: Self.testPort))
+        #expect(BrowserBridgeRoute.isAllowed(host: "LOCALHOST:\(Self.testPort)", port: Self.testPort))
+    }
+
+    @Test("A rebound hostname is refused even though it reaches us on loopback")
+    func reboundHostRefused() {
+        #expect(!BrowserBridgeRoute.isAllowed(host: "evil.com:\(Self.testPort)", port: Self.testPort))
+        // The read-only routes are the ones this actually reached, since they answer GET.
+        #expect(BrowserBridgeRoute.decide(
+            method: "GET", path: "/v1/logue/status", origin: nil,
+            host: "evil.com:\(Self.testPort)", port: Self.testPort
+        ) == .forbiddenHost)
+        #expect(BrowserBridgeRoute.decide(
+            method: "GET", path: "/v1/models", origin: nil,
+            host: "evil.com:\(Self.testPort)", port: Self.testPort
+        ) == .forbiddenHost)
+    }
+
+    @Test("A loopback name on the wrong port is refused")
+    func wrongPortRefused() {
+        #expect(!BrowserBridgeRoute.isAllowed(host: "127.0.0.1:1234", port: Self.testPort))
+        // A bare name carries no port, and a browser always sends one for a non-default port.
+        #expect(!BrowserBridgeRoute.isAllowed(host: "127.0.0.1", port: Self.testPort))
+    }
+
+    /// HTTP/1.1 requires `Host`. Absent is malformed, and it is also the shape a rebinding
+    /// attempt would use to slip past a name check.
+    @Test("A request with no Host is refused")
+    func missingHostRefused() {
+        #expect(!BrowserBridgeRoute.isAllowed(host: nil, port: Self.testPort))
     }
 
     // MARK: - Routing
@@ -133,10 +196,12 @@ struct BrowserBridgeTests {
     @Test("Served endpoints are recognised")
     func servedEndpointsRecognised() {
         #expect(BrowserBridgeRoute.decide(
-            method: "GET", path: "/v1/logue/status", origin: nil
+            method: "GET", path: "/v1/logue/status", origin: nil,
+            host: Self.testHost, port: Self.testPort
         ) == .serve(.status))
         #expect(BrowserBridgeRoute.decide(
-            method: "POST", path: "/v1/chat/completions", origin: nil
+            method: "POST", path: "/v1/chat/completions", origin: nil,
+            host: Self.testHost, port: Self.testPort
         ) == .serve(.chatCompletions))
     }
 
@@ -146,16 +211,20 @@ struct BrowserBridgeTests {
     @Test("Only the read-only endpoints answer GET")
     func onlyReadOnlyEndpointsAnswerGet() {
         #expect(BrowserBridgeRoute.decide(
-            method: "GET", path: "/v1/logue/chat", origin: nil
+            method: "GET", path: "/v1/logue/chat", origin: nil,
+            host: Self.testHost, port: Self.testPort
         ) == .methodNotAllowed)
         #expect(BrowserBridgeRoute.decide(
-            method: "GET", path: "/v1/chat/completions", origin: nil
+            method: "GET", path: "/v1/chat/completions", origin: nil,
+            host: Self.testHost, port: Self.testPort
         ) == .methodNotAllowed)
         #expect(BrowserBridgeRoute.decide(
-            method: "GET", path: "/v1/logue/status", origin: nil
+            method: "GET", path: "/v1/logue/status", origin: nil,
+            host: Self.testHost, port: Self.testPort
         ) == .serve(.status))
         #expect(BrowserBridgeRoute.decide(
-            method: "GET", path: "/v1/models", origin: nil
+            method: "GET", path: "/v1/models", origin: nil,
+            host: Self.testHost, port: Self.testPort
         ) == .serve(.models))
     }
 
@@ -164,7 +233,8 @@ struct BrowserBridgeTests {
     @Test("Tools this build does not serve answer notImplemented")
     func unservedToolsAreNotImplemented() {
         let decision = BrowserBridgeRoute.decide(
-            method: "POST", path: "/v1/logue/grammar-check", origin: nil
+            method: "POST", path: "/v1/logue/grammar-check", origin: nil,
+            host: Self.testHost, port: Self.testPort
         )
         #expect(decision == .notImplemented("/v1/logue/grammar-check"))
     }
@@ -172,21 +242,24 @@ struct BrowserBridgeTests {
     @Test("An unknown path is not found")
     func unknownPathIsNotFound() {
         #expect(BrowserBridgeRoute.decide(
-            method: "POST", path: "/v1/nonsense", origin: nil
+            method: "POST", path: "/v1/nonsense", origin: nil,
+            host: Self.testHost, port: Self.testPort
         ) == .notFound)
     }
 
     @Test("A disallowed origin is refused before anything else is considered")
     func disallowedOriginRefusedFirst() {
         #expect(BrowserBridgeRoute.decide(
-            method: "POST", path: "/v1/logue/chat", origin: "https://example.com"
+            method: "POST", path: "/v1/logue/chat", origin: "https://example.com",
+            host: Self.testHost, port: Self.testPort
         ) == .forbiddenOrigin)
     }
 
     @Test("A preflight is answered so the real request can follow")
     func preflightAnswered() {
         #expect(BrowserBridgeRoute.decide(
-            method: "OPTIONS", path: "/v1/logue/chat", origin: "chrome-extension://abc"
+            method: "OPTIONS", path: "/v1/logue/chat", origin: "chrome-extension://abc",
+            host: Self.testHost, port: Self.testPort
         ) == .preflight)
     }
 

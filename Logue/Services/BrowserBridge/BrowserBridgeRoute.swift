@@ -44,6 +44,9 @@ enum BrowserBridgeRoute {
         case notFound
         case methodNotAllowed
         case forbiddenOrigin
+        /// `Host` named somewhere other than this bridge — a DNS-rebinding attempt, or a proxy
+        /// this server has no business answering for.
+        case forbiddenHost
     }
 
     /// The only origin scheme allowed to call in.
@@ -55,13 +58,47 @@ enum BrowserBridgeRoute {
     /// machine, which they are entitled to do.
     private static let allowedOriginScheme = "chrome-extension://"
 
+    /// Only *absent* is treated as "not a browser". Every present value has to name the
+    /// extension.
+    ///
+    /// `"null"` in particular must not pass. An opaque origin — a sandboxed iframe, a `data:`
+    /// document, a cross-origin redirect chain — serialises to exactly that string, and per the
+    /// Fetch spec it matches an `Access-Control-Allow-Origin: null`. Waving it through here and
+    /// echoing it back let any page on the internet read this bridge's answers from an iframe,
+    /// with no preflight to fail on a `text/plain` POST. `""` is refused for its own reason:
+    /// echoing it emits a malformed empty ACAO.
     static func isAllowed(origin: String?) -> Bool {
-        guard let origin, !origin.isEmpty, origin != "null" else { return true }
+        guard let origin else { return true }
         return origin.hasPrefix(allowedOriginScheme)
     }
 
+    /// Host names that mean "this machine's own loopback bridge".
+    ///
+    /// The port has to match too, so these are only ever compared as a whole `host:port`.
+    private static let loopbackHostNames = ["127.0.0.1", "localhost", "[::1]"]
+
+    /// Whether `Host` names this bridge rather than somewhere that merely resolved to it.
+    ///
+    /// This is the DNS-rebinding guard, and `Origin` cannot do its job. An attacker serves
+    /// `evil.com` on a one-second TTL, rebinds it to `127.0.0.1`, and has the page fetch
+    /// `http://evil.com:52452/v1/logue/status`. That request is *same-origin* to the page, so no
+    /// `Origin` header is sent at all and CORS never enters into it; the connection arrives on
+    /// loopback so the peer filter is happy. Without this the app version, the active model and
+    /// the user's whole model inventory are readable by any website.
+    ///
+    /// Exact match including the port, because a rebound request reaches us on our port while
+    /// naming its own host — and a browser always sends the port for a non-default one.
+    static func isAllowed(host: String?, port: UInt16) -> Bool {
+        guard let host else { return false }
+        let normalised = host.trimmingCharacters(in: .whitespaces).lowercased()
+        return loopbackHostNames.contains { "\($0):\(port)" == normalised }
+    }
+
     /// Decides how to answer, without doing any of the work.
-    static func decide(method: String, path: String, origin: String?) -> Decision {
+    static func decide(method: String, path: String, origin: String?, host: String?, port: UInt16) -> Decision {
+        // Host first: it is the cheaper check and the one that does not depend on the caller
+        // having sent an `Origin` at all.
+        guard isAllowed(host: host, port: port) else { return .forbiddenHost }
         guard isAllowed(origin: origin) else { return .forbiddenOrigin }
 
         let route = HTTPMessage.route(from: path)

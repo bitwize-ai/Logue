@@ -131,7 +131,7 @@ final class BrowserBridgeServer {
         let listener = try NWListener(using: parameters, on: nwPort)
         listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor [weak self] in
-                self?.accept(connection)
+                self?.accept(connection, boundPort: port)
             }
         }
 
@@ -174,7 +174,7 @@ final class BrowserBridgeServer {
         self.listener = listener
     }
 
-    private func accept(_ nwConnection: NWConnection) {
+    private func accept(_ nwConnection: NWConnection, boundPort: UInt16) {
         // Checked even though `requiredInterfaceType` already filters non-loopback traffic — the
         // socket binds to the wildcard address, so "only this Mac can reach it" rests entirely on
         // that filter. The whole privacy claim rests on it too, which is more weight than one
@@ -191,7 +191,9 @@ final class BrowserBridgeServer {
             return
         }
 
-        let connection = Connection(nwConnection: nwConnection, queue: queue) { [weak self] identifier in
+        let connection = Connection(
+            nwConnection: nwConnection, queue: queue, boundPort: boundPort
+        ) { [weak self] identifier in
             Task { @MainActor [weak self] in
                 self?.connections.removeValue(forKey: identifier)
             }
@@ -233,6 +235,9 @@ extension BrowserBridgeServer {
     final class Connection: @unchecked Sendable {
         private let nwConnection: NWConnection
         private let queue: DispatchQueue
+        /// The port this connection arrived on, so `Host` can be checked against it without a
+        /// hop to the main actor for `activePort`.
+        private let boundPort: UInt16
         private let onClose: @Sendable (ObjectIdentifier) -> Void
         private var buffer = Data()
         /// Lock-protected because the streaming handler asks whether the client is still there
@@ -256,10 +261,12 @@ extension BrowserBridgeServer {
         init(
             nwConnection: NWConnection,
             queue: DispatchQueue,
+            boundPort: UInt16,
             onClose: @escaping @Sendable (ObjectIdentifier) -> Void
         ) {
             self.nwConnection = nwConnection
             self.queue = queue
+            self.boundPort = boundPort
             self.onClose = onClose
         }
 
@@ -335,7 +342,11 @@ extension BrowserBridgeServer {
         private func dispatch(_ request: HTTPMessage.Request) {
             let origin = request.header("Origin")
             let decision = BrowserBridgeRoute.decide(
-                method: request.method, path: request.path, origin: origin
+                method: request.method,
+                path: request.path,
+                origin: origin,
+                host: request.header("Host"),
+                port: boundPort
             )
             let allowedOrigin = BrowserBridgeRoute.isAllowed(origin: origin) ? origin : nil
 

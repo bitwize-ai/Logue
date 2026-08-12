@@ -35,6 +35,14 @@ extension BrowserBridgeServer {
                 origin: nil, keepAlive: false, thenClose: true
             )
 
+        case .forbiddenHost:
+            // No ACAO and no keep-alive: whatever name resolved to this port, it is not one this
+            // bridge answers for, and a rebinding attempt should not get a reusable connection.
+            connection.send(
+                .error("This bridge only answers to its own address on this Mac.", status: 403),
+                origin: nil, keepAlive: false, thenClose: true
+            )
+
         case .methodNotAllowed:
             connection.send(
                 .error("Wrong method for that endpoint.", status: 405),
