@@ -403,93 +403,84 @@ private struct SpeakerBlockView: View {
     /// How far the meeting must move on before the gutter prints another time.
     private static let gutterInterval: TimeInterval = 10
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Header: speaker name + timestamp + bookmark chips + add button
-            HStack(spacing: 6) {
-                if let speaker = block.speakerLabel {
-                    if isEditingSpeakerName {
-                        TextField("Speaker name", text: $speakerNameDraft)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(accentColor)
-                            .frame(maxWidth: 160)
-                            .focused($isSpeakerNameFocused)
-                            .onSubmit { commitSpeakerRename(oldName: speaker) }
-                            .onExitCommand { isEditingSpeakerName = false }
-                            .onAppear {
-                                Task {
-                                    try? await Task.sleep(for: AppConstants.Delays.focusActivation)
-                                    isSpeakerNameFocused = true
-                                    try? await Task.sleep(for: AppConstants.Delays.focusActivation)
-                                    NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
-                                }
+    /// Speaker name and any bookmark chips. Never the block's time — the gutter prints that.
+    private var header: some View {
+        HStack(spacing: 6) {
+            if let speaker = block.speakerLabel {
+                if isEditingSpeakerName {
+                    TextField("Speaker name", text: $speakerNameDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(accentColor)
+                        .frame(maxWidth: 160)
+                        .focused($isSpeakerNameFocused)
+                        .onSubmit { commitSpeakerRename(oldName: speaker) }
+                        .onExitCommand { isEditingSpeakerName = false }
+                        .onAppear {
+                            Task {
+                                try? await Task.sleep(for: AppConstants.Delays.focusActivation)
+                                isSpeakerNameFocused = true
+                                try? await Task.sleep(for: AppConstants.Delays.focusActivation)
+                                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
                             }
-                            .onChange(of: isSpeakerNameFocused) { _, focused in
-                                if !focused {
-                                    commitSpeakerRename(oldName: speaker)
-                                }
+                        }
+                        .onChange(of: isSpeakerNameFocused) { _, focused in
+                            if !focused {
+                                commitSpeakerRename(oldName: speaker)
                             }
+                        }
 
-                        Button("Done") { commitSpeakerRename(oldName: speaker) }
-                            .font(.caption)
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
+                    Button("Done") { commitSpeakerRename(oldName: speaker) }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
 
-                        Button("Cancel") { isEditingSpeakerName = false }
-                            .font(.caption)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(highlightedText(speaker, query: searchText, baseFont: .callout.weight(.semibold)))
-                            .foregroundColor(accentColor)
-                            .onTapGesture(count: 2) {
-                                if onRenameSpeaker != nil {
+                    Button("Cancel") { isEditingSpeakerName = false }
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(highlightedText(speaker, query: searchText, baseFont: .callout.weight(.semibold)))
+                        .foregroundColor(accentColor)
+                        .onTapGesture(count: 2) {
+                            if onRenameSpeaker != nil {
+                                speakerNameDraft = speaker
+                                isEditingSpeakerName = true
+                            }
+                        }
+                        .help(onRenameSpeaker != nil ? "Double-click to rename speaker" : "")
+                        .contextMenu {
+                            if onRenameSpeaker != nil {
+                                Button {
                                     speakerNameDraft = speaker
                                     isEditingSpeakerName = true
+                                } label: {
+                                    Label("Rename Speaker", systemImage: "pencil")
                                 }
                             }
-                            .help(onRenameSpeaker != nil ? "Double-click to rename speaker" : "")
-                            .contextMenu {
-                                if onRenameSpeaker != nil {
-                                    Button {
-                                        speakerNameDraft = speaker
-                                        isEditingSpeakerName = true
-                                    } label: {
-                                        Label("Rename Speaker", systemImage: "pencil")
-                                    }
-                                }
-                            }
-                    }
+                        }
                 }
+            }
 
-                // No timestamp here: the gutter prints the block's start time on its first line,
-                // and two copies of it an inch apart is just noise.
+            // No timestamp here: the gutter prints the block's start time on its first line,
+            // and two copies of it an inch apart is just noise.
 
-                // Inline bookmark chips
-                ForEach(blockBookmarks) { bookmark in
-                    BookmarkChip(bookmark: bookmark, onChangeType: onChangeBookmarkType, onRemove: onRemoveBookmark)
-                }
+            // Inline bookmark chips
+            ForEach(blockBookmarks) { bookmark in
+                BookmarkChip(bookmark: bookmark, onChangeType: onChangeBookmarkType, onRemove: onRemoveBookmark)
+            }
 
-                Spacer()
+            Spacer()
+        }
+    }
 
-                // Add bookmark button (visible on hover)
-                if onAddBookmark != nil {
-                    Button {
-                        showBookmarkPopover = true
-                    } label: {
-                        Image(systemName: showBookmarkAdded ? "bookmark.fill" : "bookmark")
-                            .font(.callout)
-                            .foregroundColor(showBookmarkAdded ? AppThemeConstants.actionBadgeColor : Color.secondary.opacity(0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add bookmark")
-                    .help("Add bookmark at this point")
-                    .opacity(isHovered || showBookmarkAdded || !blockBookmarks.isEmpty ? 1 : 0)
-                    .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
-                        bookmarkTypePicker
-                    }
-                }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Only rendered when there is something in it. Before diarization has named anyone a
+            // block has no speaker and usually no bookmarks, and an empty row holding a single
+            // floating button is worse than no row.
+            if block.speakerLabel != nil || !blockBookmarks.isEmpty {
+                header
             }
 
             // Segment text — only first/last lines are draggable (boundary lines)
@@ -516,6 +507,9 @@ private struct SpeakerBlockView: View {
                             isDraggable: isBoundary
                         )
                     }
+                    // A stamped line starts a new group, so it gets air above it. Without this the
+                    // gutter marks a boundary the text gives no sign of.
+                    .padding(.top, gutter[segment.id] != nil && index > 0 ? 10 : 0)
                     .draggable(isBoundary ? segment.id.uuidString : "")
                     .id(segment.id)
                 }
@@ -542,6 +536,26 @@ private struct SpeakerBlockView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Floats over the block rather than sitting in a row, so a block with nothing else to
+        // put in a header does not grow one just to hold this.
+        .overlay(alignment: .topTrailing) {
+            if onAddBookmark != nil {
+                Button {
+                    showBookmarkPopover = true
+                } label: {
+                    Image(systemName: showBookmarkAdded ? "bookmark.fill" : "bookmark")
+                        .font(.callout)
+                        .foregroundColor(showBookmarkAdded ? AppThemeConstants.actionBadgeColor : Color.secondary.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add bookmark")
+                .help("Add bookmark at this point")
+                .opacity(isHovered || showBookmarkAdded || !blockBookmarks.isEmpty ? 1 : 0)
+                .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
+                    bookmarkTypePicker
+                }
+            }
+        }
         // Filled only when the block is saying something about itself — being dropped onto, playing
         // back, or under the pointer. At rest it is the page, so a transcript reads as a document
         // rather than as a stack of tiles.
@@ -551,7 +565,7 @@ private struct SpeakerBlockView: View {
                     ? accentColor.opacity(AppThemeConstants.opacityLight)
                     : containsActiveSegment
                     ? accentColor.opacity(0.09)
-                    : Color.primary.opacity(isHovered ? AppThemeConstants.opacitySubtle : 0))
+                    : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
@@ -560,18 +574,6 @@ private struct SpeakerBlockView: View {
                     lineWidth: containsActiveSegment ? 1.5 : 2
                 )
         )
-        .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(
-                topLeadingRadius: AppThemeConstants.radiusMedium,
-                bottomLeadingRadius: AppThemeConstants.radiusMedium,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0
-            )
-            // Left border brightens and widens while this block is playing
-            .fill(accentColor.opacity(containsActiveSegment ? 0.75 : AppThemeConstants.opacityMuted))
-            .frame(width: containsActiveSegment ? 4 : 3)
-            .animation(.easeInOut(duration: 0.25), value: containsActiveSegment)
-        }
         .animation(.easeInOut(duration: 0.25), value: containsActiveSegment)
         .onHover { isHovered = $0 }
         .dropDestination(for: String.self) { items, _ in
