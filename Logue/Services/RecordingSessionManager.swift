@@ -134,6 +134,10 @@ final class RecordingSessionManager {
     /// recording stops cleanly.
     private var inProgressDirectory: URL?
 
+    /// Whether this launch has already put the Screen Recording prompt on screen. Deliberately not
+    /// persisted — see `ensureScreenRecordingAccess()`.
+    private var hasRequestedScreenRecordingAccess = false
+
     private var recordingLocale: Locale?
 
     // Extension-visible: +Checkpoint
@@ -566,10 +570,7 @@ final class RecordingSessionManager {
     private func armSystemAudio() async {
         guard isRecording, !isStopping, let meetingID = currentMeetingID, !isCapturingSystemAudio else { return }
 
-        guard await ensureScreenRecordingAccess() else {
-            logger.info("System audio not armed — screen recording access not granted")
-            return
-        }
+        guard await ensureScreenRecordingAccess() else { return }
         // Access may have been asked for interactively; the session can have ended meanwhile.
         guard isRecording, !isStopping, !isCapturingSystemAudio else { return }
 
@@ -625,22 +626,40 @@ final class RecordingSessionManager {
         logger.info("System audio armed for meeting \(meetingID)")
     }
 
-    /// Whether the ScreenCaptureKit tap may run, asking for access at most once per install.
+    /// Whether the ScreenCaptureKit tap may run.
     ///
-    /// Access used to be requested when the user pressed the system-audio button, which made the
-    /// prompt their own doing. Arming happens on its own now, so an ungranted permission must not
-    /// turn into a dialog at the start of every meeting.
+    /// Preflighted on every arming, because the grant is not permanent: macOS ties it to the app's
+    /// code signature, so an update, a rebuild, or moving the app revokes it. The *request* is made
+    /// at most once per launch — arming happens on its own now, so an ungranted permission must not
+    /// become a dialog at the start of every meeting. Remembering the refusal across launches was
+    /// worse still: a grant that lapsed could never be recovered from, and the app went on quietly
+    /// not recording the far side of every call.
     private func ensureScreenRecordingAccess() async -> Bool {
         if CGPreflightScreenCaptureAccess() {
             return true
         }
 
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: AppConstants.UserDefaultsKeys.screenRecordingAccessRequested) else {
+        guard !hasRequestedScreenRecordingAccess else {
+            noteSystemAudioUnavailable()
             return false
         }
-        defaults.set(true, forKey: AppConstants.UserDefaultsKeys.screenRecordingAccessRequested)
-        return CGRequestScreenCaptureAccess()
+        hasRequestedScreenRecordingAccess = true
+
+        guard CGRequestScreenCaptureAccess() else {
+            noteSystemAudioUnavailable()
+            return false
+        }
+        return true
+    }
+
+    /// Says that this session is recording the microphone only, and what would change that.
+    ///
+    /// Saying nothing is the worst outcome available here: the user believes the remote side is
+    /// being recorded, and discovers it was not when they go looking for it afterwards.
+    private func noteSystemAudioUnavailable() {
+        captureNotice = "System audio needs Screen Recording access — enable Logue in "
+            + "System Settings › Privacy & Security › Screen Recording"
+        logger.info("System audio not armed — screen recording access not granted")
     }
 
     // MARK: - Microphone Mute
