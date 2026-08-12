@@ -175,31 +175,69 @@ extension BrowserBridgeServer {
     nonisolated static func prompt(from body: [String: Any], route: BrowserBridgeRoute.Known) -> String? {
         if route == .chatCompletions {
             guard let messages = body["messages"] as? [[String: Any]] else { return nil }
+            // Every turn is wrapped and labelled by attribute rather than joined as
+            // "role: content". Joined text let a message containing a literal "system: …" render
+            // as what looks like a role turn, which is the whole reason the app's rule is to
+            // delimit rather than concatenate. `system` is not accepted from a caller at all —
+            // the bridge supplies that turn.
             let rendered = messages.compactMap { message -> String? in
                 guard let role = message["role"] as? String,
+                      ["user", "assistant", "tool"].contains(role),
                       let content = message["content"] as? String, !content.isEmpty
                 else { return nil }
-                return "\(role): \(content)"
+                return "<turn role=\"\(role)\">\n\(escapingDelimiters(content, limit: maxMessageCharacters))\n</turn>"
             }
-            return rendered.isEmpty ? nil : rendered.joined(separator: "\n\n")
+            guard !rendered.isEmpty else { return nil }
+            return String(rendered.joined(separator: "\n\n").suffix(maxPromptCharacters))
         }
 
         guard let message = body["message"] as? String else { return nil }
-        guard let context = body["context"] as? String, !context.isEmpty else { return message }
+        // Bounded like everything else here: `message` was limited only by the 8 MB body cap.
+        let question = escapingDelimiters(message, limit: maxMessageCharacters)
+        guard let context = body["context"] as? String, !context.isEmpty else { return question }
 
-        let trimmed = String(context.prefix(Self.maxContextCharacters))
+        let trimmed = escapingDelimiters(context, limit: maxContextCharacters)
         return """
         <page>
         \(trimmed)
         </page>
 
-        \(message)
+        \(question)
         """
+    }
+
+    /// Truncates, then neutralises anything that would close a delimiter this file opened.
+    ///
+    /// Wrapping alone is half the rule: a page containing `</page>` followed by instructions
+    /// closed the block and went on speaking as the operator. The closing bracket is replaced
+    /// rather than the whole tag stripped, so the text still reads as what the page said.
+    /// Control characters go too — the same treatment every other prompt in the app gives
+    /// user-supplied strings.
+    nonisolated static func escapingDelimiters(_ raw: String, limit: Int) -> String {
+        String(raw.prefix(limit))
+            .replacingOccurrences(of: "</page>", with: "<\u{2044}page>")
+            .replacingOccurrences(of: "</turn>", with: "<\u{2044}turn>")
+            .filter(isPrintable)
+    }
+
+    /// Newlines and tabs survive — page text is unreadable without them. Everything else below
+    /// the printable range, and DEL, does not.
+    nonisolated private static func isPrintable(_ character: Character) -> Bool {
+        guard let ascii = character.asciiValue else { return true }
+        if ascii == 0x0A || ascii == 0x09 { return true }
+        return ascii >= 0x20 && ascii != 0x7F
     }
 
     /// How much page content is passed through. The engine truncates to the context window on its
     /// own, but a whole page arriving as one string is worth bounding before it gets that far.
     nonisolated static let maxContextCharacters = 12000
+
+    /// Cap on a single message. `message` previously had none at all.
+    nonisolated static let maxMessageCharacters = 12000
+
+    /// Cap on the whole rendered prompt, so a caller cannot spend the context window by sending
+    /// many messages that are each individually within bounds.
+    nonisolated static let maxPromptCharacters = 48000
 
     private func completeChat(prompt: String, origin: String?, on connection: Connection) async {
         do {

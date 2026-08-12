@@ -232,6 +232,10 @@ enum AppConstants {
         /// Output cap for a chat answer. The default of 512 truncates conversational replies
         /// mid-sentence.
         static let chatMaxTokens = 2048
+
+        /// Room left for the system turn and the chat template's own scaffolding when working
+        /// out how much of a caller's conversation fits the context window.
+        static let systemPromptReservedTokens = 512
     }
 
     enum Delays {
