@@ -441,6 +441,7 @@
 		C70A9F7BBBA0C7D8B4E73ECA /* MenuBarCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F9D423BBCD2E5ED6C361AA /* MenuBarCompanion.swift */; };
 		C72501FD49A7E09EF473CB0F /* DocumentStatsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352FD902910D2932D068F644 /* DocumentStatsCard.swift */; };
 		C72506A4CA87BDD44FF88766 /* ReviewPanelLLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCB1CD5106FDFE97F1CFC5EB /* ReviewPanelLLMTests.swift */; };
+		C7E2AEAF97B253EDD23DA5B5 /* ActionItemInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC241A87AE9D64BF9E0D2B66 /* ActionItemInboxTests.swift */; };
 		C85780A19EC3D4E875D0499E /* TrashListPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100AB221613F25FBB4EB2B29 /* TrashListPane.swift */; };
 		C8E1AB4ED265C0B97465C5BD /* LongRecordingE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D2E657CAA70C909B9AE9088 /* LongRecordingE2ETests.swift */; };
 		C920B2F2484A06C01BC16F95 /* DetectorResultBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92D6AC76A79B38344F240A3 /* DetectorResultBody.swift */; };
@@ -979,6 +980,7 @@
 		AB9445619E520FEF117AF128 /* ActionItemDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionItemDashboardView.swift; sourceTree = "<group>"; };
 		AB988721E93C1D96F2216DF0 /* CanvasController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasController.swift; sourceTree = "<group>"; };
 		ABDDA0045C55C8B7299F678E /* DailyDigestCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyDigestCard.swift; sourceTree = "<group>"; };
+		AC241A87AE9D64BF9E0D2B66 /* ActionItemInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionItemInboxTests.swift; sourceTree = "<group>"; };
 		AD07F2A2082486F313E370B3 /* ModelSettingsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSettingsRow.swift; sourceTree = "<group>"; };
 		AD6FE3B101005521F444593D /* MeetingGridCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingGridCardView.swift; sourceTree = "<group>"; };
 		ADFE072C32F14B59D0406571 /* LLMEngine+Convenience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LLMEngine+Convenience.swift"; sourceTree = "<group>"; };
@@ -1234,6 +1236,7 @@
 			isa = PBXGroup;
 			children = (
 				79C6BA7C0C06C035AC3BFBD1 /* LLMIntegration */,
+				AC241A87AE9D64BF9E0D2B66 /* ActionItemInboxTests.swift */,
 				2476E5FAF6705D05BF8C22F2 /* AudioFileChunkReaderTests.swift */,
 				5FBB6345B454F1E296E6DE8D /* AudioTimelineMixerTests.swift */,
 				E3F2421D7F17F2EE5A04EF7F /* BlockFrameStoreTests.swift */,
@@ -2304,6 +2307,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C7E2AEAF97B253EDD23DA5B5 /* ActionItemInboxTests.swift in Sources */,
 				08CC77D0F8EB0A6EAB31D544 /* AudioFileChunkReaderTests.swift in Sources */,
 				47F0712575338CEF0C0411F0 /* AudioTimelineMixerTests.swift in Sources */,
 				E560D4C6313E3EBFDF0D32B3 /* BlockFrameStoreTests.swift in Sources */,
