@@ -19,7 +19,7 @@ struct LibraryPanelContainer<Content: View>: View {
     @State private var dragStartWidth: CGFloat?
     @State private var dragStartX: CGFloat?
 
-    private let limit = SidebarWidthLimit.inspector
+    private let limit = SidebarWidthLimit.libraryPanel
 
     /// Wider than the workspace panels' 320 default: these carry a search field, filter
     /// controls and two-line rows, all of which are cramped at that width.
