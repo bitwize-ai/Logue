@@ -1,6 +1,12 @@
 import SwiftUI
 
-/// "Continue Where You Left Off" — horizontal scroll of recently modified items with Space breadcrumbs.
+/// "Continue Where You Left Off" — recently modified items with Space breadcrumbs, laid
+/// out as a wrapping grid rather than a horizontal carousel.
+///
+/// A carousel hides most of its contents behind a scroll gesture nobody performs; two
+/// rows that wrap show everything at once. The row cap is what keeps this a glance and
+/// not a list — the sections below it have to stay reachable without scrolling past a
+/// wall of cards.
 struct HomeContinueSection: View {
     @Environment(DocumentStore.self) private var documentStore
     @Environment(MeetingStore.self) private var meetingStore
@@ -9,32 +15,55 @@ struct HomeContinueSection: View {
     /// Receives a finished prompt when the user taps a card's ✦. Nil hides the affordance.
     var onAsk: ((String) -> Void)?
 
+    /// Narrowest a card may get before the grid drops to fewer columns.
+    private static let minCardWidth: CGFloat = 200
+    private static let cardSpacing: CGFloat = 12
+    private static let maxRows = 2
+
+    /// Measured rather than assumed, because the column count — and therefore how many
+    /// cards fit in two rows — depends on how wide the window actually is. Seeded with
+    /// the content column so the first frame is already close.
+    @State private var availableWidth: CGFloat = AppThemeConstants.contentColumnWidth
+
+    private var columnCount: Int {
+        let usable = availableWidth + Self.cardSpacing
+        let perCard = Self.minCardWidth + Self.cardSpacing
+        return max(1, Int(usable / perCard))
+    }
+
     var body: some View {
-        let items = recentItems
+        let columns = columnCount
+        let items = Array(recentItems.prefix(columns * Self.maxRows))
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 CardSectionHeader(icon: "arrow.uturn.forward", title: "Continue Where You Left Off")
-                    .padding(.horizontal, AppThemeConstants.paddingXXLarge)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 14) {
-                        ForEach(items) { item in
-                            continueCard(item)
-                                .frame(width: 220)
-                                .accessibilityLabel(item.title)
-                                .overlay(alignment: .topTrailing) {
-                                    if let onAsk {
-                                        HomeAskAffordance(
-                                            accessibilityLabel: "Ask Logue about \(item.title)"
-                                        ) {
-                                            onAsk(prompt(for: item))
-                                        }
-                                        .padding(AppThemeConstants.paddingXSmall)
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: Self.cardSpacing),
+                        count: columns
+                    ),
+                    spacing: Self.cardSpacing
+                ) {
+                    ForEach(items) { item in
+                        continueCard(item)
+                            .accessibilityLabel(item.title)
+                            .overlay(alignment: .topTrailing) {
+                                if let onAsk {
+                                    HomeAskAffordance(
+                                        accessibilityLabel: "Ask Logue about \(item.title)"
+                                    ) {
+                                        onAsk(prompt(for: item))
                                     }
+                                    .padding(AppThemeConstants.paddingXSmall)
                                 }
-                        }
+                            }
                     }
-                    .padding(.horizontal, AppThemeConstants.paddingXXLarge)
+                }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.width
+                } action: { width in
+                    availableWidth = width
                 }
             }
         }
@@ -117,7 +146,7 @@ struct HomeContinueSection: View {
                 }
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         } contextMenu: {
             EmptyView()
         }
@@ -135,7 +164,9 @@ struct HomeContinueSection: View {
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(5)
             .map { .document($0) }
-        return Array((meetings + docs).sorted { $0.date > $1.date }.prefix(5))
+        // Six, because a three-column grid fills two rows with six. The grid trims this
+        // further at narrower widths — this is the ceiling, not the count.
+        return Array((meetings + docs).sorted { $0.date > $1.date }.prefix(6))
     }
 
     private func previewText(for item: RecentActivityItem) -> String {

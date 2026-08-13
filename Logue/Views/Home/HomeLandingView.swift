@@ -43,6 +43,12 @@ struct HomeLandingView: View {
                     stockedCards
                 }
             }
+            // The cards share the prompt bar's column instead of spanning the window.
+            // The page margin lives here rather than inside each section, so every card
+            // lines up on the same two edges and a new section cannot introduce a third.
+            .frame(maxWidth: AppThemeConstants.contentColumnWidth)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, AppThemeConstants.paddingXXLarge)
             .padding(.vertical, AppThemeConstants.paddingXXLarge)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -158,7 +164,6 @@ struct HomeStarterCard: View {
                 }
             }
         }
-        .padding(.horizontal, AppThemeConstants.paddingXXLarge)
     }
 }
 
@@ -173,7 +178,6 @@ struct HomeLandingHeader: View {
         VStack(alignment: .leading, spacing: AppThemeConstants.paddingMedium) {
             Text("Good \(Self.timeOfDay)")
                 .font(.title2.weight(.semibold))
-                .padding(.horizontal, AppThemeConstants.paddingXXLarge)
 
             HomeContextBar()
 
@@ -181,6 +185,11 @@ struct HomeLandingHeader: View {
                 chipRow
             }
         }
+        // Same column as the prompt bar and the cards below it — see
+        // `AppThemeConstants.contentColumnWidth`.
+        .frame(maxWidth: AppThemeConstants.contentColumnWidth, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, AppThemeConstants.paddingXXLarge)
         .padding(.top, AppThemeConstants.paddingXXLarge)
     }
 
@@ -200,7 +209,6 @@ struct HomeLandingHeader: View {
             }
             Spacer()
         }
-        .padding(.horizontal, AppThemeConstants.paddingXXLarge)
     }
 
     static var timeOfDay: String {

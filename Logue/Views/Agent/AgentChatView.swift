@@ -194,7 +194,7 @@ struct AgentChatView: View {
 
             inputBar
                 .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
-                .frame(maxWidth: 720)
+                .frame(maxWidth: AppThemeConstants.contentColumnWidth)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, AppThemeConstants.paddingXXLarge)
                 .padding(.vertical, AppThemeConstants.paddingLarge)
@@ -263,7 +263,7 @@ struct AgentChatView: View {
 
         inputBar
             .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
-            .frame(maxWidth: 720)
+            .frame(maxWidth: AppThemeConstants.contentColumnWidth)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 24)
             .padding(.bottom, 12)

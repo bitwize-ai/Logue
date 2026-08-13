@@ -27,7 +27,6 @@ struct HomeQuickActions: View {
                 action: onNewDocument
             )
         }
-        .padding(.horizontal, AppThemeConstants.paddingXXLarge)
     }
 }
 

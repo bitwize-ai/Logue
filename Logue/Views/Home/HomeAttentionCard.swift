@@ -36,7 +36,6 @@ struct HomeAttentionCard: View {
                     }
                 }
             }
-            .padding(.horizontal, 24)
         }
     }
 
