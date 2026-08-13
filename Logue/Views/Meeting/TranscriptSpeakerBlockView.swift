@@ -22,9 +22,12 @@ struct SpeakerBlockView: View {
     @State private var isHovered = false
     /// The paragraph the pointer is in, if any.
     @State private var hoveredGroupID: UUID?
-    @State private var showBookmarkPopover = false
-    /// The moment the open bookmark picker will attach to.
-    @State private var bookmarkTarget: TimeInterval?
+    /// The line whose bookmark picker is open.
+    ///
+    /// An identity rather than a flag: every marked line attaches a popover, and binding them all
+    /// to one boolean made SwiftUI anchor the picker to whichever button happened to render last —
+    /// so it opened at the bottom of the transcript instead of beside the button pressed.
+    @State private var bookmarkingSegmentID: UUID?
     @State private var showBookmarkAdded = false
     @State private var isEditingSpeakerName = false
     @State private var speakerNameDraft = ""
@@ -125,8 +128,7 @@ struct SpeakerBlockView: View {
     private func bookmarkButton(for segment: TranscriptSegment) -> some View {
         if onAddBookmark != nil {
             Button {
-                bookmarkTarget = segment.startTime
-                showBookmarkPopover = true
+                bookmarkingSegmentID = segment.id
             } label: {
                 Image(systemName: "bookmark")
                     .font(.caption2)
@@ -135,8 +137,18 @@ struct SpeakerBlockView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add bookmark at \(TranscriptSegment.formatTime(segment.startTime))")
             .help("Add bookmark here")
-            .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
-                bookmarkTypePicker
+            .popover(
+                isPresented: Binding(
+                    get: { bookmarkingSegmentID == segment.id },
+                    set: { presented in
+                        if !presented, bookmarkingSegmentID == segment.id {
+                            bookmarkingSegmentID = nil
+                        }
+                    }
+                ),
+                arrowEdge: .trailing
+            ) {
+                bookmarkPicker(for: segment)
             }
         }
     }
@@ -367,20 +379,20 @@ struct SpeakerBlockView: View {
 
     // MARK: - Bookmark Picker
 
-    private var bookmarkTypePicker: some View {
+    private func bookmarkPicker(for segment: TranscriptSegment) -> some View {
         BlockBookmarkPicker(
             onAdd: { label, color in
-                // The moment the user pressed the button beside, not the block's start — with
-                // blocks cut by time, that was the beginning of the transcript.
-                onAddBookmark?(bookmarkTarget ?? block.startTime, label, color)
-                showBookmarkPopover = false
+                // The moment the button sits beside, not the block's start — blocks are cut by
+                // time, so that was the beginning of the transcript.
+                onAddBookmark?(segment.startTime, label, color)
+                bookmarkingSegmentID = nil
                 showBookmarkAdded = true
                 Task {
                     try? await Task.sleep(for: AppConstants.Delays.bookmarkConfirm)
                     showBookmarkAdded = false
                 }
             },
-            onDismiss: { showBookmarkPopover = false }
+            onDismiss: { bookmarkingSegmentID = nil }
         )
     }
 }
