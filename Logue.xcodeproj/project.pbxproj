@@ -147,6 +147,7 @@
 		362E757F0940BDB7CB5E560A /* BlockMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D204801C0C2BADD68D406D7 /* BlockMoveTests.swift */; };
 		372D7C7E58F4EF0B8305E096 /* BlockRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61150569A2C3758E03DC0666 /* BlockRowView.swift */; };
 		37DEDF1E37B6221AC2F38912 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E812DD5E7EE68ED58521109 /* KeychainHelper.swift */; };
+		382265ED81A9CA7B18C98FBB /* TaskEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEEA2965A9DBF97DA170575 /* TaskEditTests.swift */; };
 		38DD6704C91604D913E54000 /* PromptRegistry+Agent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D228A8EDB45295F064F77732 /* PromptRegistry+Agent.swift */; };
 		394298FD6FA5E69385C52C55 /* MemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54533945F253EFE4459AC3A2 /* MemoryStore.swift */; };
 		39662C74243A5431B46422BF /* PIIRegexScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791BA3A7ABEB9CC9E301FCE6 /* PIIRegexScanner.swift */; };
@@ -526,6 +527,7 @@
 		E6493441E6BA70D6923F1892 /* CategoryBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE1AF7FCF6CA2A02094FC158 /* CategoryBadge.swift */; };
 		E755863F7A9B42F71225ED83 /* WorkspaceWidth.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF090D250332616A69182B4D /* WorkspaceWidth.swift */; };
 		E775E71B9205D0713CC8EC7D /* TaskStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41C0416ED8CE675F6EF78FA0 /* TaskStoreTests.swift */; };
+		E77A317ECD6AFA321A27BFC7 /* TaskEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7CF78966914DEE0103EDB4 /* TaskEdit.swift */; };
 		E7CCA0F9A6DBAE687A5EA3AB /* SpaceStore+MarkdownFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDFC48D1348543B9A74105F1 /* SpaceStore+MarkdownFolder.swift */; };
 		E8033FF27C67CCB95321C549 /* WritingDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818DBC353FE8A22EC01DCB37 /* WritingDocumentTests.swift */; };
 		E817A3F9AE64FAAB78E95388 /* TableBlockView+ContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEA3BE37EB92E607F4C99EAB /* TableBlockView+ContextMenu.swift */; };
@@ -786,6 +788,7 @@
 		58D77A8F6311F520C9F7AAA3 /* SortformerTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortformerTimeline.swift; sourceTree = "<group>"; };
 		5967FC0A683B57D96AAAB8CF /* TaskTriageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTriageTests.swift; sourceTree = "<group>"; };
 		598B271BB8503CB430B222D9 /* TaskItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskItemTests.swift; sourceTree = "<group>"; };
+		5A7CF78966914DEE0103EDB4 /* TaskEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEdit.swift; sourceTree = "<group>"; };
 		5B1BA8536C1D15EB0A32717E /* TranscriptSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSegment.swift; sourceTree = "<group>"; };
 		5B22ABF6CCA6E8E7D64ADF54 /* DocumentTypeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTypeTests.swift; sourceTree = "<group>"; };
 		5BF8F4CE67B450542E7CFAD3 /* SourceMeetingChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceMeetingChip.swift; sourceTree = "<group>"; };
@@ -1061,6 +1064,7 @@
 		CF540C94525BF2C21BA389BF /* LogoBrandView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogoBrandView.swift; sourceTree = "<group>"; };
 		CF81895980E378C21F96AFD6 /* DocumentLLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentLLMTests.swift; sourceTree = "<group>"; };
 		CFB4EE100316EB840B5D93EE /* HoverToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverToolbar.swift; sourceTree = "<group>"; };
+		CFEEA2965A9DBF97DA170575 /* TaskEditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEditTests.swift; sourceTree = "<group>"; };
 		D00B89A0E069A596FE5D1AFB /* TaskItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskItem.swift; sourceTree = "<group>"; };
 		D02A1248D9EA3AC9CEDC508F /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
 		D0946FCC63B694398DDCA143 /* BlockFrameStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockFrameStore.swift; sourceTree = "<group>"; };
@@ -1305,6 +1309,7 @@
 				090F10872AED47868B63F897 /* SpeakerRenameTests.swift */,
 				39A71FBC868F121DEC9A659E /* StorageSwitchReconcileTests.swift */,
 				5C461874879489EBFF0BE683 /* SuggestionParserTests.swift */,
+				CFEEA2965A9DBF97DA170575 /* TaskEditTests.swift */,
 				B3B356E5C7937D4D7600108E /* TaskFileTests.swift */,
 				2BA1C31F0A0725C4F8EC59F8 /* TaskFilterTests.swift */,
 				79FDCA8C55F7A1E48CB03F56 /* TaskFolderIsolationTests.swift */,
@@ -1675,6 +1680,7 @@
 				0D270AE60AD2503E159E4A50 /* SpeechTranscriberEngine.swift */,
 				FCEBD05BEF5831C92DDDE40E /* SuggestionParser.swift */,
 				E93998CDEA76314D90824839 /* SystemAudioCapture.swift */,
+				5A7CF78966914DEE0103EDB4 /* TaskEdit.swift */,
 				18FE2DA61E472719558C6774 /* TaskFile.swift */,
 				8E366631BFF6453332DAB21D /* TaskTextParser.swift */,
 				42FA58E9E9D16008C0F7FF4E /* TaskTriage.swift */,
@@ -2385,6 +2391,7 @@
 				E22FBD5A4C277D1F262060D5 /* SpeakerRenameTests.swift in Sources */,
 				A8F861A1BBB3D5AD5F23A1D6 /* StorageSwitchReconcileTests.swift in Sources */,
 				EFB8555797ACCB5E2120C1AA /* SuggestionParserTests.swift in Sources */,
+				382265ED81A9CA7B18C98FBB /* TaskEditTests.swift in Sources */,
 				68E15F52C2575EED30F6D8AE /* TaskFileTests.swift in Sources */,
 				FB9E91999D0821C127EAAAC9 /* TaskFilterTests.swift in Sources */,
 				F820294C30577940D9D020BB /* TaskFolderIsolationTests.swift in Sources */,
@@ -2807,6 +2814,7 @@
 				323E15A51D95328EFA95C6CB /* TableBlockView+Drawing.swift in Sources */,
 				C4DB53AE534CD1FE291735A4 /* TableBlockView.swift in Sources */,
 				96F5B0B3E191E9EC0AB9B835 /* TableCellTextView.swift in Sources */,
+				E77A317ECD6AFA321A27BFC7 /* TaskEdit.swift in Sources */,
 				A8DC4519467E9CA7C1769C8A /* TaskFile.swift in Sources */,
 				42A5F03397299AFAE89AC475 /* TaskFilter.swift in Sources */,
 				8D4910D240B3AD329C9B59B7 /* TaskFolderStore.swift in Sources */,
