@@ -73,6 +73,7 @@
 		14575BB38E5D155A9BF7415B /* CommandCenterPIIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24578E3A172E90DC703D4C9D /* CommandCenterPIIView.swift */; };
 		14AF54A07D25FA4EE8DA4DC7 /* ScoreRingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E188450986288699B1B8A252 /* ScoreRingView.swift */; };
 		14BD5D00F6C5353221E2E913 /* GraphEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73D1A15BDB3690A5CF5AB97E /* GraphEntity.swift */; };
+		152732F0E74B6DB0CF3896CF /* SidebarItemPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 361DCA7F1668F213992E9448 /* SidebarItemPersistenceTests.swift */; };
 		15CC6613C14DCCA50A5BC133 /* DiagramMathBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C8C014AA23FE44D9ED97AE /* DiagramMathBlockView.swift */; };
 		15F753357E3AF1E5C0B75BBB /* RecordingSessionManager+BatchPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6EFD3D667EF8B720C6B79C /* RecordingSessionManager+BatchPass.swift */; };
 		166F6924A97D2ECE1AE75F3E /* DocumentListPane+Organise.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC5DA2719E8ECFA34A035EB /* DocumentListPane+Organise.swift */; };
@@ -437,6 +438,7 @@
 		C42EA68CF5269C34B3FFA0EF /* ReviewPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C53BEC5D1AB8C5D840B6DCD2 /* ReviewPanelView.swift */; };
 		C4DB53AE534CD1FE291735A4 /* TableBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AF5EF3690289F45983AC0AB /* TableBlockView.swift */; };
 		C53B4DB0013DAEC4D7EF3C6F /* BrowserExtensionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED83A7FADA1F871AEA2687DE /* BrowserExtensionSection.swift */; };
+		C5A72B57BDADCB5F9EE602A2 /* SidebarItemPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707A87CD72C1EE7AA3BA00B8 /* SidebarItemPersistence.swift */; };
 		C5DD444112B8F0EBD6B1089D /* ModelAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A71C8E402261DE0D93DA2A /* ModelAction.swift */; };
 		C621EFB113036A60F54FBC11 /* AppThemeConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DBDDB9609A929FFB08A7AB8 /* AppThemeConstants.swift */; };
 		C6286FD01D42AB01841F83AD /* EmailTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503B3930F50E439D0AAF43F9 /* EmailTool.swift */; };
@@ -717,6 +719,7 @@
 		358D99D88D3FB7C39EE0C7E7 /* InlineRewriteEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineRewriteEngine.swift; sourceTree = "<group>"; };
 		360EAA6CD755F73FDF0ECACD /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		3610AC26F793D99423FAED5B /* PreservedJSON.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreservedJSON.swift; sourceTree = "<group>"; };
+		361DCA7F1668F213992E9448 /* SidebarItemPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItemPersistenceTests.swift; sourceTree = "<group>"; };
 		363A3EDC8BB82CC18EB86C1C /* AgentChatState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChatState.swift; sourceTree = "<group>"; };
 		3669C3260F81F837792FCFE9 /* AutomationSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationSettingsTab.swift; sourceTree = "<group>"; };
 		3794E1F92314F0474FC7B317 /* MeetingPromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingPromptBuilder.swift; sourceTree = "<group>"; };
@@ -839,6 +842,7 @@
 		70020145197E51CB665C7D91 /* BlockEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockEditorView.swift; sourceTree = "<group>"; };
 		70684260B4C198545C4A6AC2 /* RetryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryHelper.swift; sourceTree = "<group>"; };
 		707917F76D5706DB3B72EB07 /* WeeklyActivityChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyActivityChart.swift; sourceTree = "<group>"; };
+		707A87CD72C1EE7AA3BA00B8 /* SidebarItemPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItemPersistence.swift; sourceTree = "<group>"; };
 		710B1C39C6F97501735DCBB9 /* AudioPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlaybackService.swift; sourceTree = "<group>"; };
 		71CCC37048141456C9BA5AA3 /* DocumentSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentSearchBar.swift; sourceTree = "<group>"; };
 		7250A0C394AFABC041C58D68 /* DeepResearchCoordinator+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeepResearchCoordinator+Helpers.swift"; sourceTree = "<group>"; };
@@ -1294,6 +1298,7 @@
 				30AC57F16E3BF3139F64CF79 /* SavedRecordingTrustTests.swift */,
 				D238B8169934A609E62E8D9E /* SavedViewFilterTests.swift */,
 				A3A9B8AAE15A27CE425D28BC /* ScanSafetyTests.swift */,
+				361DCA7F1668F213992E9448 /* SidebarItemPersistenceTests.swift */,
 				5EC0BFF05793C2090F8A90C1 /* SidebarWidthLimitTests.swift */,
 				20A9DCED765C659BAD6BA11C /* SortformerTimelineTests.swift */,
 				382510F54B865B60B16FDE73 /* SpaceFileTests.swift */,
@@ -1668,6 +1673,7 @@
 				C0CBBB8CE2F9462205BF47F4 /* PromptRegistry+Memory.swift */,
 				1C843F0CCD12C0AFFD804F85 /* PromptRegistry+Writing.swift */,
 				70684260B4C198545C4A6AC2 /* RetryHelper.swift */,
+				707A87CD72C1EE7AA3BA00B8 /* SidebarItemPersistence.swift */,
 				AAF11921E9C36605B80954D2 /* SlideDeckBuilder.swift */,
 				58D77A8F6311F520C9F7AAA3 /* SortformerTimeline.swift */,
 				B612ADDBC4E7FB7917F6D72A /* SpaceFile.swift */,
@@ -2388,6 +2394,7 @@
 				BC2C3ECF279AC5A50444CB47 /* SavedRecordingTrustTests.swift in Sources */,
 				D1F8F911B34F47321D8B6631 /* SavedViewFilterTests.swift in Sources */,
 				0CDD1DBC2EB63DC0F8F49588 /* ScanSafetyTests.swift in Sources */,
+				152732F0E74B6DB0CF3896CF /* SidebarItemPersistenceTests.swift in Sources */,
 				F5591335FF5786E244D72E2E /* SidebarWidthLimitTests.swift in Sources */,
 				480E2F2ECBABB70296373573 /* SortformerTimelineTests.swift in Sources */,
 				AA1456FCC75FBB7DFEFC1BE0 /* SpaceFileTests.swift in Sources */,
@@ -2779,6 +2786,7 @@
 				F367150508AE9F8D4B445DA0 /* ShortcutManager.swift in Sources */,
 				606932D135B847FCE58B9666 /* ShortcutRow.swift in Sources */,
 				9999C3BBEDA4DC345CD53950 /* ShortcutsSettingsTab.swift in Sources */,
+				C5A72B57BDADCB5F9EE602A2 /* SidebarItemPersistence.swift in Sources */,
 				D127F1343EE58276DFA15F62 /* SidebarWidthLimit.swift in Sources */,
 				2E44F9F45806D57C7D99BC21 /* SkeletonView.swift in Sources */,
 				A3BB9CABAD3F8815F31B297F /* SlashCommandView.swift in Sources */,
