@@ -29,6 +29,7 @@ struct MeetingSpeakersPanelView: View {
                         ForEach(speakerStats, id: \.name) { stat in
                             SpeakerRow(
                                 stat: stat,
+                                color: meeting.speakerColorsByName[stat.name],
                                 isEditing: editingSpeaker == stat.name,
                                 newName: $newName,
                                 onStartEdit: {
@@ -124,6 +125,8 @@ struct MeetingSpeakersPanelView: View {
 
 private struct SpeakerRow: View {
     let stat: MeetingSpeakersPanelView.SpeakerStat
+    /// The colour this speaker is drawn in throughout the transcript.
+    var color: Color?
     let isEditing: Bool
     @Binding var newName: String
     let onStartEdit: () -> Void
@@ -135,9 +138,15 @@ private struct SpeakerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: "person.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.tint)
+                Text(SpeakerShortLabel.forSpeaker(stat.name))
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(color ?? .secondary)
+                    .frame(width: 26, alignment: .center)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill((color ?? Color.secondary).opacity(0.14))
+                    )
+                    .accessibilityHidden(true)
 
                 if isEditing {
                     TextField("Speaker name", text: $newName, onCommit: onCommitEdit)
@@ -188,7 +197,7 @@ private struct SpeakerRow: View {
 
             // Progress bar
             ProgressView(value: stat.percentage, total: 100)
-                .tint(AppThemeConstants.accent)
+                .tint(color ?? AppThemeConstants.accent)
 
             HStack(spacing: 12) {
                 Label("\(stat.segmentCount) segments", systemImage: "text.bubble")
