@@ -26,6 +26,8 @@ enum TranscriptGutter {
         var lastStampedAt: TimeInterval?
         var previousSpeaker: String?
         var hasPrevious = false
+        var lastPrintedSpeaker: String?
+        var hasPrintedSpeaker = false
 
         for segment in segments {
             let isFirst = lastStampedAt == nil
@@ -37,10 +39,22 @@ enum TranscriptGutter {
 
             guard isFirst || advanced || speakerChanged else { continue }
 
+            // The name is printed only where it changes. One speaker talking for a minute produces
+            // a column of times against a single name at the top, rather than the same token
+            // repeated beside every one of them — which reads as noise and, worse, as an exchange.
+            let isNewSpeaker = !hasPrintedSpeaker || lastPrintedSpeaker != segment.speakerLabel
+            let token = isNewSpeaker
+                ? (segment.speakerLabel.map(SpeakerShortLabel.forSpeaker) ?? "")
+                : ""
+            if isNewSpeaker {
+                lastPrintedSpeaker = segment.speakerLabel
+                hasPrintedSpeaker = true
+            }
+
             marks[segment.id] = Mark(
                 time: TranscriptSegment.formatTime(segment.startTime),
                 speaker: segment.speakerLabel,
-                shortSpeaker: segment.speakerLabel.map(SpeakerShortLabel.forSpeaker) ?? ""
+                shortSpeaker: token
             )
             lastStampedAt = segment.startTime
         }

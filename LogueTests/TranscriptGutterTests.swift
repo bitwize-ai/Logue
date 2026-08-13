@@ -63,4 +63,31 @@ struct TranscriptGutterTests {
         let segments = [segment("one", 0), segment("two", 2, speaker: "Speaker 1")]
         #expect(TranscriptGutter.marks(for: segments)[segments[1].id]?.shortSpeaker == "S1")
     }
+
+    @Test("One speaker holding the floor is named once, not beside every timestamp")
+    func nameIsPrintedOnlyWhenItChanges() {
+        let segments = [
+            segment("one", 0, speaker: "Speaker 1"),
+            segment("two", 12, speaker: "Speaker 1"),
+            segment("three", 24, speaker: "Speaker 1"),
+        ]
+        let marks = TranscriptGutter.marks(for: segments)
+        #expect(marks[segments[0].id]?.shortSpeaker == "S1")
+        #expect(marks[segments[1].id]?.shortSpeaker.isEmpty == true, "a repeated name reads as a new turn")
+        #expect(marks[segments[2].id]?.shortSpeaker.isEmpty == true)
+        // The times still print, so the transcript keeps its shape.
+        #expect(marks[segments[1].id]?.time == "0:12")
+    }
+
+    @Test("The name returns when the floor changes hands and comes back")
+    func nameReturnsAfterAnotherSpeaker() {
+        let segments = [
+            segment("one", 0, speaker: "Speaker 1"),
+            segment("two", 12, speaker: "Speaker 2"),
+            segment("three", 24, speaker: "Speaker 1"),
+        ]
+        let marks = TranscriptGutter.marks(for: segments)
+        #expect(marks[segments[1].id]?.shortSpeaker == "S2")
+        #expect(marks[segments[2].id]?.shortSpeaker == "S1")
+    }
 }

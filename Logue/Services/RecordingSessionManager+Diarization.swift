@@ -137,16 +137,18 @@ extension RecordingSessionManager {
         let sortformerUpdates = pass.speakers
         let batchSegments = pass.segments
 
-        // Replace this session's streaming transcript with the accurate Parakeet TDT result before
-        // speakers are assigned, so alignment runs against the final text rather than the draft.
+        // The transcript the user watched being written is the transcript they keep.
+        //
+        // Replacing it with the batch result was more accurate word for word, but it re-cut every
+        // sentence: a different number of blocks, text merged and split, and the reader's place
+        // lost — all arriving silently, a minute after they stopped recording. Speaker identity does
+        // not require it. Sortformer produces time ranges, not text, so the labels below apply to
+        // the live segments perfectly well, and the transcript never changes under anyone.
+        //
+        // `batchSegments` is still computed: it is what the speaker timeline is derived from, and
+        // `heardDuration` still bounds how much of the session that timeline may speak for.
         if let batchSegments {
-            MeetingStore.shared.replaceTranscript(
-                for: meetingID,
-                with: batchSegments,
-                sessionStart: sessionStart,
-                heardDuration: heardDuration
-            )
-            logger.info("Streaming transcript replaced with batch ASR (\(batchSegments.count) segments)")
+            logger.info("Keeping the live transcript; batch ASR produced \(batchSegments.count) segment(s) for timing only")
         }
 
         if let updates = sortformerUpdates {
