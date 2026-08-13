@@ -7,12 +7,14 @@ struct TaskRowView: View {
     let onToggle: () -> Void
     let onOpenSource: () -> Void
 
+    @State private var isHovered = false
+
     private var isDone: Bool {
         task.status == .done
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Button(action: onToggle) {
                 Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isDone ? Color.accentColor : .secondary)
@@ -31,8 +33,14 @@ struct TaskRowView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .background(
+            isHovered ? AppThemeConstants.surfaceBackground : Color.clear,
+            in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
+        )
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
     }
 
     private var detailRow: some View {
@@ -65,14 +73,14 @@ struct TaskRowView: View {
             result.append(Badge(
                 label: due.formatted(date: .abbreviated, time: .omitted),
                 symbol: "calendar",
-                tint: task.isOverdue ? .red : .secondary
+                tint: task.isOverdue ? AppThemeConstants.error : .secondary
             ))
         }
         if task.priority != .medium {
             result.append(Badge(
                 label: task.priority.displayName,
                 symbol: task.priority.symbolName,
-                tint: task.priority == .high ? .orange : .secondary
+                tint: task.priority == .high ? AppThemeConstants.warning : .secondary
             ))
         }
         if let recurrence = task.recurrence {
