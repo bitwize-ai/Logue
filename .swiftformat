@@ -2,6 +2,10 @@
 
 # File options
 --exclude .build,DerivedData,Packages,.claude
+# Worktrees are often kept under .claude/, and the exclude above would otherwise skip their
+# sources entirely — SwiftFormat exits 0 having checked nothing, so `make lint` and the git
+# hooks pass while CI, which has no worktrees, is the first run to see the code.
+--unexclude .claude/worktrees
 
 # Format options
 --indent 4

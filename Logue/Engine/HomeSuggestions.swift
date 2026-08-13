@@ -12,7 +12,9 @@ enum HomeSuggestions {
     struct Chip: Equatable, Identifiable {
         let label: String
         let prompt: String
-        var id: String { label }
+        var id: String {
+            label
+        }
     }
 
     /// What the workspace looks like right now, reduced to only what chip selection needs.

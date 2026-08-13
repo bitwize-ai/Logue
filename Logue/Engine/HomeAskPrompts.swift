@@ -34,7 +34,9 @@ enum HomeAskPrompts {
     /// instruction line inside the message; the wider control-character sweep is cheap
     /// and closes the same door for the non-printing characters either side of it.
     private static func isDisallowed(_ character: Character) -> Bool {
-        if character.isNewline { return true }
+        if character.isNewline {
+            return true
+        }
         return character.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }
 
