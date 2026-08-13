@@ -120,7 +120,7 @@ enum TaskFilter {
         case .dueDateAsc:
             // Undated tasks sort last. Treating a missing date as `.distantPast` would put
             // every undated task above everything urgent, which is the opposite of useful.
-            return tasks.sorted { lhs, rhs in
+            tasks.sorted { lhs, rhs in
                 switch (lhs.dueDate, rhs.dueDate) {
                 case let (left?, right?):
                     left == right ? lhs.title < rhs.title : left < right
@@ -133,13 +133,13 @@ enum TaskFilter {
                 }
             }
         case .priorityDesc:
-            return tasks.sorted { lhs, rhs in
+            tasks.sorted { lhs, rhs in
                 lhs.priority == rhs.priority ? lhs.title < rhs.title : lhs.priority > rhs.priority
             }
         case .createdNewest:
-            return tasks.sorted { $0.createdAt > $1.createdAt }
+            tasks.sorted { $0.createdAt > $1.createdAt }
         case .title:
-            return tasks.sorted {
+            tasks.sorted {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
         }
