@@ -17,6 +17,7 @@ struct TaskListView: View {
 
     @State private var searchText = ""
     @State private var selectedTag: String?
+    @State private var selectedTaskID: UUID?
     @State private var triageService = TaskTriageService.shared
     @State private var engineStatus = LLMEngineStatus.shared
     @State private var showTriage = false
@@ -48,7 +49,37 @@ struct TaskListView: View {
 
     // MARK: - Body
 
+    /// The selected task, re-read from the store rather than held, so an edit applied
+    /// anywhere (the inspector, triage, a completion toggle) is what the inspector shows.
+    private var selectedTask: TaskItem? {
+        guard let selectedTaskID else { return nil }
+        return store.task(id: selectedTaskID)
+    }
+
     var body: some View {
+        HStack(spacing: 0) {
+            listPane
+
+            if let selectedTask {
+                Divider()
+                TaskInspectorPanel(
+                    task: selectedTask,
+                    meetingTitle: meetingTitle(for: selectedTask),
+                    onChange: { store.update($0) },
+                    onDelete: {
+                        store.delete(id: selectedTask.id)
+                        selectedTaskID = nil
+                    },
+                    onOpenSource: { openSource(for: selectedTask) },
+                    onClose: { selectedTaskID = nil }
+                )
+                .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: selectedTaskID)
+    }
+
+    private var listPane: some View {
         VStack(spacing: 0) {
             TaskQuickAddField { text in
                 store.capture(text)
@@ -168,13 +199,19 @@ struct TaskListView: View {
                     TaskRowView(
                         task: task,
                         meetingTitle: meetingTitle(for: task),
+                        isSelected: task.id == selectedTaskID,
                         onToggle: { store.toggleCompletion(id: task.id) },
-                        onOpenSource: { openSource(for: task) }
+                        onOpenSource: { openSource(for: task) },
+                        onSelect: { selectedTaskID = task.id },
+                        onRename: { store.update(TaskEdit.renamed(task, to: $0)) }
                     )
                     .contextMenu {
                         priorityMenu(for: task)
                         Divider()
-                        Button("Delete", role: .destructive) { store.delete(id: task.id) }
+                        Button("Delete", role: .destructive) {
+                            if selectedTaskID == task.id { selectedTaskID = nil }
+                            store.delete(id: task.id)
+                        }
                     }
                     if task.id != visibleTasks.last?.id {
                         Divider().padding(.leading, 44)
