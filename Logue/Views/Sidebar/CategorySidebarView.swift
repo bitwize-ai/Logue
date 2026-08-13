@@ -106,28 +106,6 @@ struct CategorySidebarView: View {
 
                         Label {
                             HStack {
-                                Text("Action Items")
-                                Spacer()
-                                let pendingCount = pendingActionItemCount
-                                if pendingCount > 0 {
-                                    Text("\(pendingCount)")
-                                        .font(.caption2)
-                                        .foregroundStyle(
-                                            hasOverdueItems
-                                                ? AnyShapeStyle(AppThemeConstants.error)
-                                                : AnyShapeStyle(HierarchicalShapeStyle.tertiary)
-                                        )
-                                }
-                            }
-                        } icon: {
-                            Image(systemName: "checklist")
-                        }
-                        .tag(SidebarItem.actionItems)
-                        .accessibilityLabel(actionItemsAccessibilityLabel)
-                        .accessibilityHint("View all action items across meetings")
-
-                        Label {
-                            HStack {
                                 Text("Tasks")
                                 Spacer()
                                 let openCount = taskStore.openTasks.count
@@ -147,21 +125,6 @@ struct CategorySidebarView: View {
                         .tag(SidebarItem.tasks)
                         .accessibilityLabel("Tasks, \(taskStore.openTasks.count) open")
                         .accessibilityHint("View and capture your own tasks")
-
-                        Label {
-                            HStack {
-                                Text("Templates")
-                                Spacer()
-                                Text("\(templateStore.templates.count)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        } icon: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                        .tag(SidebarItem.templates)
-                        .accessibilityLabel("Templates, \(templateStore.templates.count) items")
-                        .accessibilityHint("Browse document templates")
                     }
 
                     // Phase H: AI Detector moved into the document Verify
@@ -295,55 +258,14 @@ struct CategorySidebarView: View {
 
     // MARK: - Action Item Counts
 
-    /// What the Action Items screen will show under its default chip.
-    ///
-    /// Counted through the same rule the screen uses rather than re-derived here — a badge
-    /// that disagrees with the list it opens teaches the user to ignore it.
-    private var pendingActionItemCount: Int {
-        inboxActionItems.count
-    }
-
-    /// The action items still awaiting a decision, across every live meeting.
-    private var inboxActionItems: [ActionItem] {
-        meetingStore.activeMeetings
-            .filter { !$0.isArchived }
-            .flatMap(\.actionItems)
-            .filter {
-                ActionItemInbox.matches(
-                    $0, mode: .inbox, isPromoted: taskStore.promotedTask(for: $0.id) != nil
-                )
-            }
-    }
-
     /// Whether any open task is past its due date, so the count reads as urgent.
     private var hasOverdueTasks: Bool {
         taskStore.openTasks.contains { $0.isOverdue }
     }
 
-    /// Scoped to the inbox for the same reason the count is: this tints the inbox badge, and
-    /// an overdue item the user already promoted is the Tasks badge's problem to colour.
-    private var hasOverdueItems: Bool {
-        let now = Date()
-        return inboxActionItems.contains { item in
-            guard let due = item.dueDate else { return false }
-            return due < now
-        }
-    }
-
     private var pinnedAccessibilityLabel: String {
         let count = documentStore.pinnedDocuments.count + meetingStore.activeMeetings.filter(\.isPinned).count
         return count > 0 ? "Pinned, \(count) items" : "Pinned"
-    }
-
-    private var actionItemsAccessibilityLabel: String {
-        var label = "Action Items"
-        if pendingActionItemCount > 0 {
-            label += ", \(pendingActionItemCount) pending"
-        }
-        if hasOverdueItems {
-            label += ", some overdue"
-        }
-        return label
     }
 
     // MARK: - Spaces Helpers

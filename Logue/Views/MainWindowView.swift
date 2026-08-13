@@ -10,9 +10,10 @@ enum SidebarItem: Hashable {
     case recent
     case allDocuments
     case allMeetings
-    case actionItems
     case tasks
-    case templates
+    // Action Items and Templates used to live here. They are now panels of All Meetings and
+    // All Documents — see `LibraryPanel` — because each is a lens on a library rather than a
+    // sibling of it. `SidebarSelectionMigration` maps the old persisted values.
     case space(UUID)
     case document(UUID)
     case meeting(UUID)
@@ -66,6 +67,17 @@ struct MainWindowView: View {
 
     @State private var showCommandPalette = false
     @State private var showQuickOpen = false
+
+    // Extension-visible: +LibraryPanels
+    /// The library panels, collapsed unless the last session ended inside one.
+    ///
+    /// Both read the same stored value at init rather than one deriving from the other,
+    /// because `@State` initialisers cannot see each other.
+    @State var meetingsPanelCollapsed = Self.loadRestoredPanel() != .actionItems
+    // Extension-visible: +LibraryPanels
+    @State var documentsPanelCollapsed = Self.loadRestoredPanel() != .templates
+    // Extension-visible: +LibraryPanels
+    @State var taskStore = TaskStore.shared
 
     /// Which panes are shown, driven by ⌘1 / ⌘2 / ⌘3 and persisted across launches.
     ///
@@ -193,9 +205,7 @@ struct MainWindowView: View {
                     case .recent: "recent"
                     case .allDocuments: "documents"
                     case .allMeetings: "meetings"
-                    case .actionItems: "action_items"
                     case .tasks: "tasks"
-                    case .templates: "templates"
                     case .space: "space"
                     case .document: "document"
                     case .meeting: "meeting"
@@ -364,15 +374,27 @@ struct MainWindowView: View {
         case .recent:
             RecentContentPane()
         case .allDocuments:
-            DocumentListContentView(spaceID: nil)
+            LibrarySurfaceView<DocumentsLibraryTool, _, _>(
+                isPanelCollapsed: $documentsPanelCollapsed,
+                badgeCount: nil,
+                toggleHelp: "Templates"
+            ) {
+                DocumentListContentView(spaceID: nil)
+            } panel: { _ in
+                TemplateListPanel()
+            }
         case .allMeetings:
-            MeetingListContentView(spaceID: nil)
-        case .actionItems:
-            ActionItemDashboardView()
+            LibrarySurfaceView<MeetingsLibraryTool, _, _>(
+                isPanelCollapsed: $meetingsPanelCollapsed,
+                badgeCount: actionItemInboxCount,
+                toggleHelp: "Action items waiting to be triaged"
+            ) {
+                MeetingListContentView(spaceID: nil)
+            } panel: { _ in
+                ActionItemInboxPanel()
+            }
         case .tasks:
             TaskListView()
-        case .templates:
-            TemplateGalleryView()
         case let .space(id):
             SpaceContentPane(spaceID: id, sidebarSelection: $sidebarSelection)
         case .trash:
@@ -491,9 +513,7 @@ struct MainWindowView: View {
         case .recent: return "Recent"
         case .allDocuments: return "All Documents"
         case .allMeetings: return "All Meetings"
-        case .actionItems: return "Action Items"
         case .tasks: return "Tasks"
-        case .templates: return "Templates"
         case let .space(id): return spaceStore.space(for: id)?.name ?? "Space"
         case .trash: return "Trash"
         case .document, .meeting: return "Back"
@@ -521,14 +541,23 @@ struct MainWindowView: View {
             ("Recent", "clock", .recent),
             ("All Documents", "doc.text", .allDocuments),
             ("All Meetings", "mic", .allMeetings),
-            ("Action Items", "checklist", .actionItems),
-            ("Templates", "doc.on.doc", .templates),
+            ("Tasks", "checkmark.circle", .tasks),
             ("Trash", "trash", .trash),
         ]
-        return entries.map { title, icon, destination in
+        let surfaces = entries.map { title, icon, destination in
             CommandItem(title, icon: icon, category: .navigation) {
                 goBack()
                 sidebarSelection = destination
+            }
+        }
+        // The two that became panels keep their entries. With no sidebar row left, the
+        // palette is how they are found — dropping them here would make the features
+        // reachable only by knowing which surface hides them.
+        return surfaces + LibraryPanel.allCases.map { panel in
+            CommandItem(panel.title, icon: panel.symbolName, category: .navigation) {
+                goBack()
+                sidebarSelection = panel.host
+                open(panel)
             }
         }
     }

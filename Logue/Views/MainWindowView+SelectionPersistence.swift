@@ -6,29 +6,32 @@ import SwiftUI
 ///
 /// Split out of `MainWindowView` to keep that type within the project's body-length limit.
 /// These are `static` and touch nothing on the view, so they carry across cleanly.
+///
+/// The mapping itself lives in `SidebarSelectionMigration`, which is pure and tested — this
+/// file is only the `UserDefaults` edge.
 extension MainWindowView {
     /// UserDefaults key for the last-stable sidebar surface. Document and meeting selections
     /// are restored separately via the per-store `selectedDocumentID` / `selectedMeetingID`,
     /// so only coarse surfaces are persisted here.
     private static var lastSidebarKey: String { "MainWindow.lastSidebarSelection" }
 
+    private static var storedSelection: SidebarSelectionMigration.Restored? {
+        guard let raw = UserDefaults.standard.string(forKey: lastSidebarKey) else { return nil }
+        return SidebarSelectionMigration.restored(from: raw)
+    }
+
     /// Loads the last-stable sidebar surface, or `nil` on a fresh install.
     /// `MainWindowView` falls back to `.agentChat` when this returns `nil`.
     static func loadLastSidebarSelection() -> SidebarItem? {
-        guard let raw = UserDefaults.standard.string(forKey: lastSidebarKey) else { return nil }
-        switch raw {
-        case "agentChat": return .agentChat
-        case "overview": return .overview
-        case "pinned": return .pinned
-        case "recent": return .recent
-        case "allDocuments": return .allDocuments
-        case "allMeetings": return .allMeetings
-        case "actionItems": return .actionItems
-        case "tasks": return .tasks
-        case "templates": return .templates
-        case "trash": return .trash
-        default: return nil
-        }
+        storedSelection?.item
+    }
+
+    /// The panel to open on launch, for a surface that used to be its own sidebar row.
+    ///
+    /// Read separately from the selection so both `@State` initialisers see the same stored
+    /// value without one having to depend on the other.
+    static func loadRestoredPanel() -> LibraryPanel? {
+        storedSelection?.panel
     }
 
     /// Persists only "stable" sidebar surfaces. Per-document and per-meeting selections are
@@ -36,22 +39,9 @@ extension MainWindowView {
     /// / `selectedMeetingID`, and a deleted-document landing screen is worse than landing in
     /// chat.
     static func persistSidebarSelection(_ item: SidebarItem?) {
-        let raw: String? = switch item {
-        case .agentChat: "agentChat"
-        case .overview: "overview"
-        case .pinned: "pinned"
-        case .recent: "recent"
-        case .allDocuments: "allDocuments"
-        case .allMeetings: "allMeetings"
-        case .actionItems: "actionItems"
-        case .tasks: "tasks"
-        case .templates: "templates"
-        case .trash: "trash"
-        // Per-item selections aren't persisted — see doc comment.
-        case .space, .document, .meeting, .none: nil
-        }
-        if let raw {
-            UserDefaults.standard.setValue(raw, forKey: lastSidebarKey)
-        }
+        guard let item,
+              let raw = SidebarSelectionMigration.persistedValue(for: item)
+        else { return }
+        UserDefaults.standard.setValue(raw, forKey: lastSidebarKey)
     }
 }
