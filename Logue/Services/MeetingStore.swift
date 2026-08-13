@@ -522,6 +522,26 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         saveMeeting(id: meetingID)
     }
 
+    /// Marks an extracted action item as something the user chose not to act on.
+    ///
+    /// A dismissal cancels any reminder — leaving a notification armed for an item the user
+    /// just rejected is the one way this can nag them about a decision they already made.
+    func setActionItemDismissed(_ dismissed: Bool, itemID: UUID, in meetingID: UUID) {
+        guard let mIdx = meetingIndex(for: meetingID),
+              let itemIndex = meetings[mIdx].actionItems.firstIndex(where: { $0.id == itemID })
+        else { return }
+        meetings[mIdx].actionItems[itemIndex].isDismissed = dismissed
+        meetings[mIdx].modifiedAt = Date()
+
+        if dismissed, let notifID = meetings[mIdx].actionItems[itemIndex].notificationID {
+            ReminderManager.shared.cancelReminder(notificationID: notifID)
+            meetings[mIdx].actionItems[itemIndex].reminderDate = nil
+            meetings[mIdx].actionItems[itemIndex].notificationID = nil
+        }
+
+        saveMeeting(id: meetingID)
+    }
+
     // MARK: - Action Item Due Date & Reminders
 
     func setActionItemDueDate(_ dueDate: Date?, itemID: UUID, in meetingID: UUID) {
