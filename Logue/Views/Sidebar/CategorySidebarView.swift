@@ -295,10 +295,24 @@ struct CategorySidebarView: View {
 
     // MARK: - Action Item Counts
 
+    /// What the Action Items screen will show under its default chip.
+    ///
+    /// Counted through the same rule the screen uses rather than re-derived here — a badge
+    /// that disagrees with the list it opens teaches the user to ignore it.
     private var pendingActionItemCount: Int {
+        inboxActionItems.count
+    }
+
+    /// The action items still awaiting a decision, across every live meeting.
+    private var inboxActionItems: [ActionItem] {
         meetingStore.activeMeetings
             .filter { !$0.isArchived }
-            .reduce(0) { $0 + $1.actionItems.filter { !$0.isCompleted }.count }
+            .flatMap(\.actionItems)
+            .filter {
+                ActionItemInbox.matches(
+                    $0, mode: .inbox, isPromoted: taskStore.promotedTask(for: $0.id) != nil
+                )
+            }
     }
 
     /// Whether any open task is past its due date, so the count reads as urgent.
@@ -306,16 +320,14 @@ struct CategorySidebarView: View {
         taskStore.openTasks.contains { $0.isOverdue }
     }
 
+    /// Scoped to the inbox for the same reason the count is: this tints the inbox badge, and
+    /// an overdue item the user already promoted is the Tasks badge's problem to colour.
     private var hasOverdueItems: Bool {
         let now = Date()
-        for meeting in meetingStore.activeMeetings where !meeting.isArchived {
-            for item in meeting.actionItems where !item.isCompleted {
-                if let due = item.dueDate, due < now {
-                    return true
-                }
-            }
+        return inboxActionItems.contains { item in
+            guard let due = item.dueDate else { return false }
+            return due < now
         }
-        return false
     }
 
     private var pinnedAccessibilityLabel: String {
