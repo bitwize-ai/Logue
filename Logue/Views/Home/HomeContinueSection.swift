@@ -6,12 +6,15 @@ struct HomeContinueSection: View {
     @Environment(MeetingStore.self) private var meetingStore
     @Environment(SpaceStore.self) private var spaceStore
 
+    /// Receives a finished prompt when the user taps a card's ✦. Nil hides the affordance.
+    var onAsk: ((String) -> Void)?
+
     var body: some View {
         let items = recentItems
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 CardSectionHeader(icon: "arrow.uturn.forward", title: "Continue Where You Left Off")
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, AppThemeConstants.paddingXXLarge)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 14) {
@@ -19,11 +22,35 @@ struct HomeContinueSection: View {
                             continueCard(item)
                                 .frame(width: 220)
                                 .accessibilityLabel(item.title)
+                                .overlay(alignment: .topTrailing) {
+                                    if let onAsk {
+                                        HomeAskAffordance(
+                                            accessibilityLabel: "Ask Logue about \(item.title)"
+                                        ) {
+                                            onAsk(prompt(for: item))
+                                        }
+                                        .padding(AppThemeConstants.paddingXSmall)
+                                    }
+                                }
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, AppThemeConstants.paddingXXLarge)
                 }
             }
+        }
+    }
+
+    /// A meeting that has not been summarized yet is asking to be summarized; one that
+    /// has been is asking what was decided. Same card, different question.
+    private func prompt(for item: RecentActivityItem) -> String {
+        switch item {
+        case let .meeting(note):
+            HomeAskPrompts.meeting(
+                title: note.title,
+                isSummarized: !(note.summary ?? "").isEmpty
+            )
+        case let .document(doc):
+            HomeAskPrompts.document(title: doc.title)
         }
     }
 
