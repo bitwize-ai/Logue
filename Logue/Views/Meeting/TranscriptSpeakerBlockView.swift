@@ -20,6 +20,8 @@ struct SpeakerBlockView: View {
     var activeSegmentID: UUID?
     var speakerColors: [String: Color] = [:]
     @State private var isHovered = false
+    /// The paragraph the pointer is in, if any.
+    @State private var hoveredGroupID: UUID?
     @State private var showBookmarkPopover = false
     /// The moment the open bookmark picker will attach to.
     @State private var bookmarkTarget: TimeInterval?
@@ -49,45 +51,72 @@ struct SpeakerBlockView: View {
         TranscriptGutter.marks(for: block.segments)
     }
 
-    /// The distinct speakers this block covers. Blocks are cut by time now, not by speaker, so one
-    /// can hold a whole exchange.
-    private var blockSpeakers: [String] {
-        var seen: [String] = []
-        for label in block.segments.compactMap(\.speakerLabel) where !seen.contains(label) {
-            seen.append(label)
-        }
-        return seen
-    }
-
-    /// Only worth disambiguating line by line when the block actually holds more than one voice.
-    private var holdsSeveralSpeakers: Bool {
-        blockSpeakers.count > 1
-    }
-
     // What the gutter shows for a line, given that unmarked lines normally show nothing.
     //
     // Hovering a block of mixed speakers reveals every line's speaker rather than only the ones
     // that open a turn — so an exchange can be read attributed without anything moving, and
     // without carrying that weight all the time.
 
+    /// One paragraph: its lines, its bookmark chips, and the affordance to add another.
+    ///
+    /// Hover is tracked here rather than on the block, so the bookmark button stays reachable while
+    /// the pointer is anywhere in the paragraph it belongs to.
+    @ViewBuilder
+    private func groupView(_ group: TimestampGroup, isFirst: Bool) -> some View {
+        let isGroupHovered = hoveredGroupID == group.id
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(group.segments.enumerated()), id: \.element.id) { index, segment in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    gutterColumn(
+                        for: segment,
+                        mark: index == 0 ? group.mark : nil,
+                        revealSpeaker: isGroupHovered && group.holdsSeveralSpeakers
+                    )
+
+                    SegmentTextRow(
+                        segment: segment,
+                        searchText: searchText,
+                        onEditSegment: onEditSegment,
+                        onSeekToTime: onSeekToTime,
+                        isActive: activeSegmentID == segment.id,
+                        isDraggable: false
+                    )
+
+                    if index == 0 {
+                        bookmarkButton(for: segment)
+                            .opacity(isGroupHovered ? 1 : 0)
+                    }
+                }
+                .id(segment.id)
+            }
+
+            ForEach(bookmarks(for: group)) { bookmark in
+                BookmarkChip(bookmark: bookmark, onChangeType: onChangeBookmarkType, onRemove: onRemoveBookmark)
+                    .padding(.leading, 71)
+            }
+        }
+        // A paragraph gets air above it, so the gutter marks a boundary the text also shows.
+        .padding(.top, isFirst ? 0 : 10)
+        .contentShape(Rectangle())
+        .onHover { hoveredGroupID = $0 ? group.id : nil }
+    }
+
     /// Which bookmarks belong beside a given line.
     ///
     /// A bookmark belongs to the marked line it falls at or after — the same moment the gutter
     /// names — so it sits with the words it was placed against instead of at the top of everything.
-    private func bookmarks(for segment: TranscriptSegment) -> [Bookmark] {
-        let marks = gutterMarks
-        guard marks[segment.id] != nil else { return [] }
-
-        let markedTimes = block.segments
-            .filter { marks[$0.id] != nil }
-            .map(\.startTime)
-            .sorted()
-        let nextMark = markedTimes.first { $0 > segment.startTime }
+    private func bookmarks(for group: TimestampGroup) -> [Bookmark] {
+        let start = group.segments.first?.startTime ?? 0
+        let nextStart = timestampGroups
+            .drop { $0.id != group.id }
+            .dropFirst()
+            .first?
+            .segments.first?.startTime
 
         return blockBookmarks.filter { bookmark in
-            guard bookmark.timestamp >= segment.startTime else { return false }
-            guard let nextMark else { return true }
-            return bookmark.timestamp < nextMark
+            guard bookmark.timestamp >= start else { return false }
+            guard let nextStart else { return true }
+            return bookmark.timestamp < nextStart
         }
     }
 
@@ -106,7 +135,6 @@ struct SpeakerBlockView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add bookmark at \(TranscriptSegment.formatTime(segment.startTime))")
             .help("Add bookmark here")
-            .opacity(isHovered ? 1 : 0)
             .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
                 bookmarkTypePicker
             }
@@ -115,8 +143,12 @@ struct SpeakerBlockView: View {
 
     /// The left-hand column: who is speaking, then when.
     @ViewBuilder
-    private func gutterColumn(for segment: TranscriptSegment, mark: TranscriptGutter.Mark?) -> some View {
-        let shown = gutterSpeaker(for: segment, mark: mark)
+    private func gutterColumn(
+        for segment: TranscriptSegment,
+        mark: TranscriptGutter.Mark?,
+        revealSpeaker: Bool
+    ) -> some View {
+        let shown = gutterSpeaker(for: segment, mark: mark, revealSpeaker: revealSpeaker)
         let speakerToken = shown?.0 ?? ""
         let speakerName = shown?.1 ?? ""
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -125,7 +157,17 @@ struct SpeakerBlockView: View {
                 .foregroundStyle(speakerColor(for: shown?.1) ?? Color.secondary)
                 .opacity(mark == nil ? 0.55 : 1)
                 .frame(width: 22, alignment: .trailing)
-                .help(speakerName)
+                .help(speakerName.isEmpty ? "" : "\(speakerName) — right-click to rename")
+                .contextMenu {
+                    if onRenameSpeaker != nil, !speakerName.isEmpty {
+                        Button {
+                            speakerNameDraft = speakerName
+                            isEditingSpeakerName = true
+                        } label: {
+                            Label("Rename Speaker", systemImage: "pencil")
+                        }
+                    }
+                }
             Text(mark?.time ?? "")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.tertiary)
@@ -135,11 +177,17 @@ struct SpeakerBlockView: View {
         .accessibilityHidden(mark == nil)
     }
 
-    private func gutterSpeaker(for segment: TranscriptSegment, mark: TranscriptGutter.Mark?) -> (String, String)? {
+    private func gutterSpeaker(
+        for segment: TranscriptSegment,
+        mark: TranscriptGutter.Mark?,
+        revealSpeaker: Bool
+    ) -> (String, String)? {
         if let mark, !mark.shortSpeaker.isEmpty {
             return (mark.shortSpeaker, mark.speaker ?? "")
         }
-        guard isHovered, holdsSeveralSpeakers, let label = segment.speakerLabel else { return nil }
+        // Only where a paragraph actually holds an exchange. Elsewhere the name at the top of the
+        // paragraph already says who is talking, and repeating it on every line is noise.
+        guard revealSpeaker, let label = segment.speakerLabel else { return nil }
         return (SpeakerShortLabel.forSpeaker(label), label)
     }
 
@@ -219,77 +267,70 @@ struct SpeakerBlockView: View {
         }
     }
 
+    /// A run of lines under one gutter mark — what a reader sees as a paragraph.
+    ///
+    /// The unit that matters for hovering and for bookmarking. Blocks are cut by time, so
+    /// continuous speech makes exactly one of them, and anything scoped to a block is really scoped
+    /// to the whole transcript.
+    private struct TimestampGroup: Identifiable {
+        let id: UUID
+        let mark: TranscriptGutter.Mark
+        var segments: [TranscriptSegment]
+
+        /// Whether this group needs its lines attributed individually.
+        var holdsSeveralSpeakers: Bool {
+            var seen: Set<String> = []
+            for label in segments.compactMap(\.speakerLabel) {
+                seen.insert(label)
+            }
+            return seen.count > 1
+        }
+    }
+
+    private var timestampGroups: [TimestampGroup] {
+        let marks = gutterMarks
+        var groups: [TimestampGroup] = []
+        for segment in block.segments {
+            if let mark = marks[segment.id] {
+                groups.append(TimestampGroup(id: segment.id, mark: mark, segments: [segment]))
+            } else if !groups.isEmpty {
+                groups[groups.count - 1].segments.append(segment)
+            }
+        }
+        return groups
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            // Only rendered when there is something in it. Before diarization has named anyone a
-            // block has no speaker and usually no bookmarks, and an empty row holding a single
-            // floating button is worse than no row.
-            // Segment text — only first/last lines are draggable (boundary lines)
-            VStack(alignment: .leading, spacing: 5) {
-                let segmentCount = block.segments.count
-                let gutter = gutterMarks
-                ForEach(Array(block.segments.enumerated()), id: \.element.id) { index, segment in
-                    let mark = gutter[segment.id]
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            // Blank for most lines, so a run of sentences reads as one paragraph
-                            // under the mark that opened it rather than a stack of stamped lines.
-                            gutterColumn(for: segment, mark: mark)
+        VStack(alignment: .leading, spacing: 5) {
+            if isEditingSpeakerName {
+                header
+                    .padding(.leading, 71)
+            }
 
-                            SegmentTextRow(
-                                segment: segment,
-                                searchText: searchText,
-                                onEditSegment: onEditSegment,
-                                onSeekToTime: onSeekToTime,
-                                isActive: activeSegmentID == segment.id,
-                                isDraggable: false
-                            )
+            ForEach(Array(timestampGroups.enumerated()), id: \.element.id) { index, group in
+                groupView(group, isFirst: index == 0)
+            }
 
-                            // Bookmarking belongs to a moment, and the gutter mark is what names
-                            // one. On the block it was effectively on the whole transcript, since
-                            // blocks are cut by time and continuous speech makes just one.
-                            if mark != nil {
-                                bookmarkButton(for: segment)
-                            }
-                        }
-
-                        ForEach(bookmarks(for: segment)) { bookmark in
-                            BookmarkChip(
-                                bookmark: bookmark,
-                                onChangeType: onChangeBookmarkType,
-                                onRemove: onRemoveBookmark
-                            )
-                            .padding(.leading, 71)
-                        }
-                    }
-                    // A stamped line starts a new group, so it gets air above it. Without this the
-                    // gutter marks a boundary the text gives no sign of.
-                    .padding(.top, mark != nil && index > 0 ? 10 : 0)
-                    .id(segment.id)
+            // Volatile text — in-progress transcription appended to last block
+            if !volatileText.isEmpty {
+                HStack(spacing: 6) {
+                    // Sits in the gutter so the text it precedes lines up with every other line.
+                    Circle()
+                        .fill(AppThemeConstants.error)
+                        .frame(width: 5, height: 5)
+                        .opacity(0.8)
+                        .frame(width: 61, alignment: .trailing)
+                        .padding(.trailing, 4)
+                    // Styled exactly as a finalised line so that when the transcriber commits it,
+                    // the text does not visibly change.
+                    Text(volatileText)
+                        .font(.body)
+                        .lineSpacing(2)
+                        .foregroundStyle(Color.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                // Volatile text — in-progress transcription appended to last block
-                if !volatileText.isEmpty {
-                    HStack(spacing: 6) {
-                        // Sits in the gutter so the text it precedes lines up with every other line.
-                        Circle()
-                            .fill(AppThemeConstants.error)
-                            .frame(width: 5, height: 5)
-                            .opacity(0.8)
-                            .frame(width: 61, alignment: .trailing)
-                            .padding(.trailing, 4)
-                        // Styled exactly as a finalised line — same font, weight, colour and line
-                        // spacing — so that when the transcriber commits it, the text does not
-                        // visibly change. The dot in the gutter is what says it is still in flight.
-                        Text(volatileText)
-                            .font(.body)
-                            .lineSpacing(2)
-                            .foregroundStyle(Color.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .id("volatile-text")
-                    .transition(.opacity)
-                }
+                .id("volatile-text")
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 12)
