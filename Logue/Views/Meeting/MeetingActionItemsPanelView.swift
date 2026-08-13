@@ -168,6 +168,7 @@ struct MeetingActionItemsPanelView: View {
 
 private struct ActionItemRow: View {
     @Environment(MeetingStore.self) private var store
+    @State private var taskStore = TaskStore.shared
     let item: ActionItem
     let meetingID: UUID
     let meetingTitle: String
@@ -220,8 +221,34 @@ private struct ActionItemRow: View {
             }
 
             Spacer()
+
+            taskMarker
         }
         .padding(.vertical, 2)
+    }
+
+    // MARK: - Task Marker
+
+    /// The task this action item was promoted into, if any.
+    ///
+    /// Read-only on purpose. Writing the task's status back into the meeting would edit a
+    /// record of what was said because the user later changed their mind about the work.
+    private var promotedTask: TaskItem? {
+        taskStore.promotedTask(for: item.id)
+    }
+
+    @ViewBuilder
+    private var taskMarker: some View {
+        if let promotedTask {
+            let isDone = promotedTask.status == .done
+            Label(
+                isDone ? "Done in Tasks" : "In Tasks",
+                systemImage: isDone ? "checkmark.circle.fill" : "arrow.right.circle"
+            )
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .help("This action item was added to your tasks")
+        }
     }
 
     // MARK: - Due Date Control
