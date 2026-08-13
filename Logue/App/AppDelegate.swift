@@ -116,6 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         setupCrossAppServices()
         setupMenuBarItem()
+
+        // Only starts if the user has opted in. See `BrowserBridgeSettings` for why the default
+        // is off.
+        BrowserBridgeServer.shared.applySetting()
         startRecordingStatePoller()
         setupWindowLifecycleObservers()
 
@@ -295,6 +299,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_: Notification) {
+        // The socket closes with the app. The extension reports "Logue is not running", which is
+        // exactly what has happened.
+        BrowserBridgeServer.shared.stop()
+
         for observer in deepLinkObservers {
             NotificationCenter.default.removeObserver(observer)
         }

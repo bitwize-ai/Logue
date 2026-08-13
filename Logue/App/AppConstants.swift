@@ -23,6 +23,12 @@ enum AppConstants {
 
         static let hasClearedSeedData = "hasClearedSeedData"
 
+        /// Newest release whose notes the user has been shown, as a marketing version
+        /// string ("1.1.0"). Absent means either a fresh install or an install predating
+        /// this feature — `WhatsNewGate` tells those apart by whether onboarding is done,
+        /// and survives "Reset Application Data" so a reset does not replay the notes.
+        static let lastSeenWhatsNewVersion = "lastSeenWhatsNewVersion"
+
         static let documentSortOrder = "documentSortOrder"
         static let meetingSortOrder = "meetingSortOrder"
         static let actionItemSortOrder = "actionItemSortOrder"
@@ -38,6 +44,9 @@ enum AppConstants {
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
         static let unwritableDocuments = "unwritableDocuments"
+
+        /// Opt-in: whether the loopback server for the browser extension is running.
+        static let browserBridgeEnabled = "browserBridgeEnabled"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"
@@ -216,6 +225,25 @@ enum AppConstants {
 
     // MARK: - Centralized Delays
 
+    /// The loopback bridge the Logue browser extension talks to.
+    enum BrowserBridge {
+        /// Ports tried in order. More than one because the first is a guess about what else is
+        /// on the machine — the extension scans the same list, so the two stay in step.
+        static let candidatePorts: [UInt16] = [52452, 52453, 52454]
+
+        /// Open connections allowed at once. A browser uses a handful; anything beyond this is a
+        /// runaway rather than a user.
+        static let maxConcurrentConnections = 16
+
+        /// Output cap for a chat answer. The default of 512 truncates conversational replies
+        /// mid-sentence.
+        static let chatMaxTokens = 2048
+
+        /// Room left for the system turn and the chat template's own scaffolding when working
+        /// out how much of a caller's conversation fits the context window.
+        static let systemPromptReservedTokens = 512
+    }
+
     enum Delays {
         /// Coalesces a burst of filesystem events from another editor saving, so one
         /// external save triggers one folder scan rather than several.
@@ -283,6 +311,23 @@ enum AppConstants {
         static let suggestionHighlightCleanup: Duration = .milliseconds(500)
         /// Brief pause before auto-advancing onboarding page after model ready
         static let onboardingAutoAdvance: Duration = .milliseconds(800)
+
+        /// Gap between dismissing one sheet and presenting the next, used when the
+        /// feature tour follows onboarding.
+        ///
+        /// AppKit refuses a sheet while the previous one is still animating out and
+        /// fails silently, so the tour simply never appeared without this wait.
+        static let sheetHandoff: Duration = .milliseconds(600)
+
+        /// How long each frame of a What's New card's image sequence holds before the
+        /// next one. Long enough to read a screenshot, short enough that a three-step
+        /// sequence completes before the reader has finished the caption and moved on.
+        static let whatsNewSequenceStep: Duration = .seconds(2.5)
+
+        /// How long one frame of that sequence takes to fade into the next. A
+        /// `TimeInterval` rather than a `Duration` because it feeds SwiftUI's
+        /// `.easeInOut(duration:)`, which does not take one.
+        static let whatsNewSequenceCrossfade: TimeInterval = 0.35
 
         /// -- Navigation --
         /// Brief yield to let sidebar expand before selecting a space
