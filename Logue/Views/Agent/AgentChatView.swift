@@ -99,7 +99,10 @@ struct AgentChatView: View {
                 )
             }
         }
-        .navigationTitle(activeConversation?.title ?? "Ask Logue")
+        // The landing state is Home, whatever the auto-created conversation happens to
+        // be called — titling an empty screen "New Conversation" names a thread the user
+        // has not started yet. The conversation's own title takes over once it has one.
+        .navigationTitle(hasMessages ? (activeConversation?.title ?? "Home") : "Home")
         .navigationSubtitle(topBarSubtitle)
         .toolbar { chatToolbar }
         .toastOverlay()
