@@ -122,9 +122,9 @@ enum TaskTextParser {
 
     /// A trailing run of `!` means high.
     ///
-    /// Note this deliberately differs from the tool this borrows from, where `!` means
-    /// *low* and `!!` means high. A person typing `!` means urgent; low priority is set
-    /// from the UI instead.
+    /// A single `!` is high rather than a step on a scale, because a person typing it while
+    /// capturing a task means urgent. Low priority is set from the UI instead — nobody
+    /// reaches for punctuation to say something matters less.
     private static func extractingPriority(
         from tokens: [String], into priority: inout TaskPriority
     ) -> [String] {
