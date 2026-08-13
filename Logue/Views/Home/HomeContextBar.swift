@@ -55,7 +55,7 @@ struct HomeContextBar: View {
 
             Spacer()
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, AppThemeConstants.paddingXXLarge)
     }
 
     // MARK: - Pill

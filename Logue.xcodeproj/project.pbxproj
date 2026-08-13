@@ -171,6 +171,7 @@
 		4371B1C1354F8BF50EFECCBB /* QuickOpenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37427E70D5B05A2E6C5B253 /* QuickOpenTests.swift */; };
 		4397B12F9CBE6F12F98BBF5A /* MeetingStoreProtocols.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214108348E03F1DF8FAA8CCF /* MeetingStoreProtocols.swift */; };
 		43DEC554E9926867478C0CB4 /* FolderIconPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B611C161962C154FC8DA451 /* FolderIconPicker.swift */; };
+		44E47FDFA97164AD97F8B8E2 /* HomeLandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DE0F58EA555C8D9F80F7E8A /* HomeLandingView.swift */; };
 		4532E7861CF3C84A710ED434 /* WikiLinkURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4066081DEC2821193FE7D882 /* WikiLinkURLTests.swift */; };
 		45533AE9915EEC212302FB9B /* CardSectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99E36F742DA233D8616E8CC1 /* CardSectionHeader.swift */; };
 		4566BC40A7FB60B39EC19024 /* ActionItemDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB9445619E520FEF117AF128 /* ActionItemDashboardView.swift */; };
@@ -870,6 +871,7 @@
 		7CB8F29FAA5817D348722762 /* MultiBlockSelectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiBlockSelectionState.swift; sourceTree = "<group>"; };
 		7CD8FDAFABDFD03AEBAB2750 /* InsightsSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsSectionView.swift; sourceTree = "<group>"; };
 		7DBDDB9609A929FFB08A7AB8 /* AppThemeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppThemeConstants.swift; sourceTree = "<group>"; };
+		7DE0F58EA555C8D9F80F7E8A /* HomeLandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeLandingView.swift; sourceTree = "<group>"; };
 		7DF36BD14718CAF328990D0A /* FolderStore+SeedData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FolderStore+SeedData.swift"; sourceTree = "<group>"; };
 		7E01E332D859D172446E5AE2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7E2E2735D98AE330FF3804B4 /* HomeSpacesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSpacesSection.swift; sourceTree = "<group>"; };
@@ -2096,6 +2098,7 @@
 				47D6D28A5F055B59944316D6 /* HomeAttentionCard.swift */,
 				42BFEBF99163808EE4126279 /* HomeContextBar.swift */,
 				105A1B21D0379DCB157BC451 /* HomeContinueSection.swift */,
+				7DE0F58EA555C8D9F80F7E8A /* HomeLandingView.swift */,
 				7E2E2735D98AE330FF3804B4 /* HomeSpacesSection.swift */,
 				7CD8FDAFABDFD03AEBAB2750 /* InsightsSectionView.swift */,
 				4FC07A84E0AD072373EFB3F8 /* MeetingCardView.swift */,
@@ -2613,6 +2616,7 @@
 				6373E69354AD314B2BA380F7 /* HomeCardShell.swift in Sources */,
 				5B40672923AE9211B7EE0387 /* HomeContextBar.swift in Sources */,
 				17F88171613BB35BB0AF2A2A /* HomeContinueSection.swift in Sources */,
+				44E47FDFA97164AD97F8B8E2 /* HomeLandingView.swift in Sources */,
 				8116FACB27C74191337D74FE /* HomeSpacesSection.swift in Sources */,
 				07D07554D07FE31EE59D028A /* HomeSuggestions.swift in Sources */,
 				276FE55FD853C4367F2AE751 /* HorizontalInspectorTabBar.swift in Sources */,

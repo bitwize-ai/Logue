@@ -8,31 +8,42 @@ struct HomeQuickActions: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            quickActionButton(
+            HomeQuickActionButton(
                 icon: "mic.badge.plus",
                 title: "Voice Note",
                 color: AppThemeConstants.accent,
                 action: onStartRecording
             )
-            quickActionButton(
+            HomeQuickActionButton(
                 icon: "waveform",
                 title: "New Meeting",
                 color: AppThemeConstants.success,
                 action: onNewMeeting
             )
-            quickActionButton(
+            HomeQuickActionButton(
                 icon: "doc.badge.plus",
                 title: "New Document",
                 color: AppThemeConstants.categoryPurple,
                 action: onNewDocument
             )
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, AppThemeConstants.paddingXXLarge)
     }
+}
 
-    private func quickActionButton(
-        icon: String, title: String, color: Color, action: @escaping () -> Void
-    ) -> some View {
+/// One quick-action tile.
+///
+/// Lifted out of `HomeQuickActions` so the first-run starter card can use the same tile
+/// with its own wording. The alternative was reusing `HomeQuickActions` wholesale and
+/// living with labels that describe the wrong action — a button that says "New Meeting"
+/// while creating a document is worse than a little duplication.
+struct HomeQuickActionButton: View {
+    let icon: String
+    let title: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
@@ -42,8 +53,11 @@ struct HomeQuickActions: View {
                     .font(.callout.weight(.medium))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium))
+            .padding(.vertical, AppThemeConstants.paddingMedium)
+            .background(
+                color.opacity(AppThemeConstants.opacityLight),
+                in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
