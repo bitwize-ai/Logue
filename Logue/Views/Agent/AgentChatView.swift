@@ -10,6 +10,16 @@ struct AgentChatView: View {
     @State private var coordinator = AgentCoordinator.shared
     @State private var conversationStore = AgentConversationStore.shared
     @State private var inputText = ""
+    /// Incremented to pull focus into the input after a card fills it.
+    @State private var focusRequest = 0
+
+    // Injected by `MainWindowView`. Read from the environment rather than reaching for
+    // the shared singletons again, so this view observes the same instances the rest of
+    // the window does.
+    @Environment(MeetingStore.self) private var meetingStore
+    @Environment(DocumentStore.self) private var documentStore
+    @Environment(InsightsStatsProvider.self) private var insights
+    @Environment(ModelManager.self) private var modelManager
     /// Drag-and-drop attachments staged for the next send. Cleared after each send.
     @State private var inputAttachments: [TempAttachment] = []
     /// When true, the next send routes through `DeepResearchCoordinator` instead
@@ -70,7 +80,7 @@ struct AgentChatView: View {
                 if hasMessages, let conversation = activeConversation {
                     hasMessagesLayout(conversation: conversation)
                 } else {
-                    emptyLayout
+                    landingLayout
                 }
             }
             .frame(maxWidth: .infinity)
@@ -163,24 +173,59 @@ struct AgentChatView: View {
 
     // MARK: - Layouts
 
-    /// Pre-conversation layout: welcome hero + centered input bar, vertically
-    /// centered as one unit. Matches ChatGPT's pre-first-message screen.
-    private var emptyLayout: some View {
-        VStack(spacing: 24) {
-            Spacer(minLength: 24)
+    /// Pre-conversation layout: greeting and chips, the prompt bar, then the dashboard
+    /// cards. The prompt bar is pinned between the two rather than living inside the
+    /// card scroll view — see `HomeLandingView` for why that matters to the geometry
+    /// match that slides it to the bottom on first send.
+    private var landingLayout: some View {
+        VStack(spacing: 0) {
+            HomeLandingHeader(chips: suggestionChips, onPrefill: prefill)
 
-            AgentChatEmptyState(compact: true)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+            if modelManager.activeModelID == nil {
+                Label("Set up a model to ask Logue", systemImage: "exclamationmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(AppThemeConstants.warning)
+                    .padding(.horizontal, AppThemeConstants.paddingXXLarge)
+                    .padding(.top, AppThemeConstants.paddingMedium)
+            }
 
             inputBar
                 .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
                 .frame(maxWidth: 720)
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, AppThemeConstants.paddingXXLarge)
+                .padding(.vertical, AppThemeConstants.paddingLarge)
 
-            Spacer(minLength: 24)
+            HomeLandingView(onPrefill: prefill)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Puts a sentence in the input without sending it. A card that asks the question
+    /// for the user still leaves them the last word on it.
+    private func prefill(_ text: String) {
+        inputText = text
+        focusRequest += 1
+    }
+
+    /// Derived fresh each render from the stores — no inference, no caching. The rules
+    /// live in `HomeSuggestions` so they can be tested without a view.
+    private var suggestionChips: [HomeSuggestions.Chip] {
+        let calendar = Calendar.current
+        let unsummarized = meetingStore.activeMeetings
+            .filter { ($0.summary ?? "").isEmpty && !$0.isArchived }
+            .max { $0.createdAt < $1.createdAt }
+        return HomeSuggestions.chips(
+            for: HomeSuggestions.Inputs(
+                unsummarizedMeetingTitle: unsummarized?.title,
+                overdueCount: insights.actionItemStats.overdue,
+                meetingsToday: meetingStore.activeMeetings.filter {
+                    calendar.isDateInToday($0.createdAt) && !$0.isArchived
+                }.count,
+                hasAnyContent: !(documentStore.activeDocuments.isEmpty
+                    && meetingStore.activeMeetings.isEmpty)
+            )
+        )
     }
 
     /// Post-first-message layout: scrolling message list + bottom-anchored input
@@ -229,6 +274,7 @@ struct AgentChatView: View {
     private var inputBar: some View {
         InputBarView(
             inputText: $inputText,
+            focusRequest: $focusRequest,
             attachments: $inputAttachments,
             isProcessing: coordinator.isProcessing || deepResearchCoordinator.isRunning,
             isBusy: isBusy,
