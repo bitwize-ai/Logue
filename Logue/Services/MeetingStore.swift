@@ -472,6 +472,17 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         saveMeeting(id: meetingID)
     }
 
+    /// Replaces a meeting's transcript with the same lines carrying better text.
+    ///
+    /// Used by the post-recording pass after realignment: the segments handed in are the meeting's
+    /// own, with their identities, starts, ends and speakers intact, so nothing the reader is
+    /// looking at moves.
+    func updateSegments(_ segments: [TranscriptSegment], for meetingID: UUID) {
+        guard let index = meetingIndex(for: meetingID) else { return }
+        meetings[index].segments = segments
+        saveMeeting(id: meetingID)
+    }
+
     /// Puts back what a session held in memory when the app stopped.
     ///
     /// The checkpointed segments replace whatever is on the meeting rather than appending to it: a

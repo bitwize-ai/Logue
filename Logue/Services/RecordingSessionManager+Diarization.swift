@@ -147,8 +147,21 @@ extension RecordingSessionManager {
         //
         // `batchSegments` is still computed: it is what the speaker timeline is derived from, and
         // `heardDuration` still bounds how much of the session that timeline may speak for.
-        if let batchSegments {
-            logger.info("Keeping the live transcript; batch ASR produced \(batchSegments.count) segment(s) for timing only")
+        // The batch pass is more accurate word for word, but its sentence boundaries are its own.
+        // Adopting them re-cut the transcript the user had been reading. So its words are poured
+        // into the live segments instead: every line keeps its identity, its start and its end, and
+        // only the text inside improves.
+        if let batchSegments, !diarizer.lastBatchWords.isEmpty,
+           let meeting = MeetingStore.shared.meetings.first(where: { $0.id == meetingID })
+        {
+            let realigned = TranscriptRealignment.realign(
+                live: meeting.segments,
+                words: diarizer.lastBatchWords
+            )
+            MeetingStore.shared.updateSegments(realigned, for: meetingID)
+            logger.info(
+                "Realigned \(batchSegments.count) batch segment(s) onto \(realigned.count) live line(s)"
+            )
         }
 
         if let updates = sortformerUpdates {

@@ -43,10 +43,15 @@ extension DiarizationManager {
         }
 
         guard let tokenTimings = result.tokenTimings, !tokenTimings.isEmpty else {
+            // No timings means nothing to realign against; the live transcript stands as it is.
+            lastBatchWords = []
             logger.warning("Batch ASR: no token timings — returning single segment")
             return [TranscriptSegment(text: trimmed, startTime: 0, endTime: result.duration)]
         }
 
+        lastBatchWords = tokenTimings.map {
+            TranscriptRealignment.TimedWord(text: $0.token, startTime: $0.startTime, endTime: $0.endTime)
+        }
         let segments = segmentsFromTokenTimings(tokenTimings)
         logger.info("Batch ASR: \(segments.count) segments, \(tokenTimings.count) tokens, RTFx \(String(format: "%.1f", result.rtfx))x")
         guard !segments.isEmpty else { return nil }

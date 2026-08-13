@@ -102,6 +102,13 @@ final class DiarizationManager {
     /// visible instead of leaving "the recording may be silent" as the only clue.
     private var timelineDiagnostics = TimelineContributionLog()
 
+    // Extension-visible: +BatchASR
+    /// The batch transcriber's words, timed against the session.
+    ///
+    /// Kept so the accurate text can be poured into the live transcript's segments rather than
+    /// replacing them — see `TranscriptRealignment`. Empty when the pass produced no timings.
+    var lastBatchWords: [TranscriptRealignment.TimedWord] = []
+
     /// Reusable AVAudioConverters for efficient resampling — one per capture source, lazily created
     /// and rebuilt only when that source's own input format changes.
     private var resamplers: [AudioSource: AVAudioConverter] = [:]
