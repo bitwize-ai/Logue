@@ -115,4 +115,51 @@ struct TranscriptRealignmentTests {
         let joined = TranscriptRealignment.words(fromTokens: tokens)
         #expect(joined.count == 1)
     }
+
+    // MARK: - Sentence snapping
+
+    @Test("A line ending mid-phrase reaches forward to the sentence end")
+    func snapsToSentenceEnd() {
+        let segments = [
+            segment("Okay, so let's", 0, 5),
+            segment("use this agent to make a deck. I open it on my desktop", 5, 12),
+        ]
+        let snapped = TranscriptRealignment.snappedToSentences(segments)
+
+        #expect(snapped.count == 2, "snapping must not change the number of lines")
+        #expect(snapped[0].text == "Okay, so let's use this agent to make a deck.")
+        #expect(snapped[1].text == "I open it on my desktop")
+    }
+
+    @Test("Identity and timing survive snapping")
+    func snappingKeepsStructure() {
+        let segments = [segment("and then", 0, 5), segment("we moved on. Next thing", 5, 10)]
+        let snapped = TranscriptRealignment.snappedToSentences(segments)
+        #expect(snapped[0].id == segments[0].id)
+        #expect(snapped[0].startTime == 0)
+        #expect(snapped[1].endTime == 10)
+    }
+
+    @Test("A line already ending a sentence is left alone")
+    func completedLineIsUntouched() {
+        let segments = [segment("All done.", 0, 5), segment("Something else. And more", 5, 10)]
+        let snapped = TranscriptRealignment.snappedToSentences(segments)
+        #expect(snapped[0].text == "All done.")
+        #expect(snapped[1].text == "Something else. And more")
+    }
+
+    @Test("A line is never emptied to complete the one before it")
+    func neverEmptiesALine() {
+        let segments = [segment("trailing off", 0, 5), segment("done.", 5, 10)]
+        let snapped = TranscriptRealignment.snappedToSentences(segments)
+        #expect(snapped[1].text == "done.", "an empty line is worse than a line ending early")
+    }
+
+    @Test("A sentence end too far away is left where it is")
+    func distantSentenceEndIsIgnored() {
+        let long = String(repeating: "word ", count: 40) + "end."
+        let segments = [segment("unfinished", 0, 5), segment(long, 5, 10)]
+        let snapped = TranscriptRealignment.snappedToSentences(segments)
+        #expect(snapped[0].text == "unfinished", "a line must not swallow the one after it")
+    }
 }

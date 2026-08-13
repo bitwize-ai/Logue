@@ -101,6 +101,61 @@ enum TranscriptRealignment {
         }
     }
 
+    /// Moves text across line boundaries so each line ends where a sentence does.
+    ///
+    /// Placing words by time puts them in the right line but cuts them in the wrong place: the live
+    /// boundaries were sentence ends in the *live* wording, and the batch wording reaches those
+    /// moments mid-phrase. So a line ends "Okay, so let's" and the next opens "use this agent".
+    ///
+    /// The number of lines, their identities and their times are all left alone — only where the
+    /// text is cut moves, and only far enough to reach the sentence end already sitting nearby.
+    static func snappedToSentences(_ segments: [TranscriptSegment]) -> [TranscriptSegment] {
+        guard segments.count > 1 else { return segments }
+        var result = segments
+
+        for index in 0 ..< (result.count - 1) {
+            let current = result[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !current.isEmpty, !endsSentence(current) else { continue }
+
+            let next = result[index + 1].text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let cut = sentenceEnd(in: next) else { continue }
+
+            let moved = String(next[next.startIndex ... cut]).trimmingCharacters(in: .whitespaces)
+            let remainder = String(next[next.index(after: cut)...]).trimmingCharacters(in: .whitespaces)
+            // Never empty a line: a blank line is a worse artefact than a line ending early.
+            guard !moved.isEmpty, !remainder.isEmpty else { continue }
+
+            result[index].text = current + " " + moved
+            result[index + 1].text = remainder
+        }
+        return result
+    }
+
+    /// How far into a line we will look for a sentence end before leaving the cut where it is.
+    ///
+    /// Far enough to catch a clause that ran over, short enough that a line never swallows the one
+    /// after it.
+    private static let sentenceSearchLimit = 80
+
+    private static func sentenceEnd(in text: String) -> String.Index? {
+        var offset = 0
+        for index in text.indices {
+            if offset >= sentenceSearchLimit {
+                return nil
+            }
+            if ".!?".contains(text[index]) {
+                return index
+            }
+            offset += 1
+        }
+        return nil
+    }
+
+    private static func endsSentence(_ text: String) -> Bool {
+        guard let last = text.last else { return false }
+        return ".!?…".contains(last)
+    }
+
     /// The segment whose span contains `time`, or the nearest one when it falls in a gap.
     ///
     /// Words do land outside every segment: the live transcriber leaves silence between lines, and

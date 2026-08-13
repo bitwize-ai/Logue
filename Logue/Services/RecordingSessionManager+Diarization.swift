@@ -154,9 +154,11 @@ extension RecordingSessionManager {
         if let batchSegments, !diarizer.lastBatchWords.isEmpty,
            let meeting = MeetingStore.shared.meetings.first(where: { $0.id == meetingID })
         {
-            let realigned = TranscriptRealignment.realign(
-                live: meeting.segments,
-                words: diarizer.lastBatchWords
+            let realigned = TranscriptRealignment.snappedToSentences(
+                TranscriptRealignment.realign(
+                    live: meeting.segments,
+                    words: diarizer.lastBatchWords
+                )
             )
             MeetingStore.shared.updateSegments(realigned, for: meetingID)
             logger.info(
