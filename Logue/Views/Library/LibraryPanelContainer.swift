@@ -43,48 +43,50 @@ struct LibraryPanelContainer<Content: View>: View {
     }
 
     private var resizeHandle: some View {
+        // The hit area *is* the view, 8pt wide, with the hairline drawn inside it. Putting
+        // the grab area in an overlay that spills outside a 1pt frame looks identical and
+        // cannot be hit — SwiftUI does not hit-test outside a view's own bounds.
         Rectangle()
-            .fill(AppThemeConstants.separatorColor)
-            .frame(width: 1)
+            .fill(Color.clear)
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .overlay(alignment: .center) {
+                Rectangle()
+                    .fill(AppThemeConstants.separatorColor)
+                    .frame(width: 1)
+            }
             .accessibilityLabel("Panel resize handle")
             .accessibilityHint("Drag left or right to resize the panel")
-            .overlay(
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(width: 8)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
+            .onHover { inside in
+                if inside {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        if dragStartWidth == nil {
+                            // Seeded from what is on screen, not from the stored width, so a
+                            // drag in a shrunken window starts where the handle actually is.
+                            dragStartWidth = effectiveWidth
+                            dragStartX = value.startLocation.x
+                        }
+                        let delta = (dragStartX ?? value.startLocation.x) - value.location.x
+                        let proposed = (dragStartWidth ?? width) + delta
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            width = limit.clamping(
+                                proposed, inContainerOfWidth: workspaceWidth
+                            )
                         }
                     }
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                            .onChanged { value in
-                                if dragStartWidth == nil {
-                                    // Seeded from what is on screen, not from the stored
-                                    // width, so a drag in a shrunken window starts where the
-                                    // handle actually is.
-                                    dragStartWidth = effectiveWidth
-                                    dragStartX = value.startLocation.x
-                                }
-                                let delta = (dragStartX ?? value.startLocation.x) - value.location.x
-                                let proposed = (dragStartWidth ?? width) + delta
-                                var transaction = Transaction()
-                                transaction.disablesAnimations = true
-                                withTransaction(transaction) {
-                                    width = limit.clamping(
-                                        proposed, inContainerOfWidth: workspaceWidth
-                                    )
-                                }
-                            }
-                            .onEnded { _ in
-                                dragStartWidth = nil
-                                dragStartX = nil
-                            }
-                    )
+                    .onEnded { _ in
+                        dragStartWidth = nil
+                        dragStartX = nil
+                    }
             )
     }
 }

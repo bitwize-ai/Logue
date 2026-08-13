@@ -94,9 +94,9 @@ struct TemplateListPanel: View {
             Label(selectedCategory?.rawValue ?? "All categories", systemImage: "square.grid.2x2")
                 .font(.caption)
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
         .controlSize(.small)
-        .fixedSize()
         .help("Filter by category")
     }
 

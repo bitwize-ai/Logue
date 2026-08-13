@@ -399,6 +399,7 @@
 		A8432BB73EAB05259ECC7E6E /* AgentToolSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E67F5E0205204A2F59C5F8D /* AgentToolSpec.swift */; };
 		A8DC4519467E9CA7C1769C8A /* TaskFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18FE2DA61E472719558C6774 /* TaskFile.swift */; };
 		A8F861A1BBB3D5AD5F23A1D6 /* StorageSwitchReconcileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A71FBC868F121DEC9A659E /* StorageSwitchReconcileTests.swift */; };
+		A93E8B7FA3E1AA22EA0820CE /* MeetingFilterPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1008F39F4AB1F4500CD48516 /* MeetingFilterPicker.swift */; };
 		A9B34E653A84128492DE6474 /* BlockRowView+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FB93A6E198E565413AD03FC /* BlockRowView+Actions.swift */; };
 		A9C752BABC79AFFA2C4FD4F2 /* RecordingSpliceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94CFFCAEABE322C125D85AF3 /* RecordingSpliceTests.swift */; };
 		AA1456FCC75FBB7DFEFC1BE0 /* SpaceFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382510F54B865B60B16FDE73 /* SpaceFileTests.swift */; };
@@ -643,6 +644,7 @@
 		0F15F64648E6C197AB133FD2 /* PrivacyBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyBadge.swift; sourceTree = "<group>"; };
 		0FEA0A8E35A3B568234015CC /* TemplateListPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateListPanel.swift; sourceTree = "<group>"; };
 		0FF6C4FACAA2A06BB2C5306A /* IconToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconToolbarView.swift; sourceTree = "<group>"; };
+		1008F39F4AB1F4500CD48516 /* MeetingFilterPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingFilterPicker.swift; sourceTree = "<group>"; };
 		100AB221613F25FBB4EB2B29 /* TrashListPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashListPane.swift; sourceTree = "<group>"; };
 		105A1B21D0379DCB157BC451 /* HomeContinueSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeContinueSection.swift; sourceTree = "<group>"; };
 		1073F096F16AFC2BD1908BE7 /* AssistantActionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantActionRow.swift; sourceTree = "<group>"; };
@@ -1944,6 +1946,7 @@
 				5C89FFFB8EFE6EDE3560E782 /* ActionItemInboxPanel.swift */,
 				935899821444827BC6FE02F2 /* ActionItemInboxRow.swift */,
 				12C9A281A8D252F78714C155 /* DashboardActionItem.swift */,
+				1008F39F4AB1F4500CD48516 /* MeetingFilterPicker.swift */,
 			);
 			path = ActionItems;
 			sourceTree = "<group>";
@@ -2692,6 +2695,7 @@
 				4EC81490F679629FBCC10192 /* MeetingBreakdownCard.swift in Sources */,
 				860E9E8E3285FF2745077A83 /* MeetingCardView.swift in Sources */,
 				204FCF6880ABDA5F9C7684FF /* MeetingExportPanelView.swift in Sources */,
+				A93E8B7FA3E1AA22EA0820CE /* MeetingFilterPicker.swift in Sources */,
 				CCA2748ACA502E36CD99A964 /* MeetingGridCardView.swift in Sources */,
 				E4B6FC3460A2639236E6E179 /* MeetingListContentView.swift in Sources */,
 				99CD79938A011D1BD5FDAAC7 /* MeetingListPane.swift in Sources */,

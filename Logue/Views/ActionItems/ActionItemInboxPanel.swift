@@ -73,15 +73,22 @@ struct ActionItemInboxPanel: View {
         }
     }
 
-    /// The meetings that actually have action items, so the picker is not a list of
-    /// everything the user has ever recorded.
-    private var meetingsWithItems: [(id: UUID, title: String)] {
-        var seen = Set<UUID>()
-        var result: [(id: UUID, title: String)] = []
-        for item in allItems where seen.insert(item.meetingID).inserted {
-            result.append((item.meetingID, item.meetingTitle))
+    /// The meetings that have items under the current chip, with how many.
+    ///
+    /// Counted against the chip rather than the whole meeting, so the number says what
+    /// picking it would actually show. Meetings with nothing to show are left out entirely.
+    private var meetingsWithItems: [MeetingFilterPicker.Entry] {
+        var counts: [UUID: Int] = [:]
+        var titles: [UUID: String] = [:]
+        for item in allItems where matchesFilter(item) {
+            counts[item.meetingID, default: 0] += 1
+            titles[item.meetingID] = item.meetingTitle
         }
-        return result.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        return counts.compactMap { id, count in
+            guard let title = titles[id] else { return nil }
+            return MeetingFilterPicker.Entry(id: id, title: title, count: count)
+        }
+        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
     // MARK: - Body
@@ -118,7 +125,10 @@ struct ActionItemInboxPanel: View {
             chipBar
             HStack(spacing: 6) {
                 meetingPicker
-                Spacer()
+                    // Compressible, so a long meeting title truncates instead of pushing the
+                    // row wider than the panel and clipping everything in it.
+                    .layoutPriority(0)
+                Spacer(minLength: 4)
                 addAllButton
                 sortMenu
             }
@@ -146,27 +156,7 @@ struct ActionItemInboxPanel: View {
     }
 
     private var meetingPicker: some View {
-        Menu {
-            Button("All meetings") { meetingFilter = nil }
-            Divider()
-            ForEach(meetingsWithItems, id: \.id) { meeting in
-                Button(meeting.title) { meetingFilter = meeting.id }
-            }
-        } label: {
-            Label(meetingFilterLabel, systemImage: "line.3.horizontal.decrease.circle")
-                .font(.caption)
-                .lineLimit(1)
-        }
-        .controlSize(.small)
-        .fixedSize()
-        .help("Show items from one meeting")
-    }
-
-    private var meetingFilterLabel: String {
-        guard let meetingFilter,
-              let match = meetingsWithItems.first(where: { $0.id == meetingFilter })
-        else { return "All meetings" }
-        return match.title
+        MeetingFilterPicker(meetings: meetingsWithItems, selection: $meetingFilter)
     }
 
     /// The items shown that are not already on the task list.
@@ -210,7 +200,6 @@ struct ActionItemInboxPanel: View {
             Image(systemName: "arrow.up.arrow.down.circle")
         }
         .controlSize(.small)
-        .fixedSize()
         .help("Sort")
         .accessibilityLabel("Sort action items")
     }
