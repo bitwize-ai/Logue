@@ -4,8 +4,9 @@ import Foundation
 
 /// Which slice of the list is shown.
 ///
-/// Deliberately the same vocabulary as `ActionItemFilterMode`, so the two surfaces read as
-/// one idea rather than two features that happen to both list things.
+/// This is where the due-date vocabulary lives. The action item screen is a triage inbox
+/// (`ActionItemInboxMode`) and deliberately does not repeat it — work the user has accepted
+/// is sliced by date here, in one place.
 enum TaskFilterMode: String, CaseIterable, Codable, Sendable {
     case all
     case today
