@@ -143,4 +143,43 @@ struct TaskFilterTests {
                 == TaskFilter.sort(tasks, by: .dueDateAsc).map(\.title)
         )
     }
+
+    // MARK: - Search
+
+    private func searched(_ text: String) -> [String] {
+        TaskFilter.apply(
+            sample, mode: .all, tag: nil, searchText: text, now: now, calendar: calendar
+        )
+        .map(\.title)
+    }
+
+    @Test("Empty search leaves the list alone")
+    func emptySearchIsNoOp() {
+        #expect(searched("") == titles(.all))
+    }
+
+    @Test("Search matches the title case-insensitively")
+    func searchMatchesTitle() {
+        #expect(searched("upcom") == ["Upcoming"])
+        #expect(searched("UPCOM") == ["Upcoming"])
+    }
+
+    @Test("Search matches a tag")
+    func searchMatchesTag() {
+        #expect(searched("work").sorted() == ["Overdue", "Upcoming"])
+    }
+
+    @Test("Search matches the notes body")
+    func searchMatchesNotes() {
+        let tasks = [TaskItem(title: "Opaque", notes: "Assigned to: Priya")]
+        let found = TaskFilter.apply(
+            tasks, mode: .all, tag: nil, searchText: "priya", now: now, calendar: calendar
+        )
+        #expect(found.map(\.title) == ["Opaque"])
+    }
+
+    @Test("A search that matches nothing returns nothing")
+    func searchWithNoMatches() {
+        #expect(searched("zzzz").isEmpty)
+    }
 }

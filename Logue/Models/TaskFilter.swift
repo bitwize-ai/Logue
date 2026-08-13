@@ -67,15 +67,28 @@ enum TaskFilter {
         _ tasks: [TaskItem],
         mode: TaskFilterMode,
         tag: String?,
+        searchText: String = "",
         now: Date = .now,
         calendar: Calendar = .current
     ) -> [TaskItem] {
         let startOfToday = calendar.startOfDay(for: now)
         let matched = tasks.filter { matches($0, mode: mode, startOfToday: startOfToday, calendar: calendar) }
 
-        guard let tag, !tag.isEmpty else { return matched }
-        return matched.filter { task in
+        guard let tag, !tag.isEmpty else { return applySearch(matched, searchText) }
+        let tagged = matched.filter { task in
             task.tags.contains { $0.caseInsensitiveCompare(tag) == .orderedSame }
+        }
+        return applySearch(tagged, searchText)
+    }
+
+    /// Title, tags and notes — the three places a task's words live.
+    private static func applySearch(_ tasks: [TaskItem], _ searchText: String) -> [TaskItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return tasks }
+        return tasks.filter { task in
+            task.title.localizedCaseInsensitiveContains(query)
+                || task.notes.localizedCaseInsensitiveContains(query)
+                || task.tags.contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
 
