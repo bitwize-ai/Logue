@@ -43,7 +43,11 @@ final class TaskTriageService {
                 maxTokens: 1024
             )
             suggestions = TaskTriage.suggestions(from: response, tasks: open)
-            logger.info("Triage produced \(self.suggestions.count, privacy: .public) suggestion(s)")
+            // Read into a local first: the logger's interpolation is an autoclosure, so
+            // referring to a property inside it needs an explicit `self` that the formatter
+            // then flags as redundant. The local satisfies both.
+            let produced = suggestions.count
+            logger.info("Triage produced \(produced, privacy: .public) suggestion(s)")
         } catch {
             lastError = error.localizedDescription
             suggestions = []

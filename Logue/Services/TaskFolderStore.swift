@@ -177,7 +177,8 @@ struct TaskFolderStore {
     private func currentFilenames() -> [String] {
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: rootURL, includingPropertiesForKeys: nil
-        ) else { return [] }
+        )
+        else { return [] }
         return urls.map(\.lastPathComponent)
     }
 

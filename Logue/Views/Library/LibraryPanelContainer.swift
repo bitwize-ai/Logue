@@ -23,7 +23,9 @@ struct LibraryPanelContainer<Content: View>: View {
 
     /// Wider than the workspace panels' 320 default: these carry a search field, filter
     /// controls and two-line rows, all of which are cramped at that width.
-    static var defaultWidth: CGFloat { 480 }
+    static var defaultWidth: CGFloat {
+        480
+    }
 
     /// Clamped to what the window currently allows, held separately from `width` so shrinking
     /// the window narrows the panel on screen without overwriting the width the user chose.

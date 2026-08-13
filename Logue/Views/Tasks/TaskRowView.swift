@@ -73,7 +73,9 @@ struct TaskRowView: View {
                 // Committing on focus loss too, so clicking away saves rather than silently
                 // discarding what was typed.
                 .onChange(of: isTitleFocused) { _, focused in
-                    if !focused { commitRename() }
+                    if !focused {
+                        commitRename()
+                    }
                 }
                 .onExitCommand { isRenaming = false }
         } else {

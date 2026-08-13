@@ -224,7 +224,9 @@ struct TaskListView: View {
                         priorityMenu(for: task)
                         Divider()
                         Button("Delete", role: .destructive) {
-                            if selectedTaskID == task.id { selectedTaskID = nil }
+                            if selectedTaskID == task.id {
+                                selectedTaskID = nil
+                            }
                             store.delete(id: task.id)
                         }
                     }
@@ -238,7 +240,6 @@ struct TaskListView: View {
         }
     }
 
-    @ViewBuilder
     private func priorityMenu(for task: TaskItem) -> some View {
         Menu("Priority") {
             ForEach(TaskPriority.allCases, id: \.rawValue) { priority in

@@ -146,8 +146,8 @@ struct TaskItem: Identifiable, Codable, Sendable, Equatable {
     /// Free markdown below the frontmatter.
     var notes: String
 
-    // Written out rather than synthesized: declaring `init(from:)` below removes the
-    // memberwise initialiser, and every call site depends on the defaults.
+    /// Written out rather than synthesized: declaring `init(from:)` below removes the
+    /// memberwise initialiser, and every call site depends on the defaults.
     init(
         id: UUID = UUID(),
         title: String = "",

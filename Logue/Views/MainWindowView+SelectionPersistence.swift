@@ -13,7 +13,9 @@ extension MainWindowView {
     /// UserDefaults key for the last-stable sidebar surface. Document and meeting selections
     /// are restored separately via the per-store `selectedDocumentID` / `selectedMeetingID`,
     /// so only coarse surfaces are persisted here.
-    private static var lastSidebarKey: String { "MainWindow.lastSidebarSelection" }
+    private static var lastSidebarKey: String {
+        "MainWindow.lastSidebarSelection"
+    }
 
     private static var storedSelection: SidebarSelectionMigration.Restored? {
         guard let raw = UserDefaults.standard.string(forKey: lastSidebarKey) else { return nil }

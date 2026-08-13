@@ -81,7 +81,7 @@ extension DashboardActionItem {
 
 // MARK: - Sorting
 
-extension Array where Element == DashboardActionItem {
+extension [DashboardActionItem] {
     func sorted(by order: ActionItemSortOrder) -> [DashboardActionItem] {
         switch order {
         case .dueDateAsc:

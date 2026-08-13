@@ -62,7 +62,9 @@ struct TaskInspectorPanel: View {
             loadDrafts()
         }
         .onChange(of: focus) { previous, _ in
-            if previous != nil { commitDrafts() }
+            if previous != nil {
+                commitDrafts()
+            }
         }
         .onDisappear(perform: commitDrafts)
     }
@@ -105,7 +107,6 @@ struct TaskInspectorPanel: View {
 
     // MARK: - Due date
 
-    @ViewBuilder
     private var dueDateSection: some View {
         section("Due") {
             if let due = task.dueDate {

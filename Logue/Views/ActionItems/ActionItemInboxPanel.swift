@@ -229,7 +229,9 @@ struct ActionItemInboxPanel: View {
     }
 
     private var emptyTitle: String {
-        if !searchText.isEmpty { return "No Matching Items" }
+        if !searchText.isEmpty {
+            return "No Matching Items"
+        }
         switch inboxMode {
         case .inbox: return "Inbox Zero"
         case .dismissed: return "Nothing Dismissed"
@@ -238,12 +240,16 @@ struct ActionItemInboxPanel: View {
     }
 
     private var emptyIcon: String {
-        if !searchText.isEmpty { return "magnifyingglass" }
+        if !searchText.isEmpty {
+            return "magnifyingglass"
+        }
         return inboxMode == .inbox ? "tray" : "checklist"
     }
 
     private var emptyDescription: String {
-        if !searchText.isEmpty { return "No action items match \"\(searchText)\"" }
+        if !searchText.isEmpty {
+            return "No action items match \"\(searchText)\""
+        }
         switch inboxMode {
         case .inbox:
             return "Every action item Logue found has been added to your tasks or dismissed."

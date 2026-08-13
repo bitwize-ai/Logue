@@ -53,7 +53,6 @@ struct TaskQuickAddField: View {
         }
     }
 
-    @ViewBuilder
     private func previewChips(_ parsed: ParsedTask) -> some View {
         HStack(spacing: 6) {
             if let due = parsed.dueDate {

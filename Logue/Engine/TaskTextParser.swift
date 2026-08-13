@@ -202,7 +202,8 @@ enum TaskTextParser {
         for (index, token) in tokens.enumerated() {
             guard let resolved = singleTokenDate(
                 token, startOfToday: startOfToday, calendar: calendar
-            ) else { continue }
+            )
+            else { continue }
             dueDate = resolved
             return removing(tokens, from: index, count: 1)
         }
@@ -216,7 +217,8 @@ enum TaskTextParser {
         if let start = tokens.firstIndex(where: { $0.lowercased() == "in" }),
            start + 2 < tokens.count,
            let count = Int(tokens[start + 1]),
-           let unit = unit(from: tokens[start + 2]) {
+           let unit = unit(from: tokens[start + 2])
+        {
             let clamped = min(max(count, 1), maxRelativeDays)
             dueDate = TaskRecurrence(unit: unit, interval: clamped)
                 .nextDueDate(after: startOfToday, calendar: calendar)
@@ -225,7 +227,8 @@ enum TaskTextParser {
 
         if let start = tokens.firstIndex(where: { $0.lowercased() == "next" }),
            start + 1 < tokens.count,
-           let unit = unit(from: tokens[start + 1]) {
+           let unit = unit(from: tokens[start + 1])
+        {
             dueDate = TaskRecurrence(unit: unit, interval: 1)
                 .nextDueDate(after: startOfToday, calendar: calendar)
             return removing(tokens, from: start, count: 2)
@@ -238,8 +241,12 @@ enum TaskTextParser {
         _ token: String, startOfToday: Date, calendar: Calendar
     ) -> Date? {
         let word = token.lowercased()
-        if word == "today" { return startOfToday }
-        if word == "tomorrow" { return calendar.date(byAdding: .day, value: 1, to: startOfToday) }
+        if word == "today" {
+            return startOfToday
+        }
+        if word == "tomorrow" {
+            return calendar.date(byAdding: .day, value: 1, to: startOfToday)
+        }
 
         if let weekday = weekdays[word] {
             return nextOccurrence(ofWeekday: weekday, after: startOfToday, calendar: calendar)
@@ -259,7 +266,9 @@ enum TaskTextParser {
     ) -> Date? {
         let current = calendar.component(.weekday, from: startOfToday)
         var offset = weekday - current
-        if offset <= 0 { offset += 7 }
+        if offset <= 0 {
+            offset += 7
+        }
         return calendar.date(byAdding: .day, value: offset, to: startOfToday)
     }
 

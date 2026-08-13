@@ -86,7 +86,11 @@ final class TaskStore {
 
     func load() {
         tasks = TaskStorage.shared.loadTasks().sorted { $0.createdAt < $1.createdAt }
-        logger.info("Loaded \(self.tasks.count, privacy: .public) task(s)")
+        // Read into a local first: the logger's interpolation is an autoclosure, so referring
+        // to a property inside it needs an explicit `self` that the formatter then flags as
+        // redundant. The local satisfies both.
+        let loaded = tasks.count
+        logger.info("Loaded \(loaded, privacy: .public) task(s)")
     }
 
     /// Replaces the in-memory list, for a storage-mode switch that re-read everything.

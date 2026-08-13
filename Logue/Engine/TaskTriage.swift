@@ -235,7 +235,8 @@ enum TaskTriage {
         for element in array {
             guard let suggestion = validated(
                 element, open: open, seen: &seenTasks, now: now, calendar: calendar
-            ) else { continue }
+            )
+            else { continue }
             result.append(suggestion)
         }
         return result
@@ -284,7 +285,8 @@ enum TaskTriage {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let data = stripped.data(using: .utf8),
-           let array = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+           let array = try? JSONSerialization.jsonObject(with: data) as? [Any]
+        {
             return array
         }
 
@@ -354,11 +356,18 @@ enum TaskTriage {
         guard let patch = suggestion.patch else { return task }
 
         var updated = task
-        if let priority = patch.priority { updated.priority = priority }
-        if let dueDate = patch.dueDate { updated.dueDate = dueDate }
-        if let status = patch.status { updated.status = status }
+        if let priority = patch.priority {
+            updated.priority = priority
+        }
+        if let dueDate = patch.dueDate {
+            updated.dueDate = dueDate
+        }
+        if let status = patch.status {
+            updated.status = status
+        }
         if let tag = patch.tag,
-           !updated.tags.contains(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) {
+           !updated.tags.contains(where: { $0.caseInsensitiveCompare(tag) == .orderedSame })
+        {
             updated.tags.append(tag)
         }
         updated.updatedAt = .now
