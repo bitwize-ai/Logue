@@ -195,8 +195,15 @@ final class AudioRecorder {
                 os_log(.error, "Audio file write failed: %{public}@", error.localizedDescription)
             }
 
-            // Stream the raw buffer on (dynamic — picks up callback changes made after start).
-            callbackHolder.callback?(buffer)
+            // Stream the audio on (dynamic — picks up callback changes made after start).
+            //
+            // Copied first. This buffer belongs to the engine and is valid only inside this
+            // callback; the consumer reads it later, on another actor, and by then the engine has
+            // reused the memory. The file written just above stays perfectly audible while
+            // everything downstream sees silence — an empty transcript over a good recording.
+            if let detached = buffer.detachedCopy() {
+                callbackHolder.callback?(detached)
+            }
         }
     }
 

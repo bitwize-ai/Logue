@@ -95,6 +95,13 @@ final class DiarizationManager {
     /// Target format for diarization: 16 kHz mono Float32.
     private var targetFormat: AVAudioFormat?
 
+    /// Reports what each source is actually contributing to the session timeline.
+    ///
+    /// The saved file is written straight from the capture tap, so it can be perfectly audible while
+    /// the timeline the models read is silent — and nothing in between says so. This makes that gap
+    /// visible instead of leaving "the recording may be silent" as the only clue.
+    private var timelineDiagnostics = TimelineContributionLog()
+
     /// Reusable AVAudioConverters for efficient resampling — one per capture source, lazily created
     /// and rebuilt only when that source's own input format changes.
     private var resamplers: [AudioSource: AVAudioConverter] = [:]
@@ -350,7 +357,11 @@ final class DiarizationManager {
 
     /// Convert to 16kHz mono Float32 and mix into the session timeline.
     private func accumulateBatchBuffer(_ buffer: AVAudioPCMBuffer, from source: AudioSource) {
-        guard let floatSamples = convertBufferToFloatArray(buffer, from: source) else { return }
+        guard let floatSamples = convertBufferToFloatArray(buffer, from: source) else {
+            timelineDiagnostics.recordDroppedConversion(from: source, logger: logger)
+            return
+        }
+        timelineDiagnostics.record(floatSamples, from: source, logger: logger)
         let wasFull = mixer.didDropAudio
         mixer.write(floatSamples, from: source)
         if mixer.didDropAudio, !wasFull {
