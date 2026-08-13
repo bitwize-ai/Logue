@@ -15,14 +15,14 @@ struct SpeakerBlockView: View {
     var onRemoveBookmark: ((UUID) -> Void)?
     var onChangeBookmarkType: ((UUID, String, BookmarkColor) -> Void)?
     var onEditSegment: ((UUID, String) -> Void)?
-    var onReassignSpeaker: ((UUID, String?) -> Void)?
     var onRenameSpeaker: ((String, String) -> Void)?
     var onSeekToTime: ((TimeInterval) -> Void)?
     var activeSegmentID: UUID?
     var speakerColors: [String: Color] = [:]
     @State private var isHovered = false
-    @State private var isDropTargeted = false
     @State private var showBookmarkPopover = false
+    /// The moment the open bookmark picker will attach to.
+    @State private var bookmarkTarget: TimeInterval?
     @State private var showBookmarkAdded = false
     @State private var isEditingSpeakerName = false
     @State private var speakerNameDraft = ""
@@ -69,6 +69,49 @@ struct SpeakerBlockView: View {
     // Hovering a block of mixed speakers reveals every line's speaker rather than only the ones
     // that open a turn — so an exchange can be read attributed without anything moving, and
     // without carrying that weight all the time.
+
+    /// Which bookmarks belong beside a given line.
+    ///
+    /// A bookmark belongs to the marked line it falls at or after — the same moment the gutter
+    /// names — so it sits with the words it was placed against instead of at the top of everything.
+    private func bookmarks(for segment: TranscriptSegment) -> [Bookmark] {
+        let marks = gutterMarks
+        guard marks[segment.id] != nil else { return [] }
+
+        let markedTimes = block.segments
+            .filter { marks[$0.id] != nil }
+            .map(\.startTime)
+            .sorted()
+        let nextMark = markedTimes.first { $0 > segment.startTime }
+
+        return blockBookmarks.filter { bookmark in
+            guard bookmark.timestamp >= segment.startTime else { return false }
+            guard let nextMark else { return true }
+            return bookmark.timestamp < nextMark
+        }
+    }
+
+    /// Adds a bookmark at this line's moment. Revealed on hover, like the rest of the chrome.
+    @ViewBuilder
+    private func bookmarkButton(for segment: TranscriptSegment) -> some View {
+        if onAddBookmark != nil {
+            Button {
+                bookmarkTarget = segment.startTime
+                showBookmarkPopover = true
+            } label: {
+                Image(systemName: "bookmark")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add bookmark at \(TranscriptSegment.formatTime(segment.startTime))")
+            .help("Add bookmark here")
+            .opacity(isHovered ? 1 : 0)
+            .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
+                bookmarkTypePicker
+            }
+        }
+    }
 
     /// The left-hand column: who is speaking, then when.
     @ViewBuilder
@@ -181,38 +224,47 @@ struct SpeakerBlockView: View {
             // Only rendered when there is something in it. Before diarization has named anyone a
             // block has no speaker and usually no bookmarks, and an empty row holding a single
             // floating button is worse than no row.
-            if block.speakerLabel != nil || !blockBookmarks.isEmpty {
-                // Indented past the gutter so the name sits over the text it introduces, and the
-                // transcript keeps the same left edge before and after diarization runs.
-                header
-                    .padding(.leading, 71)
-            }
-
             // Segment text — only first/last lines are draggable (boundary lines)
             VStack(alignment: .leading, spacing: 5) {
                 let segmentCount = block.segments.count
                 let gutter = gutterMarks
                 ForEach(Array(block.segments.enumerated()), id: \.element.id) { index, segment in
-                    let isBoundary = index == 0 || index == segmentCount - 1
                     let mark = gutter[segment.id]
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        // Blank for most lines, so a run of sentences reads as one paragraph under
-                        // the mark that opened it rather than as a stack of separately stamped lines.
-                        gutterColumn(for: segment, mark: mark)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            // Blank for most lines, so a run of sentences reads as one paragraph
+                            // under the mark that opened it rather than a stack of stamped lines.
+                            gutterColumn(for: segment, mark: mark)
 
-                        SegmentTextRow(
-                            segment: segment,
-                            searchText: searchText,
-                            onEditSegment: onEditSegment,
-                            onSeekToTime: onSeekToTime,
-                            isActive: activeSegmentID == segment.id,
-                            isDraggable: isBoundary
-                        )
+                            SegmentTextRow(
+                                segment: segment,
+                                searchText: searchText,
+                                onEditSegment: onEditSegment,
+                                onSeekToTime: onSeekToTime,
+                                isActive: activeSegmentID == segment.id,
+                                isDraggable: false
+                            )
+
+                            // Bookmarking belongs to a moment, and the gutter mark is what names
+                            // one. On the block it was effectively on the whole transcript, since
+                            // blocks are cut by time and continuous speech makes just one.
+                            if mark != nil {
+                                bookmarkButton(for: segment)
+                            }
+                        }
+
+                        ForEach(bookmarks(for: segment)) { bookmark in
+                            BookmarkChip(
+                                bookmark: bookmark,
+                                onChangeType: onChangeBookmarkType,
+                                onRemove: onRemoveBookmark
+                            )
+                            .padding(.leading, 71)
+                        }
                     }
                     // A stamped line starts a new group, so it gets air above it. Without this the
                     // gutter marks a boundary the text gives no sign of.
-                    .padding(.top, gutter[segment.id] != nil && index > 0 ? 10 : 0)
-                    .draggable(isBoundary ? segment.id.uuidString : "")
+                    .padding(.top, mark != nil && index > 0 ? 10 : 0)
                     .id(segment.id)
                 }
 
@@ -243,61 +295,23 @@ struct SpeakerBlockView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Floats over the block rather than sitting in a row, so a block with nothing else to
-        // put in a header does not grow one just to hold this.
-        .overlay(alignment: .topTrailing) {
-            if onAddBookmark != nil {
-                Button {
-                    showBookmarkPopover = true
-                } label: {
-                    Image(systemName: showBookmarkAdded ? "bookmark.fill" : "bookmark")
-                        .font(.callout)
-                        .foregroundColor(showBookmarkAdded ? AppThemeConstants.actionBadgeColor : Color.secondary.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add bookmark")
-                .help("Add bookmark at this point")
-                .opacity(isHovered || showBookmarkAdded || !blockBookmarks.isEmpty ? 1 : 0)
-                .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
-                    bookmarkTypePicker
-                }
-            }
-        }
         // Filled only when the block is saying something about itself — being dropped onto, playing
         // back, or under the pointer. At rest it is the page, so a transcript reads as a document
         // rather than as a stack of tiles.
         .background(
             RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
-                .fill(isDropTargeted
-                    ? accentColor.opacity(AppThemeConstants.opacityLight)
-                    : containsActiveSegment
-                    ? accentColor.opacity(0.09)
-                    : Color.clear)
+                .fill(containsActiveSegment ? accentColor.opacity(0.09) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
                 .stroke(
-                    accentColor.opacity(isDropTargeted ? 0.5 : containsActiveSegment ? 0.45 : 0),
+                    accentColor.opacity(containsActiveSegment ? 0.45 : 0),
                     lineWidth: containsActiveSegment ? 1.5 : 2
                 )
         )
         .animation(.easeInOut(duration: 0.25), value: containsActiveSegment)
         .onHover { isHovered = $0 }
-        .dropDestination(for: String.self) { items, _ in
-            guard let uuidString = items.first,
-                  let segmentID = UUID(uuidString: uuidString),
-                  onReassignSpeaker != nil
-            else { return false }
-            // Only accept if dropping onto a different speaker
-            let alreadyInBlock = block.segments.contains { $0.id == segmentID }
-            guard !alreadyInBlock else { return false }
-            onReassignSpeaker?(segmentID, block.speakerLabel)
-            return true
-        } isTargeted: { targeted in
-            isDropTargeted = targeted
-        }
         .animation(.easeInOut(duration: 0.15), value: isHovered)
-        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
     }
 
     // MARK: - Speaker Rename
@@ -315,7 +329,9 @@ struct SpeakerBlockView: View {
     private var bookmarkTypePicker: some View {
         BlockBookmarkPicker(
             onAdd: { label, color in
-                onAddBookmark?(block.startTime, label, color)
+                // The moment the user pressed the button beside, not the block's start — with
+                // blocks cut by time, that was the beginning of the transcript.
+                onAddBookmark?(bookmarkTarget ?? block.startTime, label, color)
                 showBookmarkPopover = false
                 showBookmarkAdded = true
                 Task {

@@ -112,13 +112,6 @@ struct MeetingWorkspaceView: View {
                         onEditSegment: { segmentID, newText in
                             store.updateSegmentText(meetingID: meeting.id, segmentID: segmentID, text: newText)
                         },
-                        onReassignSpeaker: { segmentID, newSpeakerLabel in
-                            store.reassignSegmentSpeaker(
-                                meetingID: meeting.id,
-                                segmentID: segmentID,
-                                newSpeakerLabel: newSpeakerLabel
-                            )
-                        },
                         onRenameSpeaker: { oldName, newName in
                             renameSpeaker(in: meeting, from: oldName, to: newName)
                         },

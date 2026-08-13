@@ -28,7 +28,6 @@ struct TranscriptTimelineView: View {
     var onRemoveBookmark: ((UUID) -> Void)?
     var onChangeBookmarkType: ((UUID, String, BookmarkColor) -> Void)?
     var onEditSegment: ((UUID, String) -> Void)?
-    var onReassignSpeaker: ((UUID, String?) -> Void)?
     var onRenameSpeaker: ((String, String) -> Void)?
     var onSeekToTime: ((TimeInterval) -> Void)?
     var activeSegmentID: UUID?
@@ -150,7 +149,6 @@ struct TranscriptTimelineView: View {
                                         onRemoveBookmark: onRemoveBookmark,
                                         onChangeBookmarkType: onChangeBookmarkType,
                                         onEditSegment: onEditSegment,
-                                        onReassignSpeaker: onReassignSpeaker,
                                         onRenameSpeaker: onRenameSpeaker,
                                         onSeekToTime: onSeekToTime,
                                         activeSegmentID: activeSegmentID,
