@@ -75,32 +75,15 @@ final class AudioRecorder {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
-        // Acoustic echo cancellation, noise suppression and automatic gain, from the OS.
+        // Voice processing (`setVoiceProcessingEnabled`) was enabled here for its echo
+        // cancellation, and it silenced the microphone outright: the timeline logged
+        // "microphone contributed 10s at RMS 0.00000" for every window of every session while the
+        // level meter — which shows max(system, mic) — went on moving off the system tap. It is a
+        // duplex unit and wants a running output chain this engine does not have.
         //
-        // The echo cancellation is the point. Without it the microphone re-hears the remote
-        // participants coming out of the speakers, so every remote sentence is transcribed twice —
-        // once from the system tap and once from the mic — and the diarizer is shown one person's
-        // voice arriving on two channels and clusters them as two people.
-        //
-        // This transforms the input node itself, so the microphone audio saved for playback is
-        // processed too. That is the intent: a recording without echo is the one worth keeping.
-        // Enabled before the format is read, because enabling it changes that format.
-        do {
-            try inputNode.setVoiceProcessingEnabled(true)
-
-            // Voice processing puts macOS into voice-chat mode, which ducks everything else so the
-            // far end can be heard over it. For a meeting recorder that is backwards twice over: the
-            // remote participants get quieter to listen to, and because the system-audio tap reads
-            // the output, the recording of them may be quieter too. Ducking is configurable
-            // separately from echo cancellation, so it is turned down to keep the one and drop the
-            // other.
-            inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
-                enableAdvancedDucking: false,
-                duckingLevel: .min
-            )
-        } catch {
-            logger.error("Voice processing unavailable, continuing raw: \(error.localizedDescription, privacy: .public)")
-        }
+        // Left off until it can be demonstrated to capture audio. The echo it was meant to cancel
+        // is the lesser problem: a meeting transcribed twice is recoverable, a meeting recorded as
+        // silence is not.
 
         let inputFormat = inputNode.outputFormat(forBus: 0)
         recordingFormat = inputFormat
