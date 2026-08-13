@@ -28,4 +28,48 @@ struct ActionItemInboxTests {
         let decoded = try JSONDecoder().decode(ActionItem.self, from: data)
         #expect(decoded.isDismissed)
     }
+
+    // MARK: - Inbox rule
+
+    private var pending: ActionItem { ActionItem(title: "Pending") }
+    private var done: ActionItem { ActionItem(title: "Done", isCompleted: true) }
+    private var rejected: ActionItem { ActionItem(title: "Rejected", isDismissed: true) }
+
+    @Test("An undecided item is in the inbox")
+    func undecidedItemIsInInbox() {
+        #expect(ActionItemInbox.matches(pending, mode: .inbox, isPromoted: false))
+    }
+
+    @Test("A promoted item leaves the inbox")
+    func promotedItemLeavesInbox() {
+        #expect(!ActionItemInbox.matches(pending, mode: .inbox, isPromoted: true))
+    }
+
+    @Test("A dismissed item leaves the inbox and lands under Dismissed")
+    func dismissedItemMovesToDismissed() {
+        #expect(!ActionItemInbox.matches(rejected, mode: .inbox, isPromoted: false))
+        #expect(ActionItemInbox.matches(rejected, mode: .dismissed, isPromoted: false))
+    }
+
+    @Test("A completed item is not awaiting a decision")
+    func completedItemLeavesInbox() {
+        #expect(!ActionItemInbox.matches(done, mode: .inbox, isPromoted: false))
+    }
+
+    @Test("All shows everything regardless of state")
+    func allShowsEverything() {
+        for item in [pending, done, rejected] {
+            #expect(ActionItemInbox.matches(item, mode: .all, isPromoted: false))
+        }
+        #expect(ActionItemInbox.matches(pending, mode: .all, isPromoted: true))
+    }
+
+    @Test("Counts report each chip independently")
+    func countsPerMode() {
+        let items = [pending, done, rejected]
+        let counts = ActionItemInbox.counts(items) { $0.title == "Done" }
+        #expect(counts[.inbox] == 1)
+        #expect(counts[.dismissed] == 1)
+        #expect(counts[.all] == 3)
+    }
 }
