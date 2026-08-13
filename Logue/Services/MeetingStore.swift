@@ -414,7 +414,18 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
     /// when recording stops.
     func appendSegment(_ segment: TranscriptSegment, to meetingID: UUID, persistImmediately: Bool = true) {
         guard let index = meetingIndex(for: meetingID) else { return }
-        meetings[index].segments.append(segment)
+
+        // The transcriber finalises when it is confident, not when a sentence ends, so a thought
+        // arrives split across two lines. Joined here, as it arrives, the stored transcript is made
+        // of sentences and everything downstream inherits that rather than working around it.
+        if let last = meetings[index].segments.last,
+           TranscriptSentenceMerge.shouldMerge(previous: last, next: segment)
+        {
+            meetings[index].segments[meetings[index].segments.count - 1] =
+                TranscriptSentenceMerge.merged(last, with: segment)
+        } else {
+            meetings[index].segments.append(segment)
+        }
         meetings[index].modifiedAt = Date()
         if persistImmediately {
             saveMeeting(id: meetingID)
@@ -469,30 +480,6 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
     func updateDuration(_ duration: TimeInterval, for meetingID: UUID) {
         guard let index = meetingIndex(for: meetingID) else { return }
         meetings[index].duration = duration
-        saveMeeting(id: meetingID)
-    }
-
-    /// Replaces a meeting's transcript with the same lines carrying better text.
-    ///
-    /// Used by the post-recording pass after realignment: the segments handed in are the meeting's
-    /// own, with their identities, starts, ends and speakers intact, so nothing the reader is
-    /// looking at moves.
-    func updateSegments(_ segments: [TranscriptSegment], for meetingID: UUID) {
-        guard let index = meetingIndex(for: meetingID) else { return }
-        meetings[index].segments = segments
-        saveMeeting(id: meetingID)
-    }
-
-    /// Puts back what a session held in memory when the app stopped.
-    ///
-    /// The checkpointed segments replace whatever is on the meeting rather than appending to it: a
-    /// checkpoint is a snapshot of the whole session's transcript, so appending would duplicate
-    /// every line that had already been saved.
-    func restoreRecoveredSession(for meetingID: UUID, segments: [TranscriptSegment], duration: TimeInterval) {
-        guard let index = meetingIndex(for: meetingID) else { return }
-        meetings[index].segments = segments
-        meetings[index].duration = max(meetings[index].duration, duration)
-        meetings[index].wasRecovered = true
         saveMeeting(id: meetingID)
     }
 
