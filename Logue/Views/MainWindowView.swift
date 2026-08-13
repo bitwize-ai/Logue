@@ -76,6 +76,10 @@ struct MainWindowView: View {
     @State var meetingsPanelCollapsed = Self.loadRestoredPanel() != .actionItems
     // Extension-visible: +LibraryPanels
     @State var documentsPanelCollapsed = Self.loadRestoredPanel() != .templates
+    /// Panel widths, kept here so closing and reopening a panel returns it to the width the
+    /// user dragged it to.
+    @State private var meetingsPanelWidth = LibraryPanelContainer<EmptyView>.defaultWidth
+    @State private var documentsPanelWidth = LibraryPanelContainer<EmptyView>.defaultWidth
     // Extension-visible: +LibraryPanels
     @State var taskStore = TaskStore.shared
 
@@ -374,25 +378,29 @@ struct MainWindowView: View {
         case .recent:
             RecentContentPane()
         case .allDocuments:
-            LibrarySurfaceView<DocumentsLibraryTool, _, _>(
-                isPanelCollapsed: $documentsPanelCollapsed,
-                badgeCount: nil,
-                toggleHelp: "Templates"
-            ) {
-                DocumentListContentView(spaceID: nil)
-            } panel: { _ in
-                TemplateListPanel()
+            DocumentListContentView(spaceID: nil) {
+                LibraryPanelContainer(
+                    isCollapsed: $documentsPanelCollapsed,
+                    width: $documentsPanelWidth
+                ) {
+                    TemplateListPanel()
+                }
             }
+            .libraryPanelToggle(isCollapsed: $documentsPanelCollapsed, panel: .templates)
         case .allMeetings:
-            LibrarySurfaceView<MeetingsLibraryTool, _, _>(
-                isPanelCollapsed: $meetingsPanelCollapsed,
-                badgeCount: actionItemInboxCount,
-                toggleHelp: "Action items waiting to be triaged"
-            ) {
-                MeetingListContentView(spaceID: nil)
-            } panel: { _ in
-                ActionItemInboxPanel()
+            MeetingListContentView(spaceID: nil) {
+                LibraryPanelContainer(
+                    isCollapsed: $meetingsPanelCollapsed,
+                    width: $meetingsPanelWidth
+                ) {
+                    ActionItemInboxPanel()
+                }
             }
+            .libraryPanelToggle(
+                isCollapsed: $meetingsPanelCollapsed,
+                panel: .actionItems,
+                badgeCount: actionItemInboxCount
+            )
         case .tasks:
             TaskListView()
         case let .space(id):

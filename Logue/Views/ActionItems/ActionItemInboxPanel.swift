@@ -104,7 +104,17 @@ struct ActionItemInboxPanel: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SearchBarField(text: $searchText, placeholder: "Search action items", expandable: true)
+            HStack(spacing: 8) {
+                // The panel's identity sits with its controls rather than in a tab strip of
+                // one, which was a header that named a single tool.
+                Image(systemName: LibraryPanel.actionItems.symbolName)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                SearchBarField(
+                    text: $searchText, placeholder: "Search action items", expandable: true
+                )
+            }
             chipBar
             HStack(spacing: 6) {
                 meetingPicker

@@ -68,7 +68,15 @@ struct TemplateListPanel: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SearchBarField(text: $searchText, placeholder: "Search templates", expandable: true)
+            HStack(spacing: 8) {
+                Image(systemName: LibraryPanel.templates.symbolName)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                SearchBarField(
+                    text: $searchText, placeholder: "Search templates", expandable: true
+                )
+            }
             categoryPicker
         }
         .padding(.horizontal, AppThemeConstants.paddingLarge)

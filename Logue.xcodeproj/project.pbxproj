@@ -118,10 +118,10 @@
 		289CC815E02A03243FA7696B /* PromptRegistry+InlineRewrite.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BBB9D94724076C53D2F8EC /* PromptRegistry+InlineRewrite.swift */; };
 		2912A07E0CA39107DCE54499 /* DocumentPersistenceSplitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1246768E9657B7146D7062 /* DocumentPersistenceSplitTests.swift */; };
 		294DE2CCA2CF984F9088FA89 /* SpaceFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B612ADDBC4E7FB7917F6D72A /* SpaceFile.swift */; };
-		2A9CA070345CA1B97F340FFB /* LibraryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5AA09290CC078573130E95 /* LibraryTools.swift */; };
 		2AADC5238C76ED6A02544A34 /* AgentConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB0F899AF6F08FEAF8AA46 /* AgentConversationListView.swift */; };
 		2AFCB1DEDD52C307A5201BC7 /* UpcomingEventCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 510929670B711C38C5D0F08F /* UpcomingEventCard.swift */; };
 		2BAA8102CA7FD65AD66600B5 /* DocumentSearchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CCC37048141456C9BA5AA3 /* DocumentSearchBar.swift */; };
+		2C3698698937352B37F6E7D2 /* LibraryPanelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1275E28278B0096C82EF1C1 /* LibraryPanelContainer.swift */; };
 		2C891DDA64F2DC209E22A421 /* VectorStore+Graph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219E60DBB1D51BA1337B291F /* VectorStore+Graph.swift */; };
 		2C9B1535EA2DC064913A2D04 /* SpeakerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6CEBB82218835592057440 /* SpeakerModels.swift */; };
 		2CB91F8F4CD2D01195C82B35 /* DocumentStore+Creation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07EFF4728C29BB90E74C5782 /* DocumentStore+Creation.swift */; };
@@ -852,7 +852,6 @@
 		6AF84C2C50F6BB00E7E6D455 /* EditorContentWidth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorContentWidth.swift; sourceTree = "<group>"; };
 		6B0077309A4C4D4A70140E5A /* InlineRewriteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineRewriteState.swift; sourceTree = "<group>"; };
 		6C03B333D9E45F6759753B32 /* LogueTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LogueTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		6D5AA09290CC078573130E95 /* LibraryTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryTools.swift; sourceTree = "<group>"; };
 		6D5F001CEA6CB89B25C75055 /* MarkdownStyler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownStyler.swift; sourceTree = "<group>"; };
 		6DE0AF8C2141C4DDEC98CB32 /* MeetingExportPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingExportPanelView.swift; sourceTree = "<group>"; };
 		6DFCD2049B54A1F08F0C8E89 /* LocationTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationTool.swift; sourceTree = "<group>"; };
@@ -1164,6 +1163,7 @@
 		EF7B96F52DB280D23D637F33 /* MenuBarIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MenuBarIcon.png; sourceTree = "<group>"; };
 		EFE448FDFB9D86AB13035E23 /* ReleaseEntitlementsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseEntitlementsTests.swift; sourceTree = "<group>"; };
 		F06E61F5499F68059FF8775B /* TableCellTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableCellTextView.swift; sourceTree = "<group>"; };
+		F1275E28278B0096C82EF1C1 /* LibraryPanelContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryPanelContainer.swift; sourceTree = "<group>"; };
 		F177793CD00EDA556070B983 /* TaskPromotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskPromotionTests.swift; sourceTree = "<group>"; };
 		F30E821E71C80A341EEC3F68 /* BlockEditorView+Reorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlockEditorView+Reorder.swift"; sourceTree = "<group>"; };
 		F3BC206B7D135B2017B99C1D /* LinkIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkIndexTests.swift; sourceTree = "<group>"; };
@@ -1479,8 +1479,8 @@
 		4FDEBA437340A0E650E8D450 /* Library */ = {
 			isa = PBXGroup;
 			children = (
+				F1275E28278B0096C82EF1C1 /* LibraryPanelContainer.swift */,
 				42244F0A5DFFCB84781E99BE /* LibrarySurfaceView.swift */,
-				6D5AA09290CC078573130E95 /* LibraryTools.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -2662,8 +2662,8 @@
 				067D657E0BB41B6E92B7E7B2 /* LLMEngine.swift in Sources */,
 				E607ACE5890354F65F74C864 /* LLMEngineStatus.swift in Sources */,
 				715CB60F9A14CAE9040AF1D0 /* LLMResponseParser.swift in Sources */,
+				2C3698698937352B37F6E7D2 /* LibraryPanelContainer.swift in Sources */,
 				57AD2E08BD0042215A3A66AF /* LibrarySurfaceView.swift in Sources */,
-				2A9CA070345CA1B97F340FFB /* LibraryTools.swift in Sources */,
 				D64E8AD8A0E3FFCFD9083041 /* LinkIndex.swift in Sources */,
 				27F097B829A01B3B49CDA042 /* LinkRenamer.swift in Sources */,
 				87709D216B8F45FB46E04BF6 /* LinksPanelView.swift in Sources */,
