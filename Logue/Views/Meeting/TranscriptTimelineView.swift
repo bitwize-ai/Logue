@@ -3,8 +3,9 @@ import SwiftUI
 
 // MARK: - Speaker Block Model
 
-/// Groups consecutive transcript segments from the same speaker into a visual block.
-private struct SpeakerBlock: Identifiable {
+// Extension-visible: used by SpeakerBlockView in TranscriptSpeakerBlockView.swift
+/// A stretch of transcript shown as one block. Cut by time alone, so it may hold several speakers.
+struct SpeakerBlock: Identifiable {
     let id: UUID // first segment's ID
     let speakerLabel: String?
     let startTime: TimeInterval
@@ -64,13 +65,14 @@ struct TranscriptTimelineView: View {
         var blockStart: TimeInterval = 0
 
         for segment in filteredSegments {
-            // Merge nil→nil (pre-diarization streaming). All other transitions start a new block.
-            let speakerChanged = segment.speakerLabel != currentSpeaker
-                && !(segment.speakerLabel == nil && currentSpeaker == nil)
+            // Blocks are decided by time alone. Splitting on the speaker as well meant the whole
+            // transcript was re-cut the moment diarization finished — a different number of blocks,
+            // content merged and split, and the reader's place lost. Who is speaking is now shown in
+            // the gutter instead, so identifying speakers adds labels without moving anything.
             let timeGap = !currentSegments.isEmpty
                 && (segment.startTime - (currentSegments.last?.endTime ?? 0)) > 15
 
-            if speakerChanged || timeGap {
+            if timeGap {
                 if !currentSegments.isEmpty {
                     blocks.append(SpeakerBlock(
                         id: currentSegments[0].id,
@@ -151,7 +153,8 @@ struct TranscriptTimelineView: View {
                                         onReassignSpeaker: onReassignSpeaker,
                                         onRenameSpeaker: onRenameSpeaker,
                                         onSeekToTime: onSeekToTime,
-                                        activeSegmentID: activeSegmentID
+                                        activeSegmentID: activeSegmentID,
+                                        speakerColors: speakerColors
                                     )
                                 }
 
@@ -348,291 +351,12 @@ struct TranscriptTimelineView: View {
 
 // MARK: - Speaker Block View
 
-/// Renders a group of consecutive segments from the same speaker as a card.
-private struct SpeakerBlockView: View {
-    let block: SpeakerBlock
-    var blockBookmarks: [Bookmark] = []
-    var searchText: String = ""
-    var volatileText: String = ""
-    var onAddBookmark: ((TimeInterval, String, BookmarkColor) -> Void)?
-    var onRemoveBookmark: ((UUID) -> Void)?
-    var onChangeBookmarkType: ((UUID, String, BookmarkColor) -> Void)?
-    var onEditSegment: ((UUID, String) -> Void)?
-    var onReassignSpeaker: ((UUID, String?) -> Void)?
-    var onRenameSpeaker: ((String, String) -> Void)?
-    var onSeekToTime: ((TimeInterval) -> Void)?
-    var activeSegmentID: UUID?
-    @State private var isHovered = false
-    @State private var isDropTargeted = false
-    @State private var showBookmarkPopover = false
-    @State private var showBookmarkAdded = false
-    @State private var isEditingSpeakerName = false
-    @State private var speakerNameDraft = ""
-    @FocusState private var isSpeakerNameFocused: Bool
-
-    /// Accent color for the left border — speaker color or a default.
-    private var accentColor: Color {
-        block.speakerColor ?? AppThemeConstants.mutedText
-    }
-
-    /// True when one of this block's segments is the currently playing line.
-    private var containsActiveSegment: Bool {
-        guard let activeID = activeSegmentID else { return false }
-        return block.segments.contains { $0.id == activeID }
-    }
-
-    /// Which segments print a time in the left gutter, and what it says.
-    ///
-    /// One per stretch of the meeting rather than one per sentence. A timestamp against every line
-    /// is noise — the gutter exists so someone can scan for roughly when something was said, and a
-    /// column of near-identical numbers makes that harder, not easier. Segments in between are
-    /// blank, so a run of sentences reads as a paragraph belonging to the time above it.
-    private var gutterTimestamps: [UUID: String] {
-        var stamps: [UUID: String] = [:]
-        var lastStamped: TimeInterval?
-        for segment in block.segments {
-            let isFirst = lastStamped == nil
-            let advanced = (segment.startTime - (lastStamped ?? 0)) >= Self.gutterInterval
-            guard isFirst || advanced else { continue }
-            stamps[segment.id] = TranscriptSegment.formatTime(segment.startTime)
-            lastStamped = segment.startTime
-        }
-        return stamps
-    }
-
-    /// How far the meeting must move on before the gutter prints another time.
-    private static let gutterInterval: TimeInterval = 10
-
-    /// Speaker name and any bookmark chips. Never the block's time — the gutter prints that.
-    private var header: some View {
-        HStack(spacing: 6) {
-            if let speaker = block.speakerLabel {
-                if isEditingSpeakerName {
-                    TextField("Speaker name", text: $speakerNameDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(accentColor)
-                        .frame(maxWidth: 160)
-                        .focused($isSpeakerNameFocused)
-                        .onSubmit { commitSpeakerRename(oldName: speaker) }
-                        .onExitCommand { isEditingSpeakerName = false }
-                        .onAppear {
-                            Task {
-                                try? await Task.sleep(for: AppConstants.Delays.focusActivation)
-                                isSpeakerNameFocused = true
-                                try? await Task.sleep(for: AppConstants.Delays.focusActivation)
-                                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
-                            }
-                        }
-                        .onChange(of: isSpeakerNameFocused) { _, focused in
-                            if !focused {
-                                commitSpeakerRename(oldName: speaker)
-                            }
-                        }
-
-                    Button("Done") { commitSpeakerRename(oldName: speaker) }
-                        .font(.caption)
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-
-                    Button("Cancel") { isEditingSpeakerName = false }
-                        .font(.caption)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(highlightedText(speaker, query: searchText, baseFont: .caption.weight(.semibold)))
-                        .foregroundColor(accentColor)
-                        .onTapGesture(count: 2) {
-                            if onRenameSpeaker != nil {
-                                speakerNameDraft = speaker
-                                isEditingSpeakerName = true
-                            }
-                        }
-                        .help(onRenameSpeaker != nil ? "Double-click to rename speaker" : "")
-                        .contextMenu {
-                            if onRenameSpeaker != nil {
-                                Button {
-                                    speakerNameDraft = speaker
-                                    isEditingSpeakerName = true
-                                } label: {
-                                    Label("Rename Speaker", systemImage: "pencil")
-                                }
-                            }
-                        }
-                }
-            }
-
-            // No timestamp here: the gutter prints the block's start time on its first line,
-            // and two copies of it an inch apart is just noise.
-
-            // Inline bookmark chips
-            ForEach(blockBookmarks) { bookmark in
-                BookmarkChip(bookmark: bookmark, onChangeType: onChangeBookmarkType, onRemove: onRemoveBookmark)
-            }
-
-            Spacer()
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            // Only rendered when there is something in it. Before diarization has named anyone a
-            // block has no speaker and usually no bookmarks, and an empty row holding a single
-            // floating button is worse than no row.
-            if block.speakerLabel != nil || !blockBookmarks.isEmpty {
-                // Indented past the gutter so the name sits over the text it introduces, and the
-                // transcript keeps the same left edge before and after diarization runs.
-                header
-                    .padding(.leading, 48)
-            }
-
-            // Segment text — only first/last lines are draggable (boundary lines)
-            VStack(alignment: .leading, spacing: 5) {
-                let segmentCount = block.segments.count
-                let gutter = gutterTimestamps
-                ForEach(Array(block.segments.enumerated()), id: \.element.id) { index, segment in
-                    let isBoundary = index == 0 || index == segmentCount - 1
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        // Blank for most lines, so a run of sentences reads as one paragraph under
-                        // the time it started rather than as a stack of separately stamped lines.
-                        Text(gutter[segment.id] ?? "")
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 38, alignment: .trailing)
-                            .accessibilityHidden(gutter[segment.id] == nil)
-
-                        SegmentTextRow(
-                            segment: segment,
-                            searchText: searchText,
-                            onEditSegment: onEditSegment,
-                            onSeekToTime: onSeekToTime,
-                            isActive: activeSegmentID == segment.id,
-                            isDraggable: isBoundary
-                        )
-                    }
-                    // A stamped line starts a new group, so it gets air above it. Without this the
-                    // gutter marks a boundary the text gives no sign of.
-                    .padding(.top, gutter[segment.id] != nil && index > 0 ? 10 : 0)
-                    .draggable(isBoundary ? segment.id.uuidString : "")
-                    .id(segment.id)
-                }
-
-                // Volatile text — in-progress transcription appended to last block
-                if !volatileText.isEmpty {
-                    HStack(spacing: 6) {
-                        // Sits in the gutter so the text it precedes lines up with every other line.
-                        Circle()
-                            .fill(AppThemeConstants.error)
-                            .frame(width: 5, height: 5)
-                            .opacity(0.8)
-                            .frame(width: 38, alignment: .trailing)
-                            .padding(.trailing, 10 - 6)
-                        // Styled exactly as a finalised line — same font, weight, colour and line
-                        // spacing — so that when the transcriber commits it, the text does not
-                        // visibly change. The dot in the gutter is what says it is still in flight.
-                        Text(volatileText)
-                            .font(.body)
-                            .lineSpacing(2)
-                            .foregroundStyle(Color.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .id("volatile-text")
-                    .transition(.opacity)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Floats over the block rather than sitting in a row, so a block with nothing else to
-        // put in a header does not grow one just to hold this.
-        .overlay(alignment: .topTrailing) {
-            if onAddBookmark != nil {
-                Button {
-                    showBookmarkPopover = true
-                } label: {
-                    Image(systemName: showBookmarkAdded ? "bookmark.fill" : "bookmark")
-                        .font(.callout)
-                        .foregroundColor(showBookmarkAdded ? AppThemeConstants.actionBadgeColor : Color.secondary.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add bookmark")
-                .help("Add bookmark at this point")
-                .opacity(isHovered || showBookmarkAdded || !blockBookmarks.isEmpty ? 1 : 0)
-                .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
-                    bookmarkTypePicker
-                }
-            }
-        }
-        // Filled only when the block is saying something about itself — being dropped onto, playing
-        // back, or under the pointer. At rest it is the page, so a transcript reads as a document
-        // rather than as a stack of tiles.
-        .background(
-            RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
-                .fill(isDropTargeted
-                    ? accentColor.opacity(AppThemeConstants.opacityLight)
-                    : containsActiveSegment
-                    ? accentColor.opacity(0.09)
-                    : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
-                .stroke(
-                    accentColor.opacity(isDropTargeted ? 0.5 : containsActiveSegment ? 0.45 : 0),
-                    lineWidth: containsActiveSegment ? 1.5 : 2
-                )
-        )
-        .animation(.easeInOut(duration: 0.25), value: containsActiveSegment)
-        .onHover { isHovered = $0 }
-        .dropDestination(for: String.self) { items, _ in
-            guard let uuidString = items.first,
-                  let segmentID = UUID(uuidString: uuidString),
-                  onReassignSpeaker != nil
-            else { return false }
-            // Only accept if dropping onto a different speaker
-            let alreadyInBlock = block.segments.contains { $0.id == segmentID }
-            guard !alreadyInBlock else { return false }
-            onReassignSpeaker?(segmentID, block.speakerLabel)
-            return true
-        } isTargeted: { targeted in
-            isDropTargeted = targeted
-        }
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
-        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
-    }
-
-    // MARK: - Speaker Rename
-
-    private func commitSpeakerRename(oldName: String) {
-        let trimmed = speakerNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty, trimmed != oldName {
-            onRenameSpeaker?(oldName, trimmed)
-        }
-        isEditingSpeakerName = false
-    }
-
-    // MARK: - Bookmark Picker
-
-    private var bookmarkTypePicker: some View {
-        BlockBookmarkPicker(
-            onAdd: { label, color in
-                onAddBookmark?(block.startTime, label, color)
-                showBookmarkPopover = false
-                showBookmarkAdded = true
-                Task {
-                    try? await Task.sleep(for: AppConstants.Delays.bookmarkConfirm)
-                    showBookmarkAdded = false
-                }
-            },
-            onDismiss: { showBookmarkPopover = false }
-        )
-    }
-}
+// Renders a group of consecutive segments from the same speaker as a card.
 
 // MARK: - Shared Highlight Utility
 
 /// Creates an AttributedString with search query matches highlighted.
-private func highlightedText(_ text: String, query: String, baseFont: Font = .body) -> AttributedString {
+func highlightedText(_ text: String, query: String, baseFont: Font = .body) -> AttributedString {
     var attributed = AttributedString(text)
     attributed.font = baseFont
     guard !query.isEmpty else { return attributed }
@@ -649,8 +373,9 @@ private func highlightedText(_ text: String, query: String, baseFont: Font = .bo
 
 // MARK: - Segment Text Row (within a block)
 
+// Extension-visible: used by SpeakerBlockView in TranscriptSpeakerBlockView.swift
 /// Renders a single segment's text within a speaker block. Supports double-click editing.
-private struct SegmentTextRow: View {
+struct SegmentTextRow: View {
     let segment: TranscriptSegment
     var searchText: String = ""
     var onEditSegment: ((UUID, String) -> Void)?
