@@ -29,39 +29,34 @@ unexpected quit there is no transcript and no reliable audio.
 **A device that disappears is not handled.** `AVAudioEngineConfigurationChange` is observed, but
 there is no notion of a device being briefly gone versus gone for good, and no fallback.
 
-## What this is not
+## Alternatives considered
 
-This work was prompted by a comparison against [meetily](https://github.com/Zackriya-Solutions/meetily),
-which was read in full before this was written. It is worth recording what was deliberately *not*
-adopted, so the question is not reopened later.
+Some of what follows could be built other ways, and a few of those ways are tempting enough to be
+worth writing down as rejected, so the question is not reopened later.
 
-Meetily is a Rust/Tauri application. Its recording core is roughly 15k lines built on cpal,
-whisper-rs, silero-rs and an ffmpeg sidecar. Adopting its architecture wholesale would mean
-rewriting a working subsystem in a different shape, and would cost us three things we have and it
-does not:
+**Rewriting the capture pipeline rather than extending it.** The pieces this adds could instead have
+replaced what is already here. They should not, because three properties of the current pipeline are
+hard-won and easy to lose:
 
-- **Timeline-correct mixing.** `AudioTimelineMixer` gives each source its own cursor, so samples
-  land where they were heard. Meetily accumulates into an arrival-order ring buffer and drops
-  samples on overflow — its own log line reads `SYSTEM AUDIO BUFFER OVERFLOW ... THIS CAUSES
-  DISTORTION`. Over an hour that drifts.
-- **Direct system audio capture.** We use ScreenCaptureKit. Meetily's macOS documentation requires
-  the user to install BlackHole.
-- **Speaker diarization.** Meetily has none — there is not one occurrence of "diariz" in its
-  source. We have FluidAudio Sortformer, streaming with a batch fallback.
+- **Timeline-correct mixing.** `AudioTimelineMixer` gives each source its own cursor, so samples land
+  where they were heard rather than where they arrived. The obvious alternative — accumulating both
+  sources into one arrival-order buffer — drifts over an hour and drops samples under load.
+- **Direct system audio capture.** ScreenCaptureKit captures system audio with no virtual device.
+  Routing through an installed loopback device instead would put a manual setup step in front of
+  every user.
+- **Speaker diarization.** Sortformer streaming with a batch fallback is already here and is the
+  hardest part of the pipeline to replace.
 
-What meetily does have, and we do not, is the four capabilities below. They are worth taking, but
-as additions to our pipeline rather than a replacement of it. Two of its implementation choices
-are also deliberately declined:
+**Polling for device changes.** A timer over the device list is the portable answer and works
+everywhere. On macOS, Core Audio property listeners report the same thing without the latency or the
+wakeups, so `CaptureDeviceMonitor` uses those and keeps a timer only for expiring a grace period,
+which nothing notifies us about.
 
-- **Its polling device monitor.** It polls the device list on a timer because that is portable
-  across three platforms. On macOS, Core Audio property listeners tell us the same thing without
-  the latency or the wakeups.
-- **Its Bluetooth-to-built-in microphone override.** Meetily silently records from the built-in
-  microphone whenever a Bluetooth device is the default, because Bluetooth's variable sample rate
-  desynchronises its ring buffer. Our per-source cursors do not have that failure mode, and
-  recording from the laptop when the user has deliberately put on a headset is worse audio, not
-  better. We take its `InputDeviceKind` detection, but spend it on buffer sizing and reconnection
-  grace periods instead.
+**Overriding a Bluetooth microphone to the built-in one.** Bluetooth devices have variable sample
+rates, which is a real problem for a pipeline that mixes by arrival. Ours mixes by timeline position
+and does not have that failure mode — and recording from the laptop when someone has deliberately
+put on a headset is worse audio, not better. `InputDeviceKind` detection is still worth having, but
+it is spent on reconnection grace periods rather than on overriding the user's choice.
 
 ## Design
 
@@ -105,9 +100,9 @@ in the recording bar, rather than failing.
 ### 2. Conditioning and gating on the microphone branch
 
 **Voice processing is enabled** on the input node via `setVoiceProcessingEnabled(true)`. This is
-what replaces meetily's high-pass filter, RNNoise suppressor and −23 LUFS normaliser: one native
-call that provides acoustic echo cancellation, noise suppression and automatic gain control, with
-no C dependency to vendor.
+what a hand-built conditioning chain — high-pass filter, noise suppressor, loudness normaliser —
+would otherwise be: one native call providing acoustic echo cancellation, noise suppression and
+automatic gain control, with no C dependency to vendor.
 
 Echo cancellation is the reason to do it. Without it the microphone picks up remote participants
 coming out of the speakers, and that audio is transcribed a second time and presented to the
@@ -203,8 +198,8 @@ offset; a recovered session's composed audio aligns with its transcript.
 
 ## Out of scope
 
-- **Importing external audio.** Meetily can import and transcribe an existing file. Useful, not a
-  pain today, and independent of everything above.
+- **Importing external audio.** Transcribing an existing recording — a call export, a voice memo —
+  is useful, but it is not a pain today and is independent of everything above.
 - **Replacing `SpeechTranscriber` with whisper.cpp.** Would buy model choice, wider language support
   and remove the macOS 26 floor. A separate decision with its own trade-offs.
 
