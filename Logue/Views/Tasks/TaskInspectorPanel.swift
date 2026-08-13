@@ -97,7 +97,7 @@ struct TaskInspectorPanel: View {
                 .onSubmit(commitDrafts)
                 .padding(8)
                 .background(
-                    AppThemeConstants.contentBackground,
+                    AppThemeConstants.textInputBackground,
                     in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
                 )
         }
@@ -220,7 +220,7 @@ struct TaskInspectorPanel: View {
                 .focused($focus, equals: .notes)
                 .padding(6)
                 .background(
-                    AppThemeConstants.contentBackground,
+                    AppThemeConstants.textInputBackground,
                     in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
                 )
         }

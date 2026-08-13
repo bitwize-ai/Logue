@@ -97,14 +97,14 @@ struct ActionItemInboxPanel: View {
                 itemsList
             }
         }
-        .background(AppThemeConstants.contentBackground)
+        .background(AppThemeConstants.surfaceBackground)
     }
 
     // MARK: - Controls
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            searchField
+            SearchBarField(text: $searchText, placeholder: "Search action items", expandable: true)
             chipBar
             HStack(spacing: 6) {
                 meetingPicker
@@ -113,36 +113,8 @@ struct ActionItemInboxPanel: View {
                 sortMenu
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, AppThemeConstants.paddingLarge)
         .padding(.vertical, 10)
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            TextField("Search action items", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.callout)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            AppThemeConstants.surfaceBackground,
-            in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
-        )
     }
 
     private var chipBar: some View {
@@ -175,7 +147,7 @@ struct ActionItemInboxPanel: View {
                 .font(.caption)
                 .lineLimit(1)
         }
-        .menuStyle(.borderlessButton)
+        .controlSize(.small)
         .fixedSize()
         .help("Show items from one meeting")
     }
@@ -200,8 +172,8 @@ struct ActionItemInboxPanel: View {
         } label: {
             Image(systemName: "text.badge.plus")
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(promotableItems.isEmpty ? .tertiary : .secondary)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
         // Promotion is idempotent, so pressing twice is safe by construction; disabled when
         // there is nothing left to add so the press has a visible effect.
         .disabled(promotableItems.isEmpty)
@@ -227,7 +199,7 @@ struct ActionItemInboxPanel: View {
         } label: {
             Image(systemName: "arrow.up.arrow.down.circle")
         }
-        .menuStyle(.borderlessButton)
+        .controlSize(.small)
         .fixedSize()
         .help("Sort")
         .accessibilityLabel("Sort action items")
@@ -236,29 +208,25 @@ struct ActionItemInboxPanel: View {
     // MARK: - List
 
     private var itemsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(filteredItems) { item in
-                    ActionItemInboxRow(item: item)
-                    if item.id != filteredItems.last?.id {
-                        Divider().padding(.leading, 12)
-                    }
-                }
+        List {
+            ForEach(filteredItems) { item in
+                ActionItemInboxRow(item: item)
+                    .listRowSeparator(.visible)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
         }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: - Empty State
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(emptyTitle, systemImage: emptyIcon)
-        } description: {
-            Text(emptyDescription)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyStateView(
+            icon: emptyIcon,
+            title: emptyTitle,
+            description: emptyDescription
+        )
     }
 
     private var emptyTitle: String {

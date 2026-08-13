@@ -9,6 +9,12 @@ struct TaskQuickAddField: View {
     @FocusState private var isFocused: Bool
 
     let onCapture: (String) -> Void
+    /// Bumped by the toolbar's + button to put the cursor here.
+    ///
+    /// A counter rather than a boolean: a flag reset asynchronously races with a second
+    /// press, and the second press is exactly when a user is checking whether the button
+    /// did anything.
+    var focusRequest: Int = 0
 
     private var preview: ParsedTask? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -41,6 +47,9 @@ struct TaskQuickAddField: View {
             if let preview, hasPreview {
                 previewChips(preview)
             }
+        }
+        .onChange(of: focusRequest) {
+            isFocused = true
         }
     }
 

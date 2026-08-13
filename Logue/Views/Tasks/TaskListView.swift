@@ -18,6 +18,8 @@ struct TaskListView: View {
     @State private var searchText = ""
     @State private var selectedTag: String?
     @State private var selectedTaskID: UUID?
+    /// Incremented by the toolbar's + button to focus the capture field.
+    @State private var focusRequest = 0
     @State private var triageService = TaskTriageService.shared
     @State private var engineStatus = LLMEngineStatus.shared
     @State private var showTriage = false
@@ -81,9 +83,10 @@ struct TaskListView: View {
 
     private var listPane: some View {
         VStack(spacing: 0) {
-            TaskQuickAddField { text in
-                store.capture(text)
-            }
+            TaskQuickAddField(
+                onCapture: { text in store.capture(text) },
+                focusRequest: focusRequest
+            )
             .padding(.horizontal, 24)
             .padding(.top, 12)
 
@@ -118,6 +121,18 @@ struct TaskListView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            // Capture is the field at the top of the list, but a field is not what people
+            // look for when they want to add something — they look for a plus. This puts one
+            // where it is expected and sends the cursor to the field.
+            Button {
+                focusRequest += 1
+            } label: {
+                Image(systemName: "plus")
+            }
+            .help("Add a task")
+            .accessibilityLabel("Add a task")
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
             Button {
                 showTriage = true
                 Task {

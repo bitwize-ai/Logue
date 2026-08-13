@@ -55,7 +55,7 @@ struct TemplateListPanel: View {
             Divider()
             browseAllButton
         }
-        .background(AppThemeConstants.contentBackground)
+        .background(AppThemeConstants.surfaceBackground)
         .sheet(item: $previewing) { template in
             TemplatePreviewView(template: template)
         }
@@ -68,39 +68,11 @@ struct TemplateListPanel: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            searchField
+            SearchBarField(text: $searchText, placeholder: "Search templates", expandable: true)
             categoryPicker
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, AppThemeConstants.paddingLarge)
         .padding(.vertical, 10)
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            TextField("Search templates", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.callout)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            AppThemeConstants.surfaceBackground,
-            in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
-        )
     }
 
     private var categoryPicker: some View {
@@ -115,7 +87,7 @@ struct TemplateListPanel: View {
                 .font(.caption)
                 .lineLimit(1)
         }
-        .menuStyle(.borderlessButton)
+        .controlSize(.small)
         .fixedSize()
         .help("Filter by category")
     }
@@ -123,33 +95,29 @@ struct TemplateListPanel: View {
     // MARK: - List
 
     private var templateList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                ForEach(grouped, id: \.category.id) { group in
-                    Section {
-                        ForEach(group.templates) { template in
-                            TemplateListRow(template: template) {
-                                previewing = template
-                            }
+        List {
+            ForEach(grouped, id: \.category.id) { group in
+                Section {
+                    ForEach(group.templates) { template in
+                        TemplateListRow(template: template) {
+                            previewing = template
                         }
-                    } header: {
-                        sectionHeader(group.category)
+                        .listRowSeparator(.visible)
+                        .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
                     }
+                } header: {
+                    sectionHeader(group.category)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
         }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
     }
 
     private func sectionHeader(_ category: TemplateCategory) -> some View {
-        Text(category.rawValue.uppercased())
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.tertiary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(AppThemeConstants.contentBackground)
+        Text(category.rawValue)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
     }
 
     // MARK: - Browse all
@@ -162,8 +130,9 @@ struct TemplateListPanel: View {
                 .font(.callout)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(AppThemeConstants.accent)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .padding(.horizontal, AppThemeConstants.paddingLarge)
         .padding(.vertical, 10)
         .help("Open the full template gallery")
     }
@@ -187,19 +156,13 @@ struct TemplateListPanel: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(
-                searchText.isEmpty ? "No Templates" : "No Matching Templates",
-                systemImage: searchText.isEmpty ? "doc.on.doc" : "magnifyingglass"
-            )
-        } description: {
-            Text(
-                searchText.isEmpty
-                    ? "Templates you save will appear here."
-                    : "No templates match \"\(searchText)\""
-            )
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyStateView(
+            icon: searchText.isEmpty ? "doc.on.doc" : "magnifyingglass",
+            title: searchText.isEmpty ? "No Templates" : "No Matching Templates",
+            description: searchText.isEmpty
+                ? "Templates you save will appear here."
+                : "No templates match \"\(searchText)\""
+        )
     }
 }
 
@@ -234,10 +197,12 @@ private struct TemplateListRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .padding(.horizontal, AppThemeConstants.paddingSmall)
+            .padding(.vertical, AppThemeConstants.paddingSmall)
             .background(
-                isHovered ? AppThemeConstants.surfaceBackground : Color.clear,
+                isHovered
+                    ? AppThemeConstants.accent.opacity(AppThemeConstants.hoverOpacity)
+                    : Color.clear,
                 in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
             )
             .contentShape(Rectangle())

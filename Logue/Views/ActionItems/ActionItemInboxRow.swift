@@ -106,8 +106,10 @@ struct ActionItemInboxRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .background(
+            // Accent wash rather than `surfaceBackground`: this row lives on a panel, which
+            // is already that colour, so the old hover was invisible here.
             isHovered
-                ? AppThemeConstants.surfaceBackground
+                ? AppThemeConstants.accent.opacity(AppThemeConstants.hoverOpacity)
                 : Color.clear,
             in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall)
         )
