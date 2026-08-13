@@ -80,4 +80,39 @@ struct TranscriptRealignmentTests {
         #expect(TranscriptRealignment.realign(live: live, words: []).first?.text == "untouched")
         #expect(TranscriptRealignment.realign(live: [], words: [word("x", 0, 1)]).isEmpty)
     }
+
+    // MARK: - Sub-word tokens
+
+    @Test("Sub-word pieces are joined before placement")
+    func tokensBecomeWholeWords() {
+        // Exactly what Parakeet emits: "Hundreds" as two pieces.
+        let tokens = [word(" H", 0.1, 0.2), word("undreds", 0.2, 0.5), word(" of", 0.6, 0.7)]
+        let joined = TranscriptRealignment.words(fromTokens: tokens)
+
+        #expect(joined.count == 2)
+        #expect(joined[0].text == " Hundreds")
+        #expect(joined[0].startTime == 0.1)
+        #expect(joined[0].endTime == 0.5, "a word spans all of its pieces")
+    }
+
+    @Test("A word split across a line boundary stays whole")
+    func splitWordIsNotTornInTwo() {
+        // "Hundreds" straddles the 0.35 boundary; as pieces it landed in both lines.
+        let live = [segment("first", 0, 0.35), segment("second", 0.35, 1)]
+        let tokens = [word(" H", 0.1, 0.2), word("undreds", 0.25, 0.5)]
+        let joined = TranscriptRealignment.words(fromTokens: tokens)
+        let result = TranscriptRealignment.realign(live: live, words: joined)
+
+        let whole = result.map(\.text)
+        #expect(whole.contains { $0.contains("Hundreds") }, "the word must survive intact")
+        #expect(whole.contains { $0 == "H" } == false)
+        #expect(whole.contains { $0 == "undreds" } == false)
+    }
+
+    @Test("SentencePiece word markers also start words")
+    func sentencePieceMarker() {
+        let tokens = [word("\u{2581}the", 0, 0.2), word("CUBE", 0.2, 0.4)]
+        let joined = TranscriptRealignment.words(fromTokens: tokens)
+        #expect(joined.count == 1)
+    }
 }

@@ -31,6 +31,41 @@ enum TranscriptRealignment {
         }
     }
 
+    /// Joins the transcriber's sub-word tokens into whole words.
+    ///
+    /// Parakeet emits pieces, not words: "Hundreds" arrives as "H" + "undreds", "theCUBE" as
+    /// "theCU" + "BE". Placing those pieces individually let a single word be split across two
+    /// lines, which is how a transcript ends up reading "H / undreds of other businesses".
+    ///
+    /// A piece that begins a new word carries a leading space; anything else continues the word
+    /// before it. The joined word spans from its first piece's start to its last piece's end, so it
+    /// still lands in exactly one line.
+    static func words(fromTokens tokens: [TimedWord]) -> [TimedWord] {
+        var words: [TimedWord] = []
+        var pending: [TimedWord] = []
+
+        func flush() {
+            guard let first = pending.first, let last = pending.last else { return }
+            let text = pending.map(\.text).joined()
+            guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
+                pending.removeAll()
+                return
+            }
+            words.append(TimedWord(text: text, startTime: first.startTime, endTime: last.endTime))
+            pending.removeAll()
+        }
+
+        for token in tokens {
+            let startsWord = token.text.first.map { $0 == " " || $0 == "\u{2581}" } ?? false
+            if startsWord {
+                flush()
+            }
+            pending.append(token)
+        }
+        flush()
+        return words
+    }
+
     /// Returns the live segments with their text replaced by the batch words that fall inside them.
     ///
     /// Segments keep their `id`, `startTime`, `endTime` and speaker. A segment no word lands in
