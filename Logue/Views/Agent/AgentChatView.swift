@@ -91,7 +91,11 @@ struct AgentChatView: View {
                 CanvasPaneView()
                     .frame(minWidth: 380, idealWidth: 480, maxWidth: .infinity)
                     .animation(Motion.spring, value: canvas.snapshots.count)
-            } else if showSourcesPanel {
+            } else if showSourcesPanel, hasAnswerSources {
+                // Both conditions, not just the toggle. `showSourcesPanel` is the user's
+                // preference; `hasAnswerSources` is whether there is anything to show. On
+                // Home — and in any conversation the agent has not sourced — the answer is
+                // no, and a panel that opens onto nothing is a dead half of the window.
                 Divider()
                 SourcesPanelView(
                     conversationID: AgentConversationStore.shared.selectedConversationID,
@@ -343,13 +347,18 @@ struct AgentChatView: View {
             }
             .help("New conversation")
 
-            Button {
-                showSourcesPanel.toggle()
-            } label: {
-                Image(systemName: showSourcesPanel ? "sidebar.right" : "sidebar.squares.right")
-                    .foregroundStyle(showSourcesPanel ? Color.accentColor : Color.primary)
+            // Only offered once the agent has actually cited something. A toggle that is
+            // always present on Home advertises a panel with nothing in it, and pressing
+            // it is a dead end rather than a feature.
+            if hasAnswerSources {
+                Button {
+                    showSourcesPanel.toggle()
+                } label: {
+                    Image(systemName: showSourcesPanel ? "sidebar.right" : "sidebar.squares.right")
+                        .foregroundStyle(showSourcesPanel ? Color.accentColor : Color.primary)
+                }
+                .help(showSourcesPanel ? "Hide sources panel" : "Show sources panel")
             }
-            .help(showSourcesPanel ? "Hide sources panel" : "Show sources panel")
         }
     }
 
