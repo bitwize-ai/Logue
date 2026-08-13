@@ -61,6 +61,12 @@ jobs:
       - name: Run SwiftLint
         run: swiftlint lint --strict Logue/
 
+      # Runs here rather than in Build: it needs Python and nothing else, and its
+      # output is only ever seen after a release is signed, notarised and published.
+      - name: Test release-notes extraction
+        run: python3 test_extract_release_notes.py
+        working-directory: scripts
+
       # Logue must not be sandboxed: a sandboxed process cannot be an Accessibility
       # API client, so macOS never lists it under Privacy & Security → Accessibility
       # and every Logue/CrossApp feature (⌘⌃I, global hotkeys, Command Center, text
@@ -115,4 +121,20 @@ jobs:
             -destination 'platform=macOS,arch=arm64' \
             -skipMacroValidation \
             -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Named suites rather than the whole target: LogueTests/LLMIntegration runs real
+      # inference against a local MLX model, which no hosted runner has. These are pure
+      # decision tables and cost seconds. A guard nothing runs is not a guard — list a
+      # suite here when you add one that needs no model.
+      - name: Test (suites that need no model)
+        run: |
+          xcodebuild test \
+            -project Logue.xcodeproj \
+            -scheme Logue \
+            -destination 'platform=macOS,arch=arm64' \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -only-testing:LogueTests/WhatsNewGateTests \
+            -only-testing:LogueTests/AppVersionTests \
             CODE_SIGNING_ALLOWED=NO

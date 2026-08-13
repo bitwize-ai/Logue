@@ -447,6 +447,49 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
 
+      # ── Release notes from CHANGELOG (feeds both the Release body and Sparkle) ──
+      # Written to /tmp because the appcast step below checks out another branch.
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          python3 scripts/extract_release_notes.py --version "$VERSION" --format html > /tmp/release_notes.html
+          python3 scripts/extract_release_notes.py --version "$VERSION" --format markdown > /tmp/release_notes.md
+
+          # The script exits 0 with a stderr warning when it finds no section, because
+          # a changelog slip should not fail a build that is already signed and
+          # notarised. But the decision to publish anyway is this job's to make, and
+          # the answer is no: with empty notes the Sparkle pane and the Release body
+          # both go out blank, every step stays green, and the warning is invisible
+          # inside a passing log — which is the regression this whole step exists to
+          # fix. Stop here, before anything is published.
+          if [[ ! -s /tmp/release_notes.html || ! -s /tmp/release_notes.md ]]; then
+            echo "::error::No release notes extracted for ${VERSION}. Add a '## [${VERSION}]' section to CHANGELOG.md (or move [Unreleased] into one) and re-run."
+            exit 1
+          fi
+
+          {
+            echo "## Logue ${VERSION}"
+            echo
+            cat /tmp/release_notes.md
+            echo
+            echo "**Build:** ${{ github.run_number }}"
+            echo "**Commit:** ${{ github.sha }}"
+            echo
+            cat <<EOF
+          ### Installation
+          1. Download \`${DMG_NAME}\`
+          2. Open the DMG and drag Logue to Applications
+          3. On first launch, right-click > Open if Gatekeeper prompts
+
+          ### Requirements
+          - macOS 26.0 (Tahoe) or later
+          - Apple Silicon Mac
+          EOF
+          } > /tmp/release_body.md
+
+          echo "--- release body ---"
+          cat /tmp/release_body.md
+
       # ── Create GitHub Release (BEFORE appcast — download URL must be live first) ──
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -456,20 +499,7 @@ jobs:
             ${{ env.DMG_PATH }}
             ${{ env.ZIP_PATH }}
           name: "Logue ${{ steps.version.outputs.version }}"
-          body: |
-            ## Logue ${{ steps.version.outputs.version }}
-
-            **Build:** ${{ github.run_number }}
-            **Commit:** ${{ github.sha }}
-
-            ### Installation
-            1. Download `${{ env.DMG_NAME }}`
-            2. Open the DMG and drag Logue to Applications
-            3. On first launch, right-click > Open if Gatekeeper prompts
-
-            ### Requirements
-            - macOS 26.0 (Tahoe) or later
-            - Apple Silicon Mac
+          body_path: /tmp/release_body.md
           draft: false
           prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
         env:
@@ -503,12 +533,15 @@ jobs:
           git checkout -b "$BRANCH" "origin/$BASE_BRANCH"
 
           # Regenerate the entry on top of the base branch's appcast.
+          # --notes fills Sparkle's <description>: without it the update dialog offers
+          # an update with an empty "what's new" pane.
           python3 scripts/update_appcast.py \
             --version "$VERSION" \
             --build "${{ github.run_number }}" \
             --signature "$ED_SIGNATURE" \
             --length "$FILE_LENGTH" \
-            --min-os "26.0"
+            --min-os "26.0" \
+            --notes "$(cat /tmp/release_notes.html)"
 
           git add appcast.xml
           git commit -m "chore: update appcast for v${VERSION}"

@@ -235,3 +235,26 @@ nothing to reconcile. Rules that follow from that, all of which have bitten:
 | `Engine/MarkdownDocumentFile.swift` | The `.md` file format for a document (frontmatter + body) |
 | `Engine/SpaceFile.swift` | `_space.md` — a folder's space identity, and the prose the user may add below it |
 | `App/AppConstants.swift` | All constants: `LLMDefaults`, `Audio`, `Diarization`, `Delays` |
+| `App/AppVersion.swift` | `CFBundleShortVersionString` parsed so releases can be ordered |
+| `Services/WhatsNewCatalog.swift` | What shipped in which release — one block per version |
+| `Services/WhatsNewGate.swift` | Whether a launch shows the tour, the release notes, or nothing |
+
+## Releasing
+
+Tagging `vX.Y.Z` runs `.github/workflows/release.yml`, which builds, signs, notarizes,
+publishes, and opens a PR updating `appcast.xml`. Two things must be done by hand first,
+because nothing can infer them:
+
+- **Move `## [Unreleased]` in `CHANGELOG.md` into `## [X.Y.Z] - <date>`.** The workflow
+  extracts that section for both Sparkle's release-notes pane and the GitHub Release body.
+  Forgetting falls back to `[Unreleased]`, which ships whatever is sitting there — including
+  things not in the tag.
+- **Append a matching block to `WhatsNewCatalog.releases`** listing only what this release
+  added, illustrated cards first. The catalog is bounded by the running build, so a block for
+  a version that has not been tagged stays invisible until it is — write it as the work lands.
+
+`WhatsNewCatalog.tour`, the fresh-install list, is hand-picked and does *not* change every
+release. It answers "what is this app for", not "what changed", and a newcomer handed the
+upgrade deck gets a dozen cards of features they have no context for yet.
+
+Full runbook, including screenshots and the version stamp: **[docs/WHATS_NEW.md](docs/WHATS_NEW.md)**.
