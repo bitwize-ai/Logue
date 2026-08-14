@@ -137,4 +137,6 @@ jobs:
             -skipPackagePluginValidation \
             -only-testing:LogueTests/WhatsNewGateTests \
             -only-testing:LogueTests/AppVersionTests \
+            -only-testing:LogueTests/AskRouteTests \
+            -only-testing:LogueTests/AgentRunStateTests \
             CODE_SIGNING_ALLOWED=NO
