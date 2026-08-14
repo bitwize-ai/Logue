@@ -87,7 +87,9 @@ enum AskRouter {
         // the agent is expected to read it.
         guard !trimmed.isEmpty || request.hasAttachments else { return nil }
 
-        if request.deepResearchRequested { return .deepResearch }
+        if request.deepResearchRequested {
+            return .deepResearch
+        }
 
         if request.imageIntentFires, !request.hasAttachments {
             return .imagePlayground(concept: trimmed)
