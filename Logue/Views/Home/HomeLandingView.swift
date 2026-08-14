@@ -1,23 +1,30 @@
 import SwiftUI
 
-/// Everything on Home that is not the conversation: the greeting, the chips, and the
-/// cards under the prompt bar.
+/// The cards under Home's prompt bar. The greeting and the chips are
+/// `HomeLandingHeader`, and the prompt bar itself belongs to `AgentChatView` — this view
+/// owns only what scrolls beneath them.
 ///
-/// The prompt bar itself lives in `AgentChatView`, above this view and outside its scroll
-/// view. Only the cards scroll — an input bar anchored inside a scroll view moves as the
-/// user scrolls, and the geometry match that slides it to the bottom on first send tears
-/// when its source frame is not where the animation started.
+/// An input bar anchored inside a scroll view moves as the user scrolls, and the geometry
+/// match that slides it to the bottom on first send tears when its source frame is not
+/// where the animation started. That is why the bar stays outside this view.
+///
+/// `isLoaded` and `isEmpty` are passed in rather than derived here. `AgentChatView` gates
+/// its header on the same two values, and a second definition is how the header ends up
+/// answering "is this workspace empty?" differently from the cards directly beneath it.
 struct HomeLandingView: View {
+    let isLoaded: Bool
+    let isEmpty: Bool
     /// Puts a finished sentence in the chat input without sending it.
     let onPrefill: (String) -> Void
+    /// Reveals a newly created space. Creating one without opening it leaves the starter
+    /// card's third button looking like it did nothing.
+    let onOpenSpace: (UUID) -> Void
 
     @Environment(DocumentStore.self) private var store
     @Environment(MeetingStore.self) private var meetingStore
     @Environment(SpaceStore.self) private var spaceStore
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(RecordingSessionManager.self) private var recorder
-
-    @State private var isQuickRecording = false
 
     var body: some View {
         Group {
@@ -35,9 +42,9 @@ struct HomeLandingView: View {
             LazyVStack(alignment: .leading, spacing: AppThemeConstants.paddingXXLarge) {
                 if isEmpty {
                     HomeStarterCard(
-                        onStartRecording: startQuickRecording,
+                        onStartRecording: startVoiceNote,
                         onNewDocument: { _ = store.createDocument() },
-                        onNewSpace: { _ = spaceStore.createSpace(name: "My Space") }
+                        onNewSpace: createAndOpenSpace
                     )
                 } else {
                     stockedCards
@@ -46,16 +53,8 @@ struct HomeLandingView: View {
             // The cards share the prompt bar's column instead of spanning the window.
             // The page margin lives here rather than inside each section, so every card
             // lines up on the same two edges and a new section cannot introduce a third.
-            .frame(maxWidth: AppThemeConstants.contentColumnWidth)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, AppThemeConstants.paddingXXLarge)
+            .homeContentColumn()
             .padding(.vertical, AppThemeConstants.paddingXXLarge)
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if isQuickRecording {
-                HomeRecordingBanner(recorder: recorder, onStopRecording: stopQuickRecording)
-                Divider()
-            }
         }
         .task { calendarManager.refreshUpcomingEvents() }
     }
@@ -67,28 +66,12 @@ struct HomeLandingView: View {
         SeedDataBannerView()
         HomeAttentionCard(onStartMeeting: startMeetingFromEvent, onAsk: onPrefill)
         HomeContinueSection(onAsk: onPrefill)
-        if !isQuickRecording {
-            HomeQuickActions(
-                onStartRecording: startQuickRecording,
-                onNewMeeting: newMeeting,
-                onNewDocument: { _ = store.createDocument() }
-            )
-        }
+        HomeQuickActions(
+            onStartRecording: startVoiceNote,
+            onNewMeeting: newMeeting,
+            onNewDocument: { _ = store.createDocument() }
+        )
         DailyDigestCard()
-    }
-
-    // MARK: - State
-
-    /// Every store this screen summarises. Greeting a returning user as a new one because
-    /// their library was still being read is the loudest possible wrong answer here.
-    private var isLoaded: Bool {
-        store.isLoaded && meetingStore.isLoaded && spaceStore.isLoaded
-    }
-
-    private var isEmpty: Bool {
-        store.activeDocuments.isEmpty
-            && meetingStore.activeMeetings.isEmpty
-            && spaceStore.topLevelSpaces.isEmpty
     }
 
     // MARK: - Actions
@@ -100,16 +83,20 @@ struct HomeLandingView: View {
         meetingStore.selectedMeetingID = meeting.id
     }
 
-    private func startQuickRecording() {
+    /// Starts recording, then lets the navigation happen. `createVoiceNote` sets
+    /// `selectedMeetingID`, which `MainWindowView` turns into a jump to the meeting
+    /// workspace — so the recording is watched there. Home used to carry its own banner
+    /// for this, which could never appear because the jump always won.
+    private func startVoiceNote() {
         let note = meetingStore.createVoiceNote()
-        isQuickRecording = true
         Task { await recorder.startRecording(for: note) }
     }
 
-    private func stopQuickRecording() {
-        guard isQuickRecording, recorder.currentMeetingID != nil else { return }
-        isQuickRecording = false
-        Task { await recorder.stopRecording() }
+    /// `createSpace` has no selection side effect of its own, and a `nil` return reads
+    /// exactly like success if it is discarded.
+    private func createAndOpenSpace() {
+        guard let space = spaceStore.createSpace(name: "My Space") else { return }
+        onOpenSpace(space.id)
     }
 
     private func startMeetingFromEvent(_ event: CalendarEvent) {
@@ -185,11 +172,7 @@ struct HomeLandingHeader: View {
                 chipRow
             }
         }
-        // Same column as the prompt bar and the cards below it — see
-        // `AppThemeConstants.contentColumnWidth`.
-        .frame(maxWidth: AppThemeConstants.contentColumnWidth, alignment: .leading)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, AppThemeConstants.paddingXXLarge)
+        .homeContentColumn(alignment: .leading)
         .padding(.top, AppThemeConstants.paddingXXLarge)
     }
 

@@ -65,43 +65,8 @@ struct HomeQuickActionButton: View {
     }
 }
 
-/// Sticky recording banner shown at the top of the Home page during active recording.
-struct HomeRecordingBanner: View {
-    let recorder: RecordingSessionManager
-    let onStopRecording: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(AppThemeConstants.error)
-                .frame(width: 8, height: 8)
-
-            Text("Recording...")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppThemeConstants.error)
-
-            AudioLevelMeter(level: recorder.audioLevel)
-                .frame(height: 16)
-                .frame(maxWidth: 120)
-
-            Text(DurationFormatter.minutesSeconds(recorder.elapsedTime))
-                .font(.caption.monospacedDigit().weight(.medium))
-
-            Spacer()
-
-            Button { onStopRecording() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "stop.fill").font(.caption2)
-                    Text("Stop").font(.caption.weight(.semibold))
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AppThemeConstants.error)
-            .controlSize(.mini)
-            .accessibilityLabel("Stop recording")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(AppThemeConstants.surfaceBackground)
-    }
-}
+// A sticky recording banner used to live here, for a recording started from Home. It
+// could never appear: `createVoiceNote` sets `selectedMeetingID`, which `MainWindowView`
+// turns into a jump to the meeting workspace before the banner's first frame. The meeting
+// workspace shows the recording state, so the banner has been removed rather than left as
+// a branch that reads like a feature.

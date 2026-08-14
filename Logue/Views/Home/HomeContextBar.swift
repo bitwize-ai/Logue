@@ -80,10 +80,7 @@ struct HomeContextBar: View {
     // MARK: - Data
 
     private var todaysMeetingCount: Int {
-        let cal = Calendar.current
-        return meetingStore.activeMeetings
-            .filter { cal.isDateInToday($0.createdAt) && !$0.isArchived }
-            .count
+        meetingStore.todaysMeetings.count
     }
 
     private var recentDocumentCount: Int {

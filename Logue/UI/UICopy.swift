@@ -17,18 +17,9 @@ enum UICopy {
     // MARK: - Empty states
 
     enum Empty {
-        /// Chat home hero — what the user sees when starting a fresh
-        /// conversation.
-        static let chatTitle = "What can I help with today?"
-        static let chatSubtitle = "Ask about your meetings, write something new, or dig into a document."
-        static let chatChipWriteTitle = "Write"
-        static let chatChipWritePrompt = "Draft an email to my team about Q3 OKRs"
-        static let chatChipResearchTitle = "Research"
-        static let chatChipResearchPrompt = "What's new in Apple's MLX framework?"
-        static let chatChipSummarizeTitle = "Summarize"
-        static let chatChipSummarizePrompt = "Summarize my meetings from yesterday"
-        static let chatChipCodeTitle = "Code"
-        static let chatChipCodePrompt = "Show me a SwiftUI grid layout"
+        // The chat hero copy that used to live here went with `AgentChatEmptyState`. Home's
+        // landing greets by time of day and derives its chips from the workspace, so there
+        // is no fixed hero string left to name.
 
         static let dailyTipPrefix = "Try"
     }

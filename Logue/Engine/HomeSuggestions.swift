@@ -39,12 +39,17 @@ enum HomeSuggestions {
     ]
 
     static func chips(for inputs: Inputs) -> [Chip] {
-        guard inputs.hasAnyContent else { return firstRunChips }
+        // Both paths leave through the same cap. Returning `firstRunChips` directly would
+        // exempt the one list whose length is written by hand from the only rule that
+        // bounds it.
+        guard inputs.hasAnyContent else { return Array(firstRunChips.prefix(maximum)) }
 
         var chips: [Chip] = []
 
         if let title = inputs.unsummarizedMeetingTitle {
-            let name = HomeAskPrompts.sanitize(title, fallback: "Untitled meeting")
+            // The same fallback the sentence uses, from the same place. Two copies of the
+            // literal is how the chip ends up naming something the prompt does not.
+            let name = HomeAskPrompts.sanitize(title, fallback: HomeAskPrompts.untitledMeeting)
             chips.append(
                 Chip(
                     label: "Summarize “\(name)”",

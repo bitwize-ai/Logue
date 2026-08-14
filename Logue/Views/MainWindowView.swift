@@ -355,7 +355,7 @@ struct MainWindowView: View {
     private var listContentView: some View {
         switch sidebarSelection {
         case .home, nil:
-            AgentChatView()
+            AgentChatView(onOpenSpace: { sidebarSelection = .space($0) })
         case .pinned:
             PinnedContentPane()
         case .recent:

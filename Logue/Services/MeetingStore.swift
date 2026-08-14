@@ -122,6 +122,19 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         meetings.filter { !$0.isTrashed }
     }
 
+    /// Today's meetings, by the one definition of "today".
+    ///
+    /// Home shows this count twice in the same frame — once in the context bar, once as
+    /// the condition for the "What did I miss today?" chip beside it. Derived separately,
+    /// the two drift the moment either predicate is edited, and the screen contradicts
+    /// itself in a single glance.
+    var todaysMeetings: [MeetingNote] {
+        let calendar = Calendar.current
+        return activeMeetings.filter {
+            calendar.isDateInToday($0.createdAt) && !$0.isArchived
+        }
+    }
+
     var recentMeetings: [MeetingNote] {
         if let cached = _cachedRecent {
             return cached

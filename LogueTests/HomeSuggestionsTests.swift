@@ -14,9 +14,34 @@ struct HomeSuggestionsTests {
         hasAnyContent: true
     )
 
-    @Test("Never more than the maximum")
+    @Test("Never more than the maximum, on either path")
     func neverMoreThanTheMaximum() {
         #expect(HomeSuggestions.chips(for: Self.stocked).count <= HomeSuggestions.maximum)
+
+        // The stocked path cannot exceed the cap by construction — it appends at most one
+        // chip per condition. The first-run list is the one that can: it is written by
+        // hand, so it is the one worth asserting against.
+        let empty = HomeSuggestions.Inputs(
+            unsummarizedMeetingTitle: nil, overdueCount: 0, meetingsToday: 0, hasAnyContent: false
+        )
+        #expect(HomeSuggestions.chips(for: empty).count <= HomeSuggestions.maximum)
+    }
+
+    @Test("A hand-written first-run list longer than the cap is still trimmed")
+    func firstRunChipsAreCappedNotJustShort() {
+        // Guards the early return specifically: if `firstRunChips` grows a fourth entry,
+        // the empty workspace must still render at most `maximum` of them.
+        #expect(
+            Array(HomeSuggestions.firstRunChips.prefix(HomeSuggestions.maximum)).count
+                <= HomeSuggestions.maximum
+        )
+        let empty = HomeSuggestions.Inputs(
+            unsummarizedMeetingTitle: nil, overdueCount: 0, meetingsToday: 0, hasAnyContent: false
+        )
+        #expect(
+            HomeSuggestions.chips(for: empty)
+                == Array(HomeSuggestions.firstRunChips.prefix(HomeSuggestions.maximum))
+        )
     }
 
     @Test("An unsummarized meeting is named, not described generically")

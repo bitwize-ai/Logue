@@ -15,35 +15,25 @@ struct HomeContinueSection: View {
     /// Receives a finished prompt when the user taps a card's ✦. Nil hides the affordance.
     var onAsk: ((String) -> Void)?
 
-    /// Narrowest a card may get before the grid drops to fewer columns.
-    private static let minCardWidth: CGFloat = 200
-    private static let cardSpacing: CGFloat = 12
-    private static let maxRows = 2
-
     /// Measured rather than assumed, because the column count — and therefore how many
     /// cards fit in two rows — depends on how wide the window actually is. Seeded with
     /// the content column so the first frame is already close.
     @State private var availableWidth: CGFloat = AppThemeConstants.contentColumnWidth
 
-    private var columnCount: Int {
-        let usable = availableWidth + Self.cardSpacing
-        let perCard = Self.minCardWidth + Self.cardSpacing
-        return max(1, Int(usable / perCard))
-    }
-
     var body: some View {
-        let columns = columnCount
-        let items = Array(recentItems.prefix(columns * Self.maxRows))
+        // The arithmetic lives in `HomeContinueGrid` so the row cap can be tested.
+        let columns = HomeContinueGrid.columnCount(forWidth: availableWidth)
+        let items = Array(recentItems.prefix(HomeContinueGrid.maximumItems(forWidth: availableWidth)))
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 CardSectionHeader(icon: "arrow.uturn.forward", title: "Continue Where You Left Off")
 
                 LazyVGrid(
                     columns: Array(
-                        repeating: GridItem(.flexible(), spacing: Self.cardSpacing),
+                        repeating: GridItem(.flexible(), spacing: HomeContinueGrid.spacing),
                         count: columns
                     ),
-                    spacing: Self.cardSpacing
+                    spacing: HomeContinueGrid.spacing
                 ) {
                     ForEach(items) { item in
                         continueCard(item)
@@ -164,9 +154,9 @@ struct HomeContinueSection: View {
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(5)
             .map { .document($0) }
-        // Six, because a three-column grid fills two rows with six. The grid trims this
-        // further at narrower widths — this is the ceiling, not the count.
-        return Array((meetings + docs).sorted { $0.date > $1.date }.prefix(6))
+        // Enough to fill both rows at the widest layout; the grid trims further at
+        // narrower widths. This is the ceiling, not the count.
+        return Array((meetings + docs).sorted { $0.date > $1.date }.prefix(HomeContinueGrid.fetchLimit))
     }
 
     private func previewText(for item: RecentActivityItem) -> String {

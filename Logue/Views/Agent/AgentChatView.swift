@@ -20,6 +20,11 @@ struct AgentChatView: View {
     @Environment(DocumentStore.self) private var documentStore
     @Environment(InsightsStatsProvider.self) private var insights
     @Environment(ModelManager.self) private var modelManager
+    @Environment(SpaceStore.self) private var spaceStore
+
+    /// Reveals a space created from Home's first-run card. `AgentChatView` cannot set the
+    /// sidebar selection itself, so `MainWindowView` supplies the one line that can.
+    var onOpenSpace: (UUID) -> Void = { _ in }
     /// Drag-and-drop attachments staged for the next send. Cleared after each send.
     @State private var inputAttachments: [TempAttachment] = []
     /// When true, the next send routes through `DeepResearchCoordinator` instead
@@ -161,21 +166,16 @@ struct AgentChatView: View {
     }
 
     /// Does the active conversation contain any answer-derived sources?
-    /// Drives the right-pane auto-open behavior. Considers web tool calls and
-    /// meeting/document references — the same surfaces SourcesPanelView renders.
+    ///
+    /// Drives both the right pane's auto-open and whether its toolbar button exists, so it
+    /// asks `SourcesPanelContent` — the same rules the panel renders from. A tool-name
+    /// heuristic here instead would hide the button for conversations whose sources came
+    /// from a tool it did not think to name.
     private var hasAnswerSources: Bool {
-        guard let conversation = activeConversation else { return false }
-        for msg in conversation.messages {
-            for call in msg.toolCalls {
-                let name = call.toolName.lowercased()
-                if name.contains("web") || name.contains("search") || name.contains("fetch")
-                    || name.contains("meeting") || name.contains("document")
-                {
-                    return true
-                }
-            }
-        }
-        return false
+        SourcesPanelContent.hasContent(
+            messages: activeConversation?.messages ?? [],
+            attachmentCount: inputAttachments.count
+        )
     }
 
     // MARK: - Layouts
@@ -186,7 +186,13 @@ struct AgentChatView: View {
     /// match that slides it to the bottom on first send.
     private var landingLayout: some View {
         VStack(spacing: 0) {
-            HomeLandingHeader(chips: suggestionChips, onPrefill: prefill)
+            // Held back until every store has reported. During load the stores are empty,
+            // so a user with a full library would be greeted with first-run chips and a
+            // context bar reading zero — and then watch all of it swap. The cards are
+            // gated on the same value inside `HomeLandingView`.
+            if storesAreLoaded {
+                HomeLandingHeader(chips: suggestionChips, onPrefill: prefill)
+            }
 
             if modelManager.activeModelID == nil {
                 Label("Set up a model to ask Logue", systemImage: "exclamationmark.circle")
@@ -198,12 +204,15 @@ struct AgentChatView: View {
 
             inputBar
                 .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
-                .frame(maxWidth: AppThemeConstants.contentColumnWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, AppThemeConstants.paddingXXLarge)
+                .homeContentColumn()
                 .padding(.vertical, AppThemeConstants.paddingLarge)
 
-            HomeLandingView(onPrefill: prefill)
+            HomeLandingView(
+                isLoaded: storesAreLoaded,
+                isEmpty: workspaceIsEmpty,
+                onPrefill: prefill,
+                onOpenSpace: onOpenSpace
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -215,10 +224,25 @@ struct AgentChatView: View {
         focusRequest += 1
     }
 
+    /// Every store Home summarises. Greeting a returning user as a new one because their
+    /// library was still being read is the loudest possible wrong answer this screen can
+    /// give, so nothing derived from store contents renders until all three report.
+    private var storesAreLoaded: Bool {
+        documentStore.isLoaded && meetingStore.isLoaded && spaceStore.isLoaded
+    }
+
+    /// One definition, used by both the header and the cards. Two definitions is how a
+    /// workspace with spaces but no documents gets first-run chips above a set of cards
+    /// that have all self-hidden.
+    private var workspaceIsEmpty: Bool {
+        documentStore.activeDocuments.isEmpty
+            && meetingStore.activeMeetings.isEmpty
+            && spaceStore.topLevelSpaces.isEmpty
+    }
+
     /// Derived fresh each render from the stores — no inference, no caching. The rules
     /// live in `HomeSuggestions` so they can be tested without a view.
     private var suggestionChips: [HomeSuggestions.Chip] {
-        let calendar = Calendar.current
         let unsummarized = meetingStore.activeMeetings
             .filter { ($0.summary ?? "").isEmpty && !$0.isArchived }
             .max { $0.createdAt < $1.createdAt }
@@ -226,11 +250,8 @@ struct AgentChatView: View {
             for: HomeSuggestions.Inputs(
                 unsummarizedMeetingTitle: unsummarized?.title,
                 overdueCount: insights.actionItemStats.overdue,
-                meetingsToday: meetingStore.activeMeetings.filter {
-                    calendar.isDateInToday($0.createdAt) && !$0.isArchived
-                }.count,
-                hasAnyContent: !(documentStore.activeDocuments.isEmpty
-                    && meetingStore.activeMeetings.isEmpty)
+                meetingsToday: meetingStore.todaysMeetings.count,
+                hasAnyContent: !workspaceIsEmpty
             )
         )
     }
@@ -275,13 +296,13 @@ struct AgentChatView: View {
 
     // MARK: - Input Bar (shared between layouts)
 
-    /// The single source of truth for the input bar view. Both `emptyLayout` and
+    /// The single source of truth for the input bar view. Both `landingLayout` and
     /// `hasMessagesLayout` render this through `matchedGeometryEffect` so the
-    /// transition between center and bottom positions interpolates smoothly.
+    /// transition between the landing position and the bottom interpolates smoothly.
     private var inputBar: some View {
         InputBarView(
             inputText: $inputText,
-            focusRequest: $focusRequest,
+            focusRequest: focusRequest,
             attachments: $inputAttachments,
             isProcessing: coordinator.isProcessing || deepResearchCoordinator.isRunning,
             isBusy: isBusy,
