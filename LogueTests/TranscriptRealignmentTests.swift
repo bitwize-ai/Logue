@@ -162,4 +162,30 @@ struct TranscriptRealignmentTests {
         let snapped = TranscriptRealignment.snappedToSentences(segments)
         #expect(snapped[0].text == "unfinished", "a line must not swallow the one after it")
     }
+
+    // MARK: - Resumed sessions
+
+    @Test("A second session's words land in that session's lines, not the first's")
+    func sessionOffsetIsRespected() {
+        // The meeting already holds five minutes; recording resumed at 301s. Batch words are timed
+        // from the start of the *session's* audio, so they run from zero.
+        let live = [
+            segment("first session, must not change", 0, 300),
+            segment("draft of the second session", 301, 310),
+        ]
+        let words = [word(" accurate", 0.5, 1.0), word(" second", 1.1, 1.6), word(" session", 1.7, 2.2)]
+
+        let result = TranscriptRealignment.realign(live: live, words: words, sessionStart: 301)
+
+        #expect(result[0].text == "first session, must not change", "an earlier session must be untouched")
+        #expect(result[1].text == "accurate second session")
+    }
+
+    @Test("Without an offset the words stay where they are")
+    func zeroOffsetIsUnchanged() {
+        let live = [segment("draft", 0, 5)]
+        let withOffset = TranscriptRealignment.realign(live: live, words: [word("final", 1, 2)], sessionStart: 0)
+        let without = TranscriptRealignment.realign(live: live, words: [word("final", 1, 2)])
+        #expect(withOffset[0].text == without[0].text)
+    }
 }

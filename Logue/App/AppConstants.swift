@@ -399,6 +399,15 @@ enum AppConstants {
         /// says nothing about audio that was already playing when recording started.
         static let systemAudioArmingPoll: Duration = .milliseconds(500)
 
+        /// How long recovery waits for the meeting library to load before giving up.
+        ///
+        /// Reading an unloaded library makes every meeting look deleted, and recovery deletes the
+        /// recordings of meetings that no longer exist — so this must resolve before it runs.
+        static let meetingStoreLoadTimeout: Duration = .seconds(30)
+
+        /// How often that wait re-checks.
+        static let meetingStoreLoadPoll: Duration = .milliseconds(100)
+
         /// How often a recording in progress writes down where it has got to.
         ///
         /// What a crash costs is bounded by this. The write is a small JSON file, so the interval is

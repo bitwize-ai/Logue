@@ -26,6 +26,35 @@ struct RecordingCheckpointTests {
         #expect(restored == original)
     }
 
+    @Test("What lands on disk is not readable as plaintext")
+    func writtenCheckpointIsEncrypted() throws {
+        let id = UUID()
+        defer { InProgressRecordingStore.clear(meetingID: id) }
+
+        var point = checkpoint(meetingID: id)
+        point = RecordingCheckpoint(
+            meetingID: id,
+            sessionStart: point.sessionStart,
+            timeOffset: point.timeOffset,
+            segments: [TranscriptSegment(text: "a confidential sentence", startTime: 0, endTime: 2)],
+            micPlacements: point.micPlacements,
+            systemPlacements: point.systemPlacements,
+            micFileName: point.micFileName,
+            systemFileName: point.systemFileName,
+            writtenAt: point.writtenAt
+        )
+        try RecordingCheckpoint.write(point)
+
+        let url = try InProgressRecordingStore.directory(for: id).appending(component: "checkpoint.json")
+        let raw = try Data(contentsOf: url)
+        let asText = String(bytes: raw, encoding: .utf8) ?? ""
+        #expect(
+            asText.contains("a confidential sentence") == false,
+            "the transcript is sitting on disk in the clear for the length of every meeting"
+        )
+        #expect(RecordingCheckpoint.read(meetingID: id)?.segments.first?.text == "a confidential sentence")
+    }
+
     @Test("Placements survive, because they are the part that cannot be recomputed")
     func placementsSurvive() throws {
         let original = checkpoint()

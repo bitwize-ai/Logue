@@ -56,6 +56,13 @@ final class RecordingSessionManager {
         case starting
         case recording
         case stopping
+        /// Rebuilding an interrupted session at launch.
+        ///
+        /// Held for the whole of recovery because it shares this object with a live session: the
+        /// audio composition it runs ends by clearing `audioRecorder`'s temporary file, and its
+        /// working directory is the one a re-recording of the same meeting would use. A recording
+        /// starting underneath it would lose its own audio.
+        case recovering
     }
 
     var recordingState: RecordingState = .idle
@@ -89,6 +96,15 @@ final class RecordingSessionManager {
 
     var isCapturingSystemAudio = false
     var isMicActive = false
+
+    // Extension-visible: +DeviceLoss
+    /// Whether the user has muted the microphone.
+    ///
+    /// Distinct from `isMicActive`, which only says whether the tap is running. A device dropping
+    /// also stops the tap, so without recording the *intent* separately a headset renegotiating
+    /// while muted would be treated as capture to restore, and a muted microphone would quietly
+    /// start recording again.
+    private(set) var isMicMuted = false
 
     /// A short, non-blocking note about capture — a device that went away, a fallback that was
     /// taken. Nil when there is nothing to say. Never a dialog: a meeting keeps running while the
@@ -279,7 +295,12 @@ final class RecordingSessionManager {
 
     // swiftlint:disable:next function_body_length
     func startRecording(for meeting: MeetingNote) async {
-        guard recordingState == .idle else { return }
+        guard recordingState == .idle else {
+            if recordingState == .recovering {
+                logger.info("Not starting a recording while an interrupted session is being rebuilt")
+            }
+            return
+        }
         recordingState = .starting
         errorMessage = nil
 
@@ -674,45 +695,22 @@ final class RecordingSessionManager {
     /// everything after the mute back at the start of the meeting.
     func setMicMuted(_ muted: Bool) {
         guard isRecording, !isStopping, muted == isMicActive else { return }
+        isMicMuted = muted
 
-        if muted {
-            // Close the activation at the file's current length before the tap stops, so the
-            // playback mix knows how much of the file belongs to the stretch just recorded.
-            micSegments.sourceStopped(fileDuration: audioRecorder.recordedDuration)
-            // stopTap() stops the engine and tap but keeps the audio file open, so unmuting
-            // continues appending to the same file.
-            audioRecorder.stopTap()
-            audioRecorder.onAudioBuffer = nil
-            isMicActive = false
-            logger.info("Microphone muted")
+        guard muted else {
+            resumeMicrophoneCapture()
             return
         }
 
-        let resumedAt = sessionElapsed
-        // The gap is a discontinuity in the audio the voice-activity model was tracking, and its
-        // streaming state does not survive one: speech that was in progress when the microphone
-        // went quiet leaves the model still "in speech", so the resumed audio never produces the
-        // start event the gate opens on, and the transcriber hears nothing for the rest of the
-        // session. Resuming means starting that model again from silence.
-        speechGate.reset()
-        diarizationManager?.beginSource(.microphone, atSessionTime: resumedAt)
-        let continuation = audioBufferContinuation
-        audioRecorder.onAudioBuffer = { buffer in
-            continuation?.yield(CapturedAudio(buffer: buffer, source: .microphone))
-        }
-
-        do {
-            try audioRecorder.startRecording()
-            isMicActive = true
-            // Opened only now: `startRecording` can fail, and an activation opened against a mic
-            // that never started would swallow the next successful one.
-            micSegments.sourceStarted(atSessionTime: resumedAt, fileDuration: audioRecorder.recordedDuration)
-            logger.info("Microphone unmuted")
-        } catch {
-            audioRecorder.onAudioBuffer = nil
-            errorMessage = RecordingError.micStartFailed(error.localizedDescription).localizedDescription
-            logger.error("Microphone unmute failed: \(error.localizedDescription, privacy: .public)")
-        }
+        // Close the activation at the file's current length before the tap stops, so the playback
+        // mix knows how much of the file belongs to the stretch just recorded.
+        micSegments.sourceStopped(fileDuration: audioRecorder.recordedDuration)
+        // stopTap() stops the engine and tap but keeps the audio file open, so unmuting continues
+        // appending to the same file.
+        audioRecorder.stopTap()
+        audioRecorder.onAudioBuffer = nil
+        isMicActive = false
+        logger.info("Microphone muted")
     }
 
     // MARK: - Audio Buffer Stream

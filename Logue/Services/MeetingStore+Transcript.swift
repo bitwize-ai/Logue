@@ -24,7 +24,22 @@ extension MeetingStore {
     /// every line that had already been saved.
     func restoreRecoveredSession(for meetingID: UUID, segments: [TranscriptSegment], duration: TimeInterval) {
         guard let index = meetingIndex(for: meetingID) else { return }
-        meetings[index].segments = segments
+
+        // The transcript is persisted every few seconds while recording, but checkpointed only
+        // every thirty — so after a crash the meeting on disk usually holds *more* lines than the
+        // checkpoint does. Assigning the checkpoint wholesale would delete correct, already-durable
+        // transcript, which is the opposite of what recovery is for. Whichever set reaches further
+        // wins, and lines present in both keep the saved copy.
+        let saved = meetings[index].segments
+        let savedReach = saved.map(\.endTime).max() ?? 0
+        let checkpointReach = segments.map(\.endTime).max() ?? 0
+
+        if checkpointReach > savedReach {
+            var merged = saved
+            let known = Set(saved.map(\.id))
+            merged.append(contentsOf: segments.filter { !known.contains($0.id) })
+            meetings[index].segments = merged.sorted { $0.startTime < $1.startTime }
+        }
         meetings[index].duration = max(meetings[index].duration, duration)
         meetings[index].wasRecovered = true
         saveMeeting(id: meetingID)

@@ -157,7 +157,8 @@ extension RecordingSessionManager {
             let realigned = TranscriptRealignment.snappedToSentences(
                 TranscriptRealignment.realign(
                     live: meeting.segments,
-                    words: diarizer.lastBatchWords
+                    words: diarizer.lastBatchWords,
+                    sessionStart: sessionStart
                 )
             )
             MeetingStore.shared.updateSegments(realigned, for: meetingID)

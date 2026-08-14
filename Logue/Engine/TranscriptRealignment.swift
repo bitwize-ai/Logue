@@ -71,11 +71,25 @@ enum TranscriptRealignment {
     /// Segments keep their `id`, `startTime`, `endTime` and speaker. A segment no word lands in
     /// keeps the text it already had — blanking a line the user watched being written would be a
     /// worse outcome than leaving it as the live transcriber heard it.
+    /// - Parameter sessionStart: where this recording session begins on the meeting's timeline.
+    ///   Batch words are timed from the start of the session's own audio, while segments are timed
+    ///   from the start of the *meeting* — a second session on the same meeting starts its words at
+    ///   zero while its lines are stamped minutes in. Without this shift every word of session two
+    ///   lands in session one's lines and overwrites them.
     static func realign(
         live: [TranscriptSegment],
-        words: [TimedWord]
+        words: [TimedWord],
+        sessionStart: TimeInterval = 0
     ) -> [TranscriptSegment] {
         guard !live.isEmpty, !words.isEmpty else { return live }
+
+        let words = sessionStart == 0 ? words : words.map { word in
+            TimedWord(
+                text: word.text,
+                startTime: word.startTime + sessionStart,
+                endTime: word.endTime + sessionStart
+            )
+        }
 
         // Paired with their positions before sorting, so a word can be attributed back to the
         // segment it belongs to whatever order the times arrive in.

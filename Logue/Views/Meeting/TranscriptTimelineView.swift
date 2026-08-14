@@ -41,6 +41,18 @@ struct TranscriptTimelineView: View {
     /// Tracks (segments.count, searchText) to know when to recompute cachedBlocks.
     @State private var blockCacheKey: String = ""
 
+    /// Cheap signature of the transcript's text, so a change that leaves the segment count alone
+    /// still redraws. Hashes each id with its text length rather than the text itself: the same
+    /// discrimination for a fraction of the work on a long meeting.
+    private var segmentTextHash: Int {
+        var hasher = Hasher()
+        for segment in segments {
+            hasher.combine(segment.id)
+            hasher.combine(segment.text.count)
+        }
+        return hasher.finalize()
+    }
+
     /// Hash of all speaker labels — changes when segments are reassigned to different speakers.
     private var speakerLabelHash: Int {
         segments.reduce(0) { $0 ^ ($1.speakerLabel?.hashValue ?? 0) }
@@ -251,7 +263,11 @@ struct TranscriptTimelineView: View {
     }
 
     private func recomputeBlocksIfNeeded() {
-        let key = "\(segments.count)|\(searchText)|\(speakerLabelHash)"
+        // Includes a signature of the text, not just the count. Merging a continuation into the
+        // line before it leaves the count unchanged, and realignment rewrites text without touching
+        // the count at all — both were invisible to a key built from counts alone, so the transcript
+        // stopped updating mid-recording.
+        let key = "\(segments.count)|\(searchText)|\(speakerLabelHash)|\(segmentTextHash)"
         guard key != blockCacheKey else { return }
         blockCacheKey = key
         cachedBlocks = computeSpeakerBlocks()

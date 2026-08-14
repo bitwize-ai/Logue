@@ -37,7 +37,11 @@ struct RecordingCheckpoint: Codable, Equatable {
     static func write(_ checkpoint: RecordingCheckpoint) throws {
         let directory = try InProgressRecordingStore.directory(for: checkpoint.meetingID)
         let url = directory.appending(component: fileName)
-        let data = try JSONEncoder().encode(checkpoint)
+        // Encrypted, like every other write of meeting content. This holds the whole transcript and
+        // is rewritten every thirty seconds for the length of every recording, so writing it in the
+        // clear would put an unencrypted copy of each meeting on disk while it happens — and leave
+        // it there until a recovery pass consumed it.
+        let data = try EncryptionManager.encryptCodable(checkpoint)
         // Atomic, because the alternative to a whole checkpoint is the previous whole one, never
         // half of this one.
         try data.write(to: url, options: .atomic)
@@ -49,7 +53,7 @@ struct RecordingCheckpoint: Codable, Equatable {
             let url = directory.appending(component: fileName)
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             let data = try Data(contentsOf: url)
-            return try JSONDecoder().decode(RecordingCheckpoint.self, from: data)
+            return try EncryptionManager.decryptCodable(RecordingCheckpoint.self, from: data)
         } catch {
             logger.error("Could not read checkpoint: \(error.localizedDescription, privacy: .public)")
             return nil

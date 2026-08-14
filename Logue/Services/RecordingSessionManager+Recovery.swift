@@ -15,10 +15,42 @@ extension RecordingSessionManager {
     func recoverInterruptedSessions() async {
         guard recordingState == .idle else { return }
 
-        for meetingID in InProgressRecordingStore.pendingMeetingIDs() {
-            guard recordingState == .idle else { return }
+        // The store loads from disk asynchronously, and this runs on the same actor — so without
+        // waiting it observes an empty library, concludes every interrupted meeting no longer
+        // exists, and deletes the audio it exists to rebuild.
+        guard await waitForMeetingStore() else {
+            logger.warning("Meeting store did not finish loading — leaving interrupted sessions untouched")
+            return
+        }
+
+        let pending = InProgressRecordingStore.pendingMeetingIDs()
+        guard !pending.isEmpty else { return }
+
+        // Held for the duration. Recovery reaches into the same audio recorder and working
+        // directories a live session uses, and its composition step is slow enough that a user can
+        // easily press record inside it.
+        guard recordingState == .idle else { return }
+        recordingState = .recovering
+        defer { recordingState = .idle }
+
+        for meetingID in pending {
             await recoverSession(meetingID)
         }
+    }
+
+    /// Waits for the meeting library to finish loading, giving up rather than waiting forever.
+    ///
+    /// Returning false means we do not know what the library holds, and nothing may be deleted on
+    /// the strength of a meeting appearing to be absent.
+    private func waitForMeetingStore() async -> Bool {
+        let deadline = ContinuousClock.now + AppConstants.Delays.meetingStoreLoadTimeout
+        while ContinuousClock.now < deadline {
+            if MeetingStore.shared.isLoaded {
+                return true
+            }
+            try? await Task.sleep(for: AppConstants.Delays.meetingStoreLoadPoll)
+        }
+        return MeetingStore.shared.isLoaded
     }
 
     private func recoverSession(_ meetingID: UUID) async {
@@ -31,6 +63,12 @@ extension RecordingSessionManager {
         }
 
         guard MeetingStore.shared.meetings.contains(where: { $0.id == meetingID }) else {
+            // Only safe to conclude this because the library is known to have loaded — see
+            // `waitForMeetingStore`. Deleting on an unloaded store destroys good recordings.
+            guard MeetingStore.shared.isLoaded else {
+                logger.warning("Meeting not found but the library is not loaded — keeping the recording")
+                return
+            }
             logger.info("Interrupted session belongs to a meeting that no longer exists — discarding")
             InProgressRecordingStore.clear(meetingID: meetingID)
             return
