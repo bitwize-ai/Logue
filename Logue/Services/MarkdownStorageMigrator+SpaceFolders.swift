@@ -87,9 +87,39 @@ extension MarkdownStorageMigrator {
 
     /// Creates a space's folder and writes its identity, for a space made in the app.
     func createFolder(for space: Space, in spaces: [Space], folders: SpaceFolderMap? = nil) throws {
-        let directory = folderURL(forSpace: space.id, in: spaces, folders: folders)
+        let directory = avoidingTaskFolder(folderURL(forSpace: space.id, in: spaces, folders: folders))
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         writeIdentity(of: space, in: directory)
+    }
+
+    /// A destination that is not the live tasks folder.
+    ///
+    /// A space named "Tasks" derives exactly the path the tasks folder occupies, and
+    /// `createDirectory(withIntermediateDirectories: true)` succeeds silently on a directory
+    /// that is already there — so `_space.md` would land inside it. From that moment the
+    /// snapshot resolves the folder in the space's favour, every task file reads as an
+    /// unidentified document, and the scan adopts and rewrites them: status, priority, due
+    /// date and the task's identity gone from the only copy on disk.
+    ///
+    /// Steps over rather than refusing, so naming a space "Tasks" still works — the same rule
+    /// the tasks side already applies when a space got to the name first. Only the colliding
+    /// case behaves differently; every other path is returned untouched.
+    func avoidingTaskFolder(_ directory: URL) -> URL {
+        guard TaskFolderStore(rootURL: directory).isMarkedTaskFolder else { return directory }
+
+        let parent = directory.deletingLastPathComponent()
+        let name = directory.lastPathComponent
+        for suffix in 2 ... 20 {
+            let candidate = parent.appendingPathComponent("\(name) \(suffix)", isDirectory: true)
+            let isFree = !FileManager.default.fileExists(atPath: candidate.path)
+                && !TaskFolderStore(rootURL: candidate).isMarkedTaskFolder
+            if isFree {
+                return candidate
+            }
+        }
+        // Twenty variants all taken is not a real library. Returning the original would write
+        // into the tasks folder, so give back a name that cannot collide instead.
+        return parent.appendingPathComponent("\(name) \(UUID().uuidString.prefix(8))", isDirectory: true)
     }
 
     /// Moves a space's folder, for a space renamed or re-parented in the app.
@@ -100,9 +130,11 @@ extension MarkdownStorageMigrator {
         // The destination is name-derived on purpose: renaming a space is precisely the act of
         // asking for a folder named after the new name, so the folder map must not answer with
         // where the folder currently is.
-        let destination = rootURL.appendingPathComponent(
+        // Stepped past the tasks folder for the same reason creation is: renaming a space to
+        // "Tasks" would otherwise move it onto the live tasks folder.
+        let destination = avoidingTaskFolder(rootURL.appendingPathComponent(
             SpaceFolderLayout.directoryComponents(forSpace: space.id, in: spaces).joined(separator: "/")
-        )
+        ))
         guard source.standardizedFileURL != destination.standardizedFileURL,
               FileManager.default.fileExists(atPath: source.path)
         else { return }

@@ -24,6 +24,60 @@ struct TaskFolderStoreTests {
         _ = temporary
     }
 
+    // MARK: - Locating by identity
+
+    /// The marker file tells the user renaming the folder is safe, so the lookup has to be by
+    /// identity. Resolving by name meant a folder renamed in Finder read as missing and every
+    /// task vanished from the app while its files sat there.
+    @Test("A renamed tasks folder is still found, by its marker")
+    func renamedFolderIsStillFound() throws {
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let renamed = root.appendingPathComponent("My Tasks", isDirectory: true)
+        try TaskFolderStore(rootURL: renamed).prepare()
+
+        #expect(TaskFolderStore.markedFolder(in: root)?.lastPathComponent == "My Tasks")
+        _ = temporary
+    }
+
+    @Test("A folder with no marker is not mistaken for the tasks folder")
+    func unmarkedFolderIsNotTheTasksFolder() throws {
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        let plain = root.appendingPathComponent("Tasks", isDirectory: true)
+        try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+
+        #expect(TaskFolderStore.markedFolder(in: root) == nil)
+        _ = temporary
+    }
+
+    @Test("Two marked folders resolve to the one named Tasks rather than at random")
+    func ambiguityPrefersTheCanonicalName() throws {
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try TaskFolderStore(rootURL: root.appendingPathComponent("Archive Tasks")).prepare()
+        try TaskFolderStore(rootURL: root.appendingPathComponent(TaskFile.folderName)).prepare()
+
+        #expect(TaskFolderStore.markedFolder(in: root)?.lastPathComponent == TaskFile.folderName)
+        _ = temporary
+    }
+
+    // MARK: - Batch writing
+
+    @Test("Exporting many tasks writes each one exactly once")
+    func exportWritesEveryTask() throws {
+        try withFolder { store in
+            let tasks = (0 ..< 20).map { TaskItem(title: "Task \($0)") }
+            let result = store.exportAll(tasks)
+            #expect(result.written == 20)
+            #expect(result.failed == 0)
+            #expect(store.loadAll().count == 20)
+        }
+    }
+
     // MARK: - Preparing
 
     @Test("Preparing creates the folder and its marker")

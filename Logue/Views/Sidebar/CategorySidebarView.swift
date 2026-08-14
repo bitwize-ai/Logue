@@ -9,7 +9,6 @@ struct CategorySidebarView: View {
     @Environment(SpaceStore.self) private var spaceStore
     @Environment(DocumentStore.self) private var documentStore
     @Environment(MeetingStore.self) private var meetingStore
-    @Environment(TemplateStore.self) private var templateStore
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var colorScheme
 
@@ -256,7 +255,7 @@ struct CategorySidebarView: View {
         return "Check the Logue folder for changes made outside Logue — last check: \(summary.lowercased())"
     }
 
-    // MARK: - Action Item Counts
+    // MARK: - Task Counts
 
     /// Whether any open task is past its due date, so the count reads as urgent.
     private var hasOverdueTasks: Bool {

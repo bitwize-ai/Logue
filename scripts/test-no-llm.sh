@@ -9,14 +9,15 @@
 # status is the last command's, so a failed run reports success.
 set -uo pipefail
 
+# Suite *type* names only. `-skip-testing:` takes a class name, never a filename and never a
+# directory — an entry naming `DocumentLLMTests.swift` skips nothing while making the list look
+# complete, so a suite added to that file would quietly run the model in the fast pass.
 SKIP=""
 for suite in \
   ClarityAnalysisLLMTests DailyDigestLLMTests DocumentChatLLMTests DocumentTitleLLMTests \
   FactCheckLLMTests GrammarAnalysisLLMTests MeetingChatLLMTests MeetingTitleLLMTests \
   PIIScanLLMTests RephraseLLMTests ReviewReactionsLLMTests ReviewScoreLLMTests \
-  RewriteStyleLLMTests SmartMinutesLLMTests ToneDetectionLLMTests VocabularyEnhancementLLMTests \
-  GrammarClarityLLMTests VocabularyLLMTests RewritePanelLLMTests ReviewPanelLLMTests \
-  MeetingLLMTests VerifyPanelLLMTests DocumentLLMTests; do
+  RewriteStyleLLMTests SmartMinutesLLMTests ToneDetectionLLMTests VocabularyEnhancementLLMTests; do
   SKIP="$SKIP -skip-testing:LogueTests/$suite"
 done
 

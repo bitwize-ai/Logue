@@ -376,6 +376,14 @@ final class DocumentStorage {
             throw SwitchError.reEncryptionIncomplete(count: missing.count)
         }
 
+        // Tasks are checked on the same terms and for the same reason. Without this the
+        // documents half is guarded and the tasks half is not, so a failed task write sends
+        // the folder — holding the only copy of those tasks — to the Trash anyway.
+        let missingTasks = restoredTasks.filter { !TaskStorage.shared.hasEncryptedCopy(of: $0.id) }
+        guard taskReEncryptionIsComplete, missingTasks.isEmpty else {
+            throw SwitchError.reEncryptionIncomplete(count: max(missingTasks.count, 1))
+        }
+
         try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
         logger.info("Moved the documents folder to the Trash")
     }
@@ -455,7 +463,9 @@ final class DocumentStorage {
         // Read and re-encrypted while the folder is still the live one, and before the mode
         // flips: a task created during markdown mode has no encrypted copy at all, so this is
         // the only thing carrying it across. Afterwards the folder may go to the Trash.
-        restoredTasks = TaskStorage.shared.reEncryptFromFolder()
+        let taskResult = TaskStorage.shared.reEncryptFromFolder()
+        restoredTasks = taskResult.tasks
+        taskReEncryptionIsComplete = taskResult.isComplete
 
         // The folder is no longer the library, so a record of which documents it failed to hold
         // means nothing — and `save` returns early in encrypted mode, so nothing else could ever
@@ -474,6 +484,12 @@ final class DocumentStorage {
     /// the four failure modes documented on it — stay about documents. The caller reads this
     /// immediately after a successful switch.
     private(set) var restoredTasks: [TaskItem] = []
+
+    /// Whether every task the folder held reached encrypted storage.
+    ///
+    /// Read by `retireFolderAfterReEncryption`: the folder is the only copy of anything created
+    /// while markdown mode was on, so it cannot be trashed on a partial re-encryption.
+    private(set) var taskReEncryptionIsComplete = true
 
     /// Empties the plain-markdown folder without changing the setting.
     ///

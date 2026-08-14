@@ -34,6 +34,14 @@ final class TaskStorage {
     /// and a stale cached path is how a folder stops being found at all.
     nonisolated static var tasksFolderURL: URL {
         let root = DocumentStorage.markdownRootURL
+
+        // Identity first. The name is only ever the *creation-time* default: once the folder
+        // exists it is found by the marker it carries, so renaming it in Finder — which the
+        // marker file explicitly invites — keeps tasks working instead of emptying the list.
+        if let marked = TaskFolderStore.markedFolder(in: root) {
+            return marked
+        }
+
         let preferred = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
         guard TaskFolderStore(rootURL: preferred).isExistingSpaceFolder else { return preferred }
 
@@ -145,6 +153,38 @@ final class TaskStorage {
         }
     }
 
+    // MARK: - Clearing
+
+    /// Removes every stored task, in both modes.
+    ///
+    /// The encrypted copies are kept even while markdown mode is on — they are what makes the
+    /// setting reversible — so a reset that only emptied `~/Logue` would leave them behind and
+    /// the tasks would return on the next switch. Conversely a reset in encrypted mode never
+    /// touched the folder at all.
+    func clearAllData() {
+        let directory = encryptedDirectory
+        if FileManager.default.fileExists(atPath: directory.path) {
+            do {
+                try FileManager.default.removeItem(at: directory)
+            } catch {
+                logger.error(
+                    "Could not clear stored tasks: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        // To the Trash, never `removeItem` — this is the user's own text.
+        let folder = folderStore
+        guard folder.exists else { return }
+        do {
+            try FileManager.default.trashItem(at: folder.rootURL, resultingItemURL: nil)
+        } catch {
+            logger.error(
+                "Could not clear the tasks folder: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
     // MARK: - Mode switching
 
     enum SwitchError: LocalizedError {
@@ -171,17 +211,39 @@ final class TaskStorage {
         logger.info("Wrote \(result.written, privacy: .public) task(s) to the folder")
     }
 
+    /// What a re-encryption managed.
+    ///
+    /// `failed` is counted rather than logged because the folder is trashed after this: a
+    /// write that did not land means the only copy of that task is inside the folder about to
+    /// go, and the caller has to be able to refuse.
+    struct ReEncryptResult {
+        let tasks: [TaskItem]
+        let failed: Int
+        /// The folder is there but read back nothing — unreadable, not empty.
+        let folderUnreadable: Bool
+
+        var isComplete: Bool {
+            failed == 0 && !folderUnreadable
+        }
+    }
+
     /// Reads the folder and re-encrypts what it finds, for the switch **out of** markdown mode.
     ///
-    /// Returns the tasks now in encrypted storage. Anything created while markdown mode was on
-    /// has no encrypted copy at all, so this is the only thing that carries it across — the
-    /// same asymmetry `DocumentStorage.retireFolderAfterReEncryption` exists to handle.
+    /// Reports the tasks now in encrypted storage, and whether every one of them got there.
+    /// Anything created while markdown mode was on has no encrypted copy at all, so this is
+    /// the only thing that carries it across — the same asymmetry
+    /// `DocumentStorage.retireFolderAfterReEncryption` exists to handle.
     @discardableResult
-    func reEncryptFromFolder() -> [TaskItem] {
+    func reEncryptFromFolder() -> ReEncryptResult {
         let fromFolder = folderStore.loadAll()
-        for task in fromFolder {
-            writeEncrypted(task)
+        var failed = 0
+        for task in fromFolder where !writeEncrypted(task) {
+            failed += 1
         }
+        // An empty read from a folder that exists and holds task files is a listing failure,
+        // not an empty task list. Told apart here because afterwards the folder is gone.
+        // `nil` (unlistable) counts as unreadable; only a confirmed zero means truly empty.
+        let unreadable = fromFolder.isEmpty && folderStore.exists && (folderStore.taskFileCount ?? 1) != 0
 
         // Merged with what encrypted storage already held: a task the folder never received
         // (an unwritable folder, a task trashed while in markdown mode) is still ours.
@@ -190,6 +252,21 @@ final class TaskStorage {
             byID[task.id] = task
         }
         logger.info("Re-encrypted \(fromFolder.count, privacy: .public) task(s) from the folder")
-        return Array(byID.values)
+        if failed > 0 || unreadable {
+            logger.error(
+                "Re-encryption incomplete: \(failed, privacy: .public) failed, unreadable: \(unreadable, privacy: .public)"
+            )
+        }
+        return ReEncryptResult(
+            tasks: Array(byID.values), failed: failed, folderUnreadable: unreadable
+        )
+    }
+
+    /// Whether a task has landed in encrypted storage, for the check before the folder is
+    /// trashed. Mirrors `DocumentStorage.hasEncryptedCopy(of:)`.
+    func hasEncryptedCopy(of id: UUID) -> Bool {
+        FileManager.default.fileExists(
+            atPath: encryptedDirectory.appendingPathComponent("\(id.uuidString).json").path
+        )
     }
 }

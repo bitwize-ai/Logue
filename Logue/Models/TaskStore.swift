@@ -129,6 +129,15 @@ final class TaskStore {
         TaskStorage.shared.save(updated)
     }
 
+    /// Empties the list and everything behind it, for the "clear data" paths.
+    ///
+    /// Without this the reset dialogs cleared documents, meetings and spaces while the task
+    /// list stayed on screen — and in encrypted mode the tasks survived a full reset entirely.
+    func clearAllData() {
+        tasks = []
+        TaskStorage.shared.clearAllData()
+    }
+
     func delete(id: UUID) {
         tasks.removeAll { $0.id == id }
         TaskStorage.shared.remove(taskID: id)

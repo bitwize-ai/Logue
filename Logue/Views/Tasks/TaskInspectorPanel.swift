@@ -18,14 +18,15 @@ struct TaskInspectorPanel: View {
     let onOpenSource: () -> Void
     let onClose: () -> Void
 
-    /// Not resizable yet — the drag machinery lives in `UnifiedSidebarView`, which is built
-    /// for tabbed multi-tool panels. Width sits inside the shared inspector limits so it
-    /// lines up with the panels that are.
+    /// Fixed width for now. `LibraryPanelContainer` is what this would reuse to become
+    /// resizable; it is not wired up here yet.
     private let panelWidth: CGFloat = 320
 
     @State private var titleDraft = ""
     @State private var notesDraft = ""
     @State private var newTag = ""
+    /// Which task the drafts were loaded from, so they can never be committed onto another.
+    @State private var draftTaskID: UUID?
     @FocusState private var focus: Field?
 
     private enum Field: Hashable {
@@ -56,7 +57,9 @@ struct TaskInspectorPanel: View {
         .frame(width: panelWidth)
         .background(AppThemeConstants.surfaceBackground)
         .onAppear(perform: loadDrafts)
-        // Switching rows must not carry the previous row's half-typed text across.
+        // Switching rows must not carry the previous row's half-typed text across. The
+        // commit is guarded by `draftTaskID`, so anything not already saved by the
+        // focus-loss commit below is dropped rather than written onto the new task.
         .onChange(of: task.id) {
             commitDrafts()
             loadDrafts()
@@ -271,12 +274,19 @@ struct TaskInspectorPanel: View {
     private func loadDrafts() {
         titleDraft = task.title
         notesDraft = task.notes
+        draftTaskID = task.id
     }
 
     /// Writes the free-text fields back, but only when they actually differ — an inspector
     /// that saves on every focus change would stamp `updatedAt` and rewrite the file just
     /// for being looked at, which reorders any list sorted by recency.
+    ///
+    /// Refuses when the drafts belong to a different task than the one now shown. Selecting
+    /// another row replaces `task` before this runs, so without the check the previous task's
+    /// title and notes are written onto the newly-selected one — which in markdown mode also
+    /// renames its file and trashes the original. Two clicks, no typing required.
     private func commitDrafts() {
+        guard draftTaskID == task.id else { return }
         var updated = task
         var changed = false
 

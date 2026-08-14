@@ -81,17 +81,23 @@ enum TaskTriage {
     static let maxTasks = 60
     static let maxMessageLength = 300
     static let maxTitleLength = 120
-    static let maxTagLength = 32
     static let maxKnownTags = 20
     /// Room for the response, in tokens.
     static let reservedTokens = 1200
 
-    private static let dayFormatter: DateFormatter = {
+    /// A day formatter for one calendar.
+    ///
+    /// Built per call rather than shared: the previous shared instance had its `timeZone`
+    /// mutated in place by two non-isolated statics, and `DateFormatter` is safe to read
+    /// concurrently but not to mutate. Latent today because production only reaches it from
+    /// the main actor, which is not a property the type guarantees.
+    private static func dayFormatter(for calendar: Calendar) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
         return formatter
-    }()
+    }
 
     // MARK: - Prompt
 
@@ -151,7 +157,7 @@ enum TaskTriage {
             .joined(separator: ", ")
         let truncated = String(json.prefix(LLMEngine.maxInputChars(reservedTokens: reservedTokens)))
 
-        dayFormatter.timeZone = calendar.timeZone
+        let dayFormatter = Self.dayFormatter(for: calendar)
         return """
         Today is \(dayFormatter.string(from: now)).
         Existing tags: \(tags.isEmpty ? "none" : tags)
@@ -174,7 +180,7 @@ enum TaskTriage {
             ).day ?? 0,
         ]
         if let due = task.dueDate {
-            entry["due"] = dayFormatter.string(from: due)
+            entry["due"] = dayFormatter(for: calendar).string(from: due)
             entry["dueInDays"] = calendar.dateComponents([.day], from: now, to: due).day ?? 0
         }
         if !task.tags.isEmpty {
@@ -204,8 +210,8 @@ enum TaskTriage {
     /// close the delimiter that is supposed to contain it. Matching `validTag` on the way back
     /// keeps one definition of what a tag may contain.
     private static func sanitisedTag(_ value: String) -> String? {
-        let cleaned = String(value.prefix(maxTagLength))
-            .filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        let cleaned = String(value.prefix(TaskTextParser.maxTagLength))
+            .filter { TaskTextParser.isTagCharacter($0) }
         return cleaned.isEmpty ? nil : cleaned
     }
 
@@ -326,7 +332,7 @@ enum TaskTriage {
 
     private static func validFutureDate(_ raw: String?, now: Date, calendar: Calendar) -> Date? {
         guard let raw, raw.count == 10 else { return nil }
-        dayFormatter.timeZone = calendar.timeZone
+        let dayFormatter = Self.dayFormatter(for: calendar)
         guard let parsed = dayFormatter.date(from: raw) else { return nil }
         // A due date in the past is never useful advice, and is the shape a hallucinated or
         // epoch-defaulted date takes.
@@ -339,10 +345,10 @@ enum TaskTriage {
         let trimmed = String(
             raw.trimmingCharacters(in: .whitespaces)
                 .drop { $0 == "#" }
-                .prefix(maxTagLength)
+                .prefix(TaskTextParser.maxTagLength)
         )
         guard !trimmed.isEmpty,
-              trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+              trimmed.allSatisfy({ TaskTextParser.isTagCharacter($0) })
         else { return nil }
         return trimmed
     }

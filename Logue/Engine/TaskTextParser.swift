@@ -28,6 +28,17 @@ enum TaskTextParser {
     /// Beyond this a "tag" is a paste accident.
     static let maxTags = 5
     static let maxTagLength = 32
+
+    /// What a tag may contain, in one place.
+    ///
+    /// Written out four times previously — here, in `TaskEdit`, and twice in `TaskTriage`.
+    /// Widening it in one copy gives you a tag capture accepts, the inspector rejects and the
+    /// triage sanitiser silently strips, and the copy guarding prompt injection is the one
+    /// most easily missed.
+    static func isTagCharacter(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber || character == "-" || character == "_"
+    }
+
     /// A year out. Anything further is a typo, and large values overflow date arithmetic.
     static let maxRelativeDays = 365
 
@@ -105,7 +116,7 @@ enum TaskTextParser {
             // A bare `#`, or one followed by punctuation, is not a tag — `Fix issue # 42`
             // should keep its hash rather than gaining a mystery tag.
             guard !body.isEmpty,
-                  body.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }),
+                  body.allSatisfy(isTagCharacter),
                   tags.count < maxTags
             else {
                 remaining.append(token)

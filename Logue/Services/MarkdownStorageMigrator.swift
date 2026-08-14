@@ -506,6 +506,15 @@ struct MarkdownStorageMigrator {
                 continue
             }
 
+            // Tasks are not documents either. `documentFiles` already excludes the whole task
+            // folder, but that is a single strap: a task file reaches here whenever the folder
+            // stops being recognised — its marker deleted, or a file copied up to the root to
+            // look at — and adoption would rewrite its frontmatter, taking status, priority,
+            // due date, tags and recurrence off the only copy on disk.
+            if TaskFile.isTaskFile(contents: contents) {
+                continue
+            }
+
             guard var content = MarkdownDocumentFile.content(from: contents) else {
                 result.unidentifiedFiles.append(url)
                 continue

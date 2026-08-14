@@ -33,7 +33,7 @@ extension TaskItem {
     /// attendees, and `dueDescription` is often the only record of "before the board meeting"
     /// when no date could be resolved. Losing either silently would make promotion feel lossy
     /// in exactly the cases where the model did well.
-    private static func carriedNotes(from actionItem: ActionItem) -> String {
+    fileprivate static func carriedNotes(from actionItem: ActionItem) -> String {
         var lines: [String] = []
         if let assignee = actionItem.assignee?.trimmingCharacters(in: .whitespacesAndNewlines),
            !assignee.isEmpty
@@ -90,11 +90,9 @@ extension TaskStore {
             merged.dueDate = actionItem.dueDate
         }
         if merged.notes.isEmpty {
-            merged.notes = TaskItem(
-                actionItem: actionItem,
-                meetingID: existing.sourceMeetingID ?? UUID(),
-                now: now
-            ).notes
+            // The helper directly, rather than building a whole throwaway task around a
+            // fabricated meeting identifier just to read one string off it.
+            merged.notes = TaskItem.carriedNotes(from: actionItem)
         }
         return merged
     }

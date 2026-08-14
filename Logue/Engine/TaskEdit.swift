@@ -23,7 +23,7 @@ enum TaskEdit {
                 .prefix(TaskTextParser.maxTagLength)
         )
         guard !body.isEmpty,
-              body.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+              body.allSatisfy(TaskTextParser.isTagCharacter)
         else { return nil }
         return body
     }
