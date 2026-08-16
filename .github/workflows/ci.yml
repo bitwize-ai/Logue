@@ -137,4 +137,10 @@ jobs:
             -skipPackagePluginValidation \
             -only-testing:LogueTests/WhatsNewGateTests \
             -only-testing:LogueTests/AppVersionTests \
+            -only-testing:LogueTests/TaskStorageResilienceTests \
+            -only-testing:LogueTests/TaskFolderStoreTests \
+            -only-testing:LogueTests/TaskFolderIsolationTests \
+            -only-testing:LogueTests/TaskModeSwitchTests \
+            -only-testing:LogueTests/SpaceFolderAdoptionTests \
+            -only-testing:LogueTests/SpaceFolderLayoutTests \
             CODE_SIGNING_ALLOWED=NO
