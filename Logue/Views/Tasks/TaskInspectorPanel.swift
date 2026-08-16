@@ -282,23 +282,33 @@ struct TaskInspectorPanel: View {
     /// that saves on every focus change would stamp `updatedAt` and rewrite the file just
     /// for being looked at, which reorders any list sorted by recency.
     ///
-    /// Writes to the task the drafts were loaded from, never to whichever task is on screen
-    /// now. Selecting another row replaces `task` before this runs, so building the update
-    /// from `task` wrote the previous row's title and notes onto the newly-selected one —
-    /// which in markdown mode also renamed its file and trashed the original. Two clicks, no
-    /// typing required. Keeping the source means a half-typed title is saved to the row it
-    /// was typed into rather than dropped.
+    /// Writes the drafts onto the row they were typed into.
+    ///
+    /// Still the current row, whenever it is still the current row. Every other control here
+    /// builds its update from the live `task` and `TaskStore.update` replaces the record
+    /// wholesale, so committing text onto a snapshot taken at selection would put back
+    /// whatever changed in between — set a due date, type a note, click away, and the date is
+    /// gone. Ticking the row's checkbox and typing a note did the same to `completedCount`.
+    ///
+    /// The snapshot is used only when the row has already changed underneath, which is the
+    /// id-change path below: `task` is the incoming row by then, and building from it wrote
+    /// the outgoing row's title and notes onto the newly-selected one — in markdown mode also
+    /// renaming its file and trashing the original. Two clicks, no typing required.
     private func commitDrafts() {
         guard let source = draftSource else { return }
-        var updated = source
+        commitDrafts(onto: source.id == task.id ? task : source)
+    }
+
+    private func commitDrafts(onto target: TaskItem) {
+        var updated = target
         var changed = false
 
         let sanitised = TaskTextParser.sanitisedTitle(titleDraft)
-        if sanitised != source.title {
+        if sanitised != target.title {
             updated.title = sanitised
             changed = true
         }
-        if notesDraft != source.notes {
+        if notesDraft != target.notes {
             updated.notes = notesDraft
             changed = true
         }

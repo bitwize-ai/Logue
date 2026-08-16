@@ -100,23 +100,43 @@ struct TaskFolderStore {
     /// Ambiguity is not resolved by guessing: two marked folders keep the one actually named
     /// `TaskFile.folderName` if either is, and the situation is logged.
     static func markedFolder(in root: URL) -> URL? {
-        // Searched at every depth, because that is where the marker can end up and where
-        // `FolderSnapshot.taskFolders` already looks for it. Checking only the root's immediate
-        // children meant dragging `Tasks/` into another folder in Finder read as missing: the
-        // list emptied, the next save recreated an empty folder beside the real files, and the
-        // marker kept those files out of the document library too — reachable from nowhere.
+        let resolvedRoot = root.resolvingSymlinksInPath()
+
+        // The folder where it was created, checked first. This is every library that has not
+        // had its tasks folder moved or renamed, and it costs two `fileExists` calls instead
+        // of walking the tree — which matters because this resolves on every task read, write
+        // and delete, on the main actor, and the documented use for the root is a synced
+        // vault. It cannot disagree with the walk below either: when a folder actually named
+        // `Tasks` carries the marker, that is the one the ambiguity rule already prefers.
+        let conventional = TaskFolderStore(
+            rootURL: resolvedRoot.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        )
+        if conventional.isMarkedTaskFolder, !conventional.isExistingSpaceFolder {
+            return conventional.rootURL
+        }
+
+        // Otherwise searched at every depth, because that is where the marker can end up and
+        // where `FolderSnapshot.taskFolders` already looks for it. Listing only the root's
+        // immediate children meant dragging `Tasks/` into another folder in Finder read as
+        // missing: the list emptied, the next save recreated an empty folder beside the real
+        // files, and the marker kept those files out of the document library too — visible in
+        // Finder and reachable from nowhere.
         guard let enumerator = FileManager.default.enumerator(
-            at: root.resolvingSymlinksInPath(),
+            at: resolvedRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants],
             errorHandler: { url, error in
-                // Bound first, and one interpolated literal: an OSLog message is not an ordinary
-                // String, so it cannot be built by concatenating two of them, and spelling both
-                // interpolations out inline overruns the line limit.
-                let reason = error.localizedDescription
-                logger.error(
-                    "Could not read \(url.lastPathComponent, privacy: .public) while finding the task folder: \(reason, privacy: .public)"
-                )
+                // A missing root is the ordinary case before the first export — in encrypted
+                // mode it is the permanent case — so it is not worth an error-level line on
+                // every read. Anything else is.
+                if (error as NSError).code != NSFileReadNoSuchFileError {
+                    // Bound first, and one interpolated literal: an OSLog message is not an
+                    // ordinary String, so it cannot be built by concatenating two of them.
+                    let reason = error.localizedDescription
+                    logger.error(
+                        "Could not read \(url.lastPathComponent, privacy: .public) while finding the task folder: \(reason, privacy: .public)"
+                    )
+                }
                 return true
             }
         )
@@ -128,6 +148,12 @@ struct TaskFolderStore {
             .compactMap { $0 as? URL }
             .filter { TaskFile.isFolderMarker(filename: $0.lastPathComponent) }
             .map { TaskFolderStore(rootURL: $0.deletingLastPathComponent()) }
+            // The root is never the tasks folder. A stray `_tasks.md` copied to `~/Logue` —
+            // made to read it, a Finder drag that flattened the folder, a sync duplicate —
+            // would otherwise resolve the tasks folder to the library root, after which every
+            // save writes into it and `clearAllData` puts the user's whole library, every
+            // space and document in it, in the Trash from a dialog offering to remove samples.
+            .filter { $0.rootURL.standardizedFileURL != resolvedRoot.standardizedFileURL }
 
         // A folder claimed by a space is not a task folder: space identity is older, holds
         // documents, and misreading it destroys them. Same precedence the snapshot applies.

@@ -5,9 +5,10 @@ import Testing
 
 /// The review findings on #57, as tests.
 ///
-/// Each case fails against the code as it stood before the fix commit, which is the only
-/// property that makes a regression test worth having. The four they cover are the ones whose
-/// failure mode is losing a user's tasks or hiding a space forever, and none of them had a test.
+/// Each case fails against the code as it stood before the fix it covers, which is the only
+/// property that makes a regression test worth having. They are the paths whose failure mode is
+/// losing a user's tasks, trashing their library, or hiding a space forever — including two
+/// defects the fixes themselves introduced and a later review round caught.
 @Suite("Task storage resilience")
 struct TaskStorageResilienceTests {
     /// A fresh directory per test, removed when the test ends.
@@ -139,5 +140,58 @@ struct TaskStorageResilienceTests {
 
         let components = SpaceFolderMap().components(forSpace: second.id, in: [cyclic, second])
         #expect(components.isEmpty == false)
+    }
+
+    // MARK: - Renaming a space must not move the tasks folder
+
+    /// A space named "Tasks" is given the folder "Tasks 2", so its name and its folder
+    /// disagree until the next scan reconciles them. Inside that window, renaming the space
+    /// derived the *old name* — "Tasks" — as the source, which is the live tasks folder: the
+    /// rename moved every task file out of it and stamped `_space.md` on top of them. Tasks
+    /// written in markdown mode have no encrypted copy, so that folder held the only one.
+    @Test("Renaming a space never moves the tasks folder")
+    func renameDoesNotStealTheTasksFolder() throws {
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let tasks = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        try TaskFolderStore(rootURL: tasks).prepare()
+        var task = TaskItem(id: UUID())
+        task.title = "Water the plants"
+        #expect(TaskFolderStore(rootURL: tasks).save(task))
+
+        // The space still carries the name it was created with, while its folder is "Tasks 2".
+        var space = Space(name: "Tasks")
+        let migrator = MarkdownStorageMigrator(
+            rootURL: root,
+            retireFile: { try FileManager.default.removeItem(at: $0) }
+        )
+        try migrator.createFolder(for: space, in: [space])
+
+        space.name = "Projects"
+        try migrator.moveFolder(from: ["Tasks"], for: space, in: [space])
+
+        // The tasks folder is untouched: still marked, still holding the task.
+        #expect(TaskFolderStore(rootURL: tasks).isMarkedTaskFolder)
+        #expect(TaskFolderStore(rootURL: tasks).loadAll().count == 1)
+        #expect(FileManager.default.fileExists(
+            atPath: tasks.appendingPathComponent(SpaceFile.filename).path
+        ) == false)
+        _ = temporary
+    }
+
+    @Test("A stray marker at the library root does not make the root the tasks folder")
+    func rootIsNeverTheTasksFolder() throws {
+        // `clearAllData` trashes `folderStore.rootURL`. Resolving that to the library root put
+        // every space and document in the Trash from a dialog offering to remove sample data.
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try write(TaskFile.folderMarkerContents(id: UUID()),
+                  to: root.appendingPathComponent(TaskFile.folderMarkerFilename))
+
+        #expect(TaskFolderStore.markedFolder(in: root) == nil)
+        _ = temporary
     }
 }

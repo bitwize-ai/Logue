@@ -132,28 +132,72 @@ extension MarkdownStorageMigrator {
     /// Moves a space's folder, for a space renamed or re-parented in the app.
     ///
     /// The identity is rewritten afterwards so the moved folder still names its space.
+    ///
+    /// Both ends are checked before anything moves, for the same reason `retireFolder` checks
+    /// before it trashes: `components` is derived from the space's *old name*, so it is a guess
+    /// about which directory belongs to this space, and stepping a folder aside is precisely
+    /// what makes a space's name and its folder disagree. A space named "Tasks" that was given
+    /// `Tasks 2` derives `["Tasks"]` here — the live tasks folder — and renaming it then moved
+    /// every task file out of it and stamped `_space.md` on top of them. Tasks written in
+    /// markdown mode have no encrypted copy, so that folder held the only one.
     func moveFolder(from components: [String], for space: Space, in spaces: [Space]) throws {
         let source = rootURL.appendingPathComponent(components.joined(separator: "/"))
+        guard FileManager.default.fileExists(atPath: source.path) else { return }
+        guard sourceBelongsTo(space, at: source) else { return }
+
         // The destination is name-derived on purpose: renaming a space is precisely the act of
         // asking for a folder named after the new name, so the folder map must not answer with
-        // where the folder currently is.
-        // Stepped past the tasks folder for the same reason creation is: renaming a space to
-        // "Tasks" would otherwise move it onto the live tasks folder.
+        // where the folder currently is. Only the *parents* are resolved by identity, so the
+        // move cannot walk through a folder that is no longer where its name says it is.
         let destination = avoidingTaskFolder(
-            rootURL.appendingPathComponent(
-                SpaceFolderLayout.directoryComponents(forSpace: space.id, in: spaces).joined(separator: "/")
-            ),
+            destinationURL(for: space, in: spaces),
             alreadyOccupying: source
         )
-        guard source.standardizedFileURL != destination.standardizedFileURL,
-              FileManager.default.fileExists(atPath: source.path)
-        else { return }
+        guard source.standardizedFileURL != destination.standardizedFileURL else { return }
 
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
         )
         try FileManager.default.moveItem(at: source, to: destination)
         writeIdentity(of: space, in: destination)
+    }
+
+    /// Whether the directory a rename is about to move really belongs to this space.
+    ///
+    /// A folder claiming nothing is accepted: a space created before this branch, or one whose
+    /// `_space.md` a user deleted, still has a folder that is legitimately its own. A folder
+    /// claiming a *different* space, or carrying the tasks marker, is refused and logged.
+    private func sourceBelongsTo(_ space: Space, at source: URL) -> Bool {
+        if TaskFolderStore(rootURL: source).isMarkedTaskFolder {
+            logger.error("Refused to move the tasks folder as if it were a space folder")
+            return false
+        }
+
+        let spaceFile = source.appendingPathComponent(SpaceFile.filename)
+        guard let contents = try? String(contentsOf: spaceFile, encoding: .utf8),
+              let claimed = SpaceFile.identity(from: contents)?.id
+        else { return true }
+
+        guard claimed == space.id else {
+            logger.error("Refused to move a folder that claims a different space")
+            return false
+        }
+        return true
+    }
+
+    /// Where a rename should put the folder: the new name, under the parents' *real* folders.
+    ///
+    /// The leaf is name-derived because that is what a rename asks for. The parents are not:
+    /// deriving those from ancestor names walks `createDirectory(withIntermediateDirectories:)`
+    /// straight through whatever now sits at a parent's name — including the live tasks folder,
+    /// where the snapshot excludes the space from every later scan. Since the ancestor walk in
+    /// `SpaceFolderMap` that folder then resolves to a path that does not exist, so the space
+    /// reads as vanished and its documents are trashed.
+    private func destinationURL(for space: Space, in spaces: [Space]) -> URL {
+        let leaf = SpaceFolderLayout.directoryComponents(forSpace: space.id, in: spaces).last
+            ?? space.name
+        let parents = spaceFolderMap(in: spaces).components(forSpace: space.parentID, in: spaces)
+        return rootURL.appendingPathComponent((parents + [leaf]).joined(separator: "/"))
     }
 
     /// Moves a space's folder to the Trash, for a space deleted in the app.
