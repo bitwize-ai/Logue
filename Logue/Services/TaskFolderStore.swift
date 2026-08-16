@@ -110,21 +110,28 @@ struct TaskFolderStore {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants],
             errorHandler: { url, error in
+                // Bound first, and one interpolated literal: an OSLog message is not an ordinary
+                // String, so it cannot be built by concatenating two of them, and spelling both
+                // interpolations out inline overruns the line limit.
+                let reason = error.localizedDescription
                 logger.error(
-                    "Could not read \(url.lastPathComponent, privacy: .public) while looking for the "
-                        + "task folder: \(error.localizedDescription, privacy: .public)"
+                    "Could not read \(url.lastPathComponent, privacy: .public) while finding the task folder: \(reason, privacy: .public)"
                 )
                 return true
             }
         )
         else { return nil }
 
-        let marked = enumerator
+        // Annotated so the key path below resolves: a DirectoryEnumerator yields `Any`, and
+        // without a stated element type the chain gives the compiler nothing to infer from.
+        let candidates: [TaskFolderStore] = enumerator
             .compactMap { $0 as? URL }
             .filter { TaskFile.isFolderMarker(filename: $0.lastPathComponent) }
             .map { TaskFolderStore(rootURL: $0.deletingLastPathComponent()) }
-            // A folder claimed by a space is not a task folder: space identity is older, holds
-            // documents, and misreading it destroys them. Same precedence the snapshot applies.
+
+        // A folder claimed by a space is not a task folder: space identity is older, holds
+        // documents, and misreading it destroys them. Same precedence the snapshot applies.
+        let marked = candidates
             .filter { !$0.isExistingSpaceFolder && $0.isMarkedTaskFolder }
             .map(\.rootURL)
 
