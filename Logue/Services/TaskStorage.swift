@@ -235,15 +235,19 @@ final class TaskStorage {
     /// `DocumentStorage.retireFolderAfterReEncryption` exists to handle.
     @discardableResult
     func reEncryptFromFolder() -> ReEncryptResult {
-        let fromFolder = folderStore.loadAll()
+        let loaded = folderStore.load()
+        let fromFolder = loaded.tasks
         var failed = 0
         for task in fromFolder where !writeEncrypted(task) {
             failed += 1
         }
-        // An empty read from a folder that exists and holds task files is a listing failure,
-        // not an empty task list. Told apart here because afterwards the folder is gone.
-        // `nil` (unlistable) counts as unreadable; only a confirmed zero means truly empty.
-        let unreadable = fromFolder.isEmpty && folderStore.exists && (folderStore.taskFileCount ?? 1) != 0
+        // Every task file that did not load, not just the case where none of them did. Ten
+        // files of which three have hand-edited frontmatter still return seven tasks, and
+        // testing for emptiness called that a complete read — then the folder was trashed with
+        // those three inside, and a task created during markdown mode has no other copy.
+        // A folder that exists but cannot be listed reads as zero files, so it counts too.
+        let listingFailed = folderStore.exists && folderStore.taskFileCount == nil
+        let unreadable = !loaded.isComplete || listingFailed
 
         // Merged with what encrypted storage already held: a task the folder never received
         // (an unwritable folder, a task trashed while in markdown mode) is still ours.

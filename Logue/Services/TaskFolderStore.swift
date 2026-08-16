@@ -100,27 +100,33 @@ struct TaskFolderStore {
     /// Ambiguity is not resolved by guessing: two marked folders keep the one actually named
     /// `TaskFile.folderName` if either is, and the situation is logged.
     static func markedFolder(in root: URL) -> URL? {
-        let entries: [URL]
-        do {
-            entries = try FileManager.default.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-        } catch {
-            // A missing root is the ordinary case before the first export, not an error worth
-            // shouting about; anything else is.
-            if (error as NSError).code != NSFileReadNoSuchFileError {
+        // Searched at every depth, because that is where the marker can end up and where
+        // `FolderSnapshot.taskFolders` already looks for it. Checking only the root's immediate
+        // children meant dragging `Tasks/` into another folder in Finder read as missing: the
+        // list emptied, the next save recreated an empty folder beside the real files, and the
+        // marker kept those files out of the document library too — reachable from nowhere.
+        guard let enumerator = FileManager.default.enumerator(
+            at: root.resolvingSymlinksInPath(),
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            errorHandler: { url, error in
                 logger.error(
-                    "Could not list the markdown root: \(error.localizedDescription, privacy: .public)"
+                    "Could not read \(url.lastPathComponent, privacy: .public) while looking for the "
+                        + "task folder: \(error.localizedDescription, privacy: .public)"
                 )
+                return true
             }
-            return nil
-        }
+        )
+        else { return nil }
 
-        let marked = entries
-            .filter { isDirectory($0) }
-            .filter { TaskFolderStore(rootURL: $0).isMarkedTaskFolder }
+        let marked = enumerator
+            .compactMap { $0 as? URL }
+            .filter { TaskFile.isFolderMarker(filename: $0.lastPathComponent) }
+            .map { TaskFolderStore(rootURL: $0.deletingLastPathComponent()) }
+            // A folder claimed by a space is not a task folder: space identity is older, holds
+            // documents, and misreading it destroys them. Same precedence the snapshot applies.
+            .filter { !$0.isExistingSpaceFolder && $0.isMarkedTaskFolder }
+            .map(\.rootURL)
 
         guard marked.count > 1 else { return marked.first }
 
@@ -133,13 +139,23 @@ struct TaskFolderStore {
         return chosen
     }
 
-    private static func isDirectory(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-        return exists && isDirectory.boolValue
-    }
-
     // MARK: - Reading
+
+    /// What a read of the folder found, including what it could not read.
+    ///
+    /// The skipped count matters only in one place, and it is the one that cannot be taken
+    /// back: the folder is trashed after re-encryption, so a task file that failed to load is
+    /// a task whose only copy is inside the folder about to go.
+    struct FolderLoad {
+        let tasks: [TaskItem]
+        /// Files that present as tasks but could not be read or parsed. A `.md` that carries
+        /// no task identifier is not counted — the folder is documented as tolerating those.
+        let unreadableTaskFiles: Int
+
+        var isComplete: Bool {
+            unreadableTaskFiles == 0
+        }
+    }
 
     /// Every task in the folder.
     ///
@@ -147,13 +163,33 @@ struct TaskFolderStore {
     /// the same rule `duplicatedDocumentFiles` applies, and the same reason: two files
     /// claiming one record is not something to resolve silently.
     func loadAll() -> [TaskItem] {
-        guard exists else { return [] }
+        load().tasks
+    }
+
+    /// `loadAll`, plus how many task files it had to skip.
+    func load() -> FolderLoad {
+        guard exists else { return FolderLoad(tasks: [], unreadableTaskFiles: 0) }
 
         var byID: [UUID: TaskItem] = [:]
         var duplicates = 0
+        var unreadable = 0
 
         for url in taskFileURLs() {
-            guard let contents = read(at: url), let task = TaskFile.parse(contents) else { continue }
+            guard let contents = read(at: url) else {
+                // Unreadable on disk: no way to tell whether it was a task, so it counts as
+                // one. Guessing the other way trashes it.
+                unreadable += 1
+                continue
+            }
+            guard let task = TaskFile.parse(contents) else {
+                // Parsed fine but carries no task identifier — a note the user dropped in,
+                // which `nonTaskFileIgnored` says is allowed. Carrying an identifier we could
+                // not parse is a corrupted task, and that is a loss.
+                if TaskFile.isTaskFile(contents: contents) {
+                    unreadable += 1
+                }
+                continue
+            }
             if byID[task.id] != nil {
                 duplicates += 1
                 continue
@@ -164,7 +200,10 @@ struct TaskFolderStore {
         if duplicates > 0 {
             Self.logger.info("\(duplicates, privacy: .public) duplicate task file(s) ignored")
         }
-        return Array(byID.values)
+        if unreadable > 0 {
+            Self.logger.error("\(unreadable, privacy: .public) task file(s) could not be read")
+        }
+        return FolderLoad(tasks: Array(byID.values), unreadableTaskFiles: unreadable)
     }
 
     /// The `.md` files that are not the marker, in a stable order.
