@@ -82,12 +82,46 @@ struct SpaceFolderMap: Sendable {
     /// The folder that claims the space wins over the name-derived path. A space with no folder yet
     /// — one just created in the app — falls back to the derived path, which is exactly the place we
     /// are about to create it.
+    ///
+    /// For that fallback only the space's own name is derived; its ancestors are asked where their
+    /// folders actually are. A parent's name and its folder can differ — a space whose folder was
+    /// stepped aside to avoid the tasks folder is named "Tasks" while occupying "Tasks 2" — and
+    /// deriving the whole chain from names then puts the child inside whatever currently sits at
+    /// the parent's name. When that is the live tasks folder, the new space and every document
+    /// filed into it are excluded from every later scan, because the snapshot keeps everything
+    /// under a task folder out of `spaceFiles` and `documentFiles`. They are not recoverable by
+    /// rescanning; they simply stop existing as far as the app is concerned.
     func components(forSpace spaceID: UUID?, in spaces: [Space]) -> [String] {
         guard let spaceID else { return [] }
         if let claimed = componentsByID[spaceID] {
             return claimed
         }
-        return SpaceFolderLayout.directoryComponents(forSpace: spaceID, in: spaces)
+
+        let derived = SpaceFolderLayout.directoryComponents(forSpace: spaceID, in: spaces)
+        guard let ownName = derived.last else { return derived }
+
+        // Walked rather than recursed, with the visited set that a corrupted parent chain
+        // requires: A parented to B parented to A would otherwise never terminate.
+        let byID = Dictionary(spaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var suffix = [ownName]
+        var visited: Set<UUID> = [spaceID]
+        var current = byID[spaceID]?.parentID
+
+        while let ancestorID = current, visited.insert(ancestorID).inserted {
+            if let claimed = componentsByID[ancestorID] {
+                return claimed + suffix
+            }
+            guard let ancestor = byID[ancestorID],
+                  let name = SpaceFolderLayout.directoryComponents(
+                      forSpace: ancestorID, in: spaces
+                  ).last
+            else { break }
+            suffix.insert(name, at: 0)
+            current = ancestor.parentID
+        }
+
+        // No ancestor has a folder yet, so there is nothing better than the derived chain.
+        return derived
     }
 
     /// Which space a folder belongs to.

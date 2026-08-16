@@ -104,15 +104,22 @@ extension MarkdownStorageMigrator {
     /// Steps over rather than refusing, so naming a space "Tasks" still works — the same rule
     /// the tasks side already applies when a space got to the name first. Only the colliding
     /// case behaves differently; every other path is returned untouched.
-    func avoidingTaskFolder(_ directory: URL) -> URL {
+    /// - Parameter alreadyOccupying: the folder the space is in now, when it has one. Counted as
+    ///   free, because a space already living in `Tasks 2` that is renamed back to "Tasks" should
+    ///   stay put rather than step past its own folder to `Tasks 3` — which physically relocates
+    ///   it and every document in it, and repeats on every attempt.
+    func avoidingTaskFolder(_ directory: URL, alreadyOccupying source: URL? = nil) -> URL {
         guard TaskFolderStore(rootURL: directory).isMarkedTaskFolder else { return directory }
 
         let parent = directory.deletingLastPathComponent()
         let name = directory.lastPathComponent
+        let occupied = source?.standardizedFileURL
         for suffix in 2 ... 20 {
             let candidate = parent.appendingPathComponent("\(name) \(suffix)", isDirectory: true)
-            let isFree = !FileManager.default.fileExists(atPath: candidate.path)
-                && !TaskFolderStore(rootURL: candidate).isMarkedTaskFolder
+            let isOwn = candidate.standardizedFileURL == occupied
+            let isFree = isOwn
+                || (!FileManager.default.fileExists(atPath: candidate.path)
+                    && !TaskFolderStore(rootURL: candidate).isMarkedTaskFolder)
             if isFree {
                 return candidate
             }
@@ -132,9 +139,12 @@ extension MarkdownStorageMigrator {
         // where the folder currently is.
         // Stepped past the tasks folder for the same reason creation is: renaming a space to
         // "Tasks" would otherwise move it onto the live tasks folder.
-        let destination = avoidingTaskFolder(rootURL.appendingPathComponent(
-            SpaceFolderLayout.directoryComponents(forSpace: space.id, in: spaces).joined(separator: "/")
-        ))
+        let destination = avoidingTaskFolder(
+            rootURL.appendingPathComponent(
+                SpaceFolderLayout.directoryComponents(forSpace: space.id, in: spaces).joined(separator: "/")
+            ),
+            alreadyOccupying: source
+        )
         guard source.standardizedFileURL != destination.standardizedFileURL,
               FileManager.default.fileExists(atPath: source.path)
         else { return }

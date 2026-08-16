@@ -282,6 +282,10 @@ final class DocumentStorage {
         case folderUnavailable
         case folderIncomplete(found: Int, expected: Int)
         case reEncryptionIncomplete(count: Int)
+        /// The tasks half did not finish. Separate from the documents case because the user is
+        /// told which of their things needs attention, and because a count of `nil` — the
+        /// folder could not be read, so nobody knows how many — is a real answer here.
+        case taskReEncryptionIncomplete(count: Int?)
 
         var errorDescription: String? {
             switch self {
@@ -294,6 +298,19 @@ final class DocumentStorage {
                 "\(count) document(s) had not finished writing to encrypted storage, so the folder "
                     + "was left where it is. Your documents are safe in both places — try turning "
                     + "the setting off again."
+            case let .taskReEncryptionIncomplete(count):
+                // No "try again" here: the mode has already flipped by the time this is thrown,
+                // so pointing the user back at the toggle points them at a control that is
+                // already off. The folder is still on disk, which is the thing to say.
+                if let count {
+                    "\(count) task(s) had not finished writing to encrypted storage, so the Logue "
+                        + "folder was left where it is. Your tasks are still in it — nothing was "
+                        + "deleted."
+                } else {
+                    "Some tasks could not be read back from the Logue folder, so it was left where "
+                        + "it is. Nothing was deleted; check the Tasks folder for files that cannot "
+                        + "be opened."
+                }
             case let .folderIncomplete(found, expected):
                 "The folder holds \(found) document(s) but Logue has \(expected), so nothing was "
                     + "changed. Press the rescan button in the sidebar to reconcile them first — "
@@ -381,7 +398,12 @@ final class DocumentStorage {
         // the folder — holding the only copy of those tasks — to the Trash anyway.
         let missingTasks = restoredTasks.filter { !TaskStorage.shared.hasEncryptedCopy(of: $0.id) }
         guard taskReEncryptionIsComplete, missingTasks.isEmpty else {
-            throw SwitchError.reEncryptionIncomplete(count: max(missingTasks.count, 1))
+            // A count only when one was actually measured. `taskReEncryptionIsComplete` can be
+            // false because the folder could not be read at all, in which case nobody knows how
+            // many tasks are in it, and inventing "1" told the user a number no one had counted.
+            throw SwitchError.taskReEncryptionIncomplete(
+                count: missingTasks.isEmpty ? nil : missingTasks.count
+            )
         }
 
         try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
