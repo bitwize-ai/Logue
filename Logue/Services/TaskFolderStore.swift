@@ -97,10 +97,16 @@ struct TaskFolderStore {
     /// missing, every task vanishes from the app, and the next save quietly recreates an empty
     /// one beside the real files, which that same marker keeps out of the document library.
     ///
-    /// Ambiguity is resolved by identity, not by name. Two marked folders are usually a copy of
-    /// one another, which share a marker; a restore is two *different* markers, because the
-    /// folder minted while the real one was away got a fresh one. `remembering` is the marker
-    /// this app last used, so the two cases are told apart by the thing the marker exists for.
+    /// Ambiguity is resolved by identity **where identity can settle it**. Two marked folders are
+    /// usually a copy of one another, which share a marker; a restore is two *different* markers,
+    /// because the folder minted while the real one was away got a fresh one. `remembering` is
+    /// the marker this app last used, so those two cases are told apart by the thing the marker
+    /// exists for.
+    ///
+    /// A shared marker is the case identity cannot settle — both folders are equally "ours" — and
+    /// there the name decides, then the first path so the answer is stable across runs. That
+    /// outcome is flagged `wasAmbiguous` rather than presented as a resolution;
+    /// `TaskFolderElection` owns the rule and `TaskFolderElectionTests` covers each branch.
     ///
     /// There is deliberately no fast path for the conventional name. One was added when this
     /// resolved on every read and write, and it short-circuited past exactly the ambiguity this

@@ -23,112 +23,27 @@ final class TaskStorage {
 
     // MARK: - Locations
 
-    /// The last resolved location, guarded by `locationLock`.
+    /// Where the folder is and which folder is ours — both, in one place that a test can build.
     ///
-    /// Remembered because resolving reads the filesystem and this is asked on every task load,
-    /// save and delete: with the root pointed at a synced vault, ticking one checkbox meant
-    /// walking the library before writing a byte.
-    ///
-    /// The risk this trades against is real and was the reason it was not cached before — a
-    /// stale path is how a folder stops being found at all — so it is dropped whenever the
-    /// answer can change: the storage mode switching, a scan reconciling the folder with what is
-    /// on disk, the remembered folder no longer being there, and the markdown root itself going
-    /// missing. A rename made in Finder is caught by the third of those on the very next access,
-    /// rather than waiting for a scan that debounces and can fail to start at all.
-    nonisolated(unsafe) private static var cachedFolderURL: URL?
-    private static let locationLock = NSLock()
+    /// Everything here used to be statics over `DocumentStorage.markdownRootURL` and
+    /// `UserDefaults.standard`. See `TaskFolderLocator` for why it is not any more.
+    nonisolated static let locator = TaskFolderLocator(root: { DocumentStorage.markdownRootURL })
 
     /// Forgets where the tasks folder is.
-    ///
-    /// Called from `DocumentStorage.invalidateFileIndex` and from the mode setter, so it drops
-    /// on everything that can move the folder: a scan, a space folder created, renamed or
-    /// retired, and a switch between storage modes. A rename made in Finder arrives through the
-    /// scan, which is how the app learns about every other external change too.
     nonisolated static func invalidateFolderLocation() {
-        locationLock.lock()
-        defer { locationLock.unlock() }
-        cachedFolderURL = nil
+        locator.invalidate()
     }
 
     nonisolated static var tasksFolderURL: URL {
-        locationLock.lock()
-        defer { locationLock.unlock() }
-
-        // A remembered path is only trusted while it is still there. Invalidation on a scan is
-        // not enough on its own: the watcher debounces, `rescan` returns early when one is
-        // already in flight, and it can fail to start at all — so between a rename made in
-        // Finder and the next scan the cache still names the old folder. A write in that window
-        // recreates `<root>/Tasks`, which then hides every file in the folder the user actually
-        // renamed. One `fileExists` on a path we already hold is cheap; the walk it guards
-        // is not.
-        if let cachedFolderURL, FileManager.default.fileExists(atPath: cachedFolderURL.path) {
-            return cachedFolderURL
-        }
-
-        // A missing root is not a moved folder. An unmounted drive, a folder dragged elsewhere
-        // and a sync that has not finished all look identical to "everything was deleted", and
-        // the document side refuses to act on that at all — `MarkdownFolderScan.isRootPresent`,
-        // and the rule in CLAUDE.md. Re-resolving here would answer `<root>/Tasks`, and the next
-        // write would recreate the whole root underneath it. The remembered path is kept until
-        // the root is back, so the folder is found again rather than replaced.
-        let root = DocumentStorage.markdownRootURL
-        guard FileManager.default.fileExists(atPath: root.path) else {
-            return cachedFolderURL ?? root.appendingPathComponent(
-                TaskFile.folderName, isDirectory: true
-            )
-        }
-
-        let resolved = resolveTasksFolderURL()
-        cachedFolderURL = resolved
-        return resolved
+        locator.folderURL
     }
-
-    /// Where tasks live, avoiding a folder that is already a space.
-    ///
-    /// `Tasks` is an obvious name for a space and users really do have one — a real library
-    /// turned out to have `~/Logue/Tasks` holding a hundred documents. Writing our marker in
-    /// there would put two identities on one folder, and the loser would be the space, taking
-    /// its documents with it. So an occupied name is stepped over rather than shared.
-    /// Which folder this app believes is its own.
-    ///
-    /// The rule lives in `TaskFolderMemory` so it can be driven from a test: it was got wrong in
-    /// three consecutive rounds while it was a static reading `UserDefaults.standard`, which
-    /// nothing could reach.
-    nonisolated static let folderMemory = TaskFolderMemory()
 
     /// Stops believing in the remembered folder, for the moments the user says so.
     ///
     /// Call this *after* the folder is gone. Resolving it in order to trash it is itself an act
     /// that can re-learn it, so forgetting first is undone by the very next line.
     nonisolated static func forgetMarker() {
-        folderMemory.forget()
-    }
-
-    nonisolated private static func resolveTasksFolderURL() -> URL {
-        let root = DocumentStorage.markdownRootURL
-
-        // Identity first. The name is only ever the *creation-time* default: once the folder
-        // exists it is found by the marker it carries, so renaming it in Finder — which the
-        // marker file explicitly invites — keeps tasks working instead of emptying the list.
-        if let marked = TaskFolderStore.markedFolder(in: root, remembering: folderMemory.remembered) {
-            folderMemory.rememberIfUnknown(TaskFolderStore(rootURL: marked).markerIdentifier)
-            return marked
-        }
-
-        let preferred = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
-        guard TaskFolderStore(rootURL: preferred).isExistingSpaceFolder else { return preferred }
-
-        for suffix in 2 ... 20 {
-            let candidate = root.appendingPathComponent(
-                "\(TaskFile.folderName) \(suffix)", isDirectory: true
-            )
-            if !TaskFolderStore(rootURL: candidate).isExistingSpaceFolder {
-                return candidate
-            }
-        }
-        // Twenty spaces all named some variant of "Tasks" is not a real library; take the
-        // preferred name back and let `prepare()` refuse it loudly.
-        return preferred
+        locator.forget()
     }
 
     /// The folder store for the live location.
@@ -246,18 +161,12 @@ final class TaskStorage {
             }
         }
 
-        // To the Trash, never `removeItem` — this is the user's own text.
-        let folder = folderStore
-        // Forgotten *after* the folder is resolved and gone, never before. Resolving it in order
-        // to trash it is itself what teaches the memory, so forgetting first is undone by the
-        // very next line — which is exactly what the previous attempt did.
-        defer {
-            Self.forgetMarker()
-            Self.invalidateFolderLocation()
-        }
-        guard folder.exists else { return }
+        // To the Trash, never `removeItem` — this is the user's own text. `retire` owns the
+        // resolve-trash-forget order, which is what kept being written the wrong way round here.
         do {
-            try FileManager.default.trashItem(at: folder.rootURL, resultingItemURL: nil)
+            try Self.locator.retire { folder in
+                try FileManager.default.trashItem(at: folder, resultingItemURL: nil)
+            }
         } catch {
             logger.error(
                 "Could not clear the tasks folder: \(error.localizedDescription, privacy: .public)"

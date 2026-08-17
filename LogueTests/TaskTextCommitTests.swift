@@ -82,9 +82,7 @@ struct TaskTextCommitTests {
         live.status = .done
         live.completedCount = 3
 
-        let loaded = task(title: "Old", notes: "")
         let commit = TaskTextCommit(taskID: live.id, title: nil, notes: "a note")
-        _ = loaded
         let applied = commit.applied(to: live)
 
         #expect(applied?.notes == "a note")

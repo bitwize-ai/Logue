@@ -38,9 +38,11 @@ struct TaskFolderMemory {
     ///
     /// Returns whether anything was written, so a caller can tell "already knew" from "just
     /// learned" without reading the value back.
+    /// `marker` is an autoclosure because reading it is a `fileExists`, a file read and a parse,
+    /// and every resolve after the first is a caller that already knows and does not need it.
     @discardableResult
-    func rememberIfUnknown(_ marker: UUID?) -> Bool {
-        guard remembered == nil, let marker else { return false }
+    func rememberIfUnknown(_ marker: @autoclosure () -> UUID?) -> Bool {
+        guard remembered == nil, let marker = marker() else { return false }
         defaults.set(marker.uuidString, forKey: key)
         return true
     }
