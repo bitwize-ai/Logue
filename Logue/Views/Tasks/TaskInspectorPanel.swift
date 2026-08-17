@@ -80,6 +80,22 @@ struct TaskInspectorPanel: View {
                 commitDrafts()
             }
         }
+        // A field the user is not typing in must never show text older than the record.
+        // Renaming the row in the list changes `task.title` without changing `task.id`, so
+        // nothing above re-runs: the field kept the old title, and an edit typed there sent
+        // that stale value back as the base — undoing the rename, and in markdown mode
+        // trashing the renamed file. The focused field is left alone, because resyncing it
+        // would overwrite what is being typed.
+        .onChange(of: task.title) { _, latest in
+            guard focus != .title else { return }
+            titleDraft = latest
+            draftSource?.title = latest
+        }
+        .onChange(of: task.notes) { _, latest in
+            guard focus != .notes else { return }
+            notesDraft = latest
+            draftSource?.notes = latest
+        }
         .onDisappear(perform: commitDrafts)
     }
 

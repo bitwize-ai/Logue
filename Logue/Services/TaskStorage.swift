@@ -52,7 +52,15 @@ final class TaskStorage {
     nonisolated static var tasksFolderURL: URL {
         locationLock.lock()
         defer { locationLock.unlock() }
-        if let cachedFolderURL {
+
+        // A remembered path is only trusted while it is still there. Invalidation on a scan is
+        // not enough on its own: the watcher debounces, `rescan` returns early when one is
+        // already in flight, and it can fail to start at all — so between a rename made in
+        // Finder and the next scan the cache still names the old folder. A write in that window
+        // recreates `<root>/Tasks`, which then wins the conventional fast path for good and
+        // hides every task file in the folder the user actually renamed. One `fileExists` on a
+        // path we already hold is cheap; the walk it guards is not.
+        if let cachedFolderURL, FileManager.default.fileExists(atPath: cachedFolderURL.path) {
             return cachedFolderURL
         }
         let resolved = resolveTasksFolderURL()
