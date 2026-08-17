@@ -414,6 +414,10 @@ final class DocumentStorage {
         }
 
         try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        // The tasks folder went to the Trash with the root, so the app must stop looking
+        // for it. Left remembered, restoring that folder for some unrelated reason would
+        // hand the user back a library they had told the app to retire.
+        TaskStorage.forgetMarker()
         logger.info("Moved the documents folder to the Trash")
     }
 
@@ -531,6 +535,10 @@ final class DocumentStorage {
 
         let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
         try migrator.retireRoot()
+        // The tasks folder went to the Trash with the root, so the app must stop looking
+        // for it. Left remembered, restoring that folder for some unrelated reason would
+        // hand the user back a library they had told the app to retire.
+        TaskStorage.forgetMarker()
         try migrator.prepareRoot()
         // The folder these ids referred to is gone, so the record refers to nothing.
         clearUnwritableDocuments()
@@ -546,6 +554,10 @@ final class DocumentStorage {
     func eraseMarkdownFolder() throws {
         stopWatching()
         try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        // The tasks folder went to the Trash with the root, so the app must stop looking
+        // for it. Left remembered, restoring that folder for some unrelated reason would
+        // hand the user back a library they had told the app to retire.
+        TaskStorage.forgetMarker()
         // The folder is no longer the library, so a record of which documents it failed to hold
         // means nothing — and `save` returns early in encrypted mode, so nothing else could ever
         // clear it. Left set, it would still be exempt from the deletion check on the way back.

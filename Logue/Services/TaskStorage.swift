@@ -89,42 +89,19 @@ final class TaskStorage {
     /// turned out to have `~/Logue/Tasks` holding a hundred documents. Writing our marker in
     /// there would put two identities on one folder, and the loser would be the space, taking
     /// its documents with it. So an occupied name is stepped over rather than shared.
-    /// The marker of the folder this app last used, if it has used one.
+    /// Which folder this app believes is its own.
     ///
-    /// Persisted rather than held in memory: the sequence it exists for — the folder renamed,
-    /// trashed by a reset, a write minting a replacement, then the real one restored — can
-    /// easily span a relaunch, and the two folders are indistinguishable without it.
-    nonisolated private static var rememberedMarker: UUID? {
-        UserDefaults.standard.string(forKey: AppConstants.UserDefaultsKeys.lastTaskFolderMarker)
-            .flatMap(UUID.init(uuidString:))
-    }
+    /// The rule lives in `TaskFolderMemory` so it can be driven from a test: it was got wrong in
+    /// three consecutive rounds while it was a static reading `UserDefaults.standard`, which
+    /// nothing could reach.
+    nonisolated static let folderMemory = TaskFolderMemory()
 
-    /// Records which folder this app is using, the first time it learns.
+    /// Stops believing in the remembered folder, for the moments the user says so.
     ///
-    /// Deliberately written once and not refreshed. Rewriting it on every resolve destroyed the
-    /// thing it exists for: with the real folder in the Trash, a task write mints a replacement,
-    /// and on the next launch that replacement is the only marked folder — so it was returned
-    /// *and* remembered, and restoring the original then lost the election exactly as it had
-    /// before the memory existed. A relaunch was precisely what wiped the memory meant to
-    /// survive one.
-    ///
-    /// A memory left pointing at a folder the user really did delete is harmless: it matches
-    /// nothing, so the election falls through to the name rule. `forgetMarker` covers the case
-    /// where they say so deliberately.
-    nonisolated private static func rememberMarkerIfUnknown(of folder: URL) {
-        guard rememberedMarker == nil,
-              let marker = TaskFolderStore(rootURL: folder).markerIdentifier
-        else { return }
-        UserDefaults.standard.set(
-            marker.uuidString, forKey: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
-        )
-    }
-
-    /// Drops the remembered folder, for a reset the user asked for.
+    /// Call this *after* the folder is gone. Resolving it in order to trash it is itself an act
+    /// that can re-learn it, so forgetting first is undone by the very next line.
     nonisolated static func forgetMarker() {
-        UserDefaults.standard.removeObject(
-            forKey: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
-        )
+        folderMemory.forget()
     }
 
     nonisolated private static func resolveTasksFolderURL() -> URL {
@@ -133,8 +110,8 @@ final class TaskStorage {
         // Identity first. The name is only ever the *creation-time* default: once the folder
         // exists it is found by the marker it carries, so renaming it in Finder — which the
         // marker file explicitly invites — keeps tasks working instead of emptying the list.
-        if let marked = TaskFolderStore.markedFolder(in: root, remembering: rememberedMarker) {
-            rememberMarkerIfUnknown(of: marked)
+        if let marked = TaskFolderStore.markedFolder(in: root, remembering: folderMemory.remembered) {
+            folderMemory.rememberIfUnknown(TaskFolderStore(rootURL: marked).markerIdentifier)
             return marked
         }
 
@@ -258,12 +235,6 @@ final class TaskStorage {
     /// the tasks would return on the next switch. Conversely a reset in encrypted mode never
     /// touched the folder at all.
     func clearAllData() {
-        // A reset is the user saying this folder is no longer the one. Without forgetting it,
-        // the write-once memory would keep pointing at a folder now in the Trash and hand the
-        // library back to it the moment they restored it for some other reason.
-        Self.forgetMarker()
-        Self.invalidateFolderLocation()
-
         let directory = encryptedDirectory
         if FileManager.default.fileExists(atPath: directory.path) {
             do {
@@ -277,6 +248,13 @@ final class TaskStorage {
 
         // To the Trash, never `removeItem` — this is the user's own text.
         let folder = folderStore
+        // Forgotten *after* the folder is resolved and gone, never before. Resolving it in order
+        // to trash it is itself what teaches the memory, so forgetting first is undone by the
+        // very next line — which is exactly what the previous attempt did.
+        defer {
+            Self.forgetMarker()
+            Self.invalidateFolderLocation()
+        }
         guard folder.exists else { return }
         do {
             try FileManager.default.trashItem(at: folder.rootURL, resultingItemURL: nil)
