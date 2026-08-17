@@ -5,20 +5,13 @@ import Testing
 
 /// Locating the tasks folder, against a real folder tree and a scratch defaults suite.
 ///
-/// This suite exists because the previous four rounds of review each found a defect in this
-/// logic and each fix was written into a static over `DocumentStorage.markdownRootURL` and
-/// `UserDefaults.standard` — reachable from nothing. Every case here drives
-/// `TaskFolderLocator` itself, so reverting the fix it names turns it red.
+/// Every case drives `TaskFolderLocator` itself, so reverting the fix it names turns it red —
+/// which is the whole reason the type exists. `TaskFolderLocator`'s header has the history.
 @Suite("TaskFolderLocator")
 struct TaskFolderLocatorTests {
     // MARK: - Fixtures
 
     /// A scratch root and defaults suite, both torn down afterwards.
-    ///
-    /// `#require` rather than `guard … else { return }` on both: returning without running the
-    /// body would pass the test having asserted nothing, and the defaults fallback that shipped
-    /// in the first draft of this suite (`?? .standard`) would have written the real
-    /// `lastTaskFolderMarker` key in the running user's preferences and still passed.
     private func withScratchLibrary(
         _ body: (URL, UserDefaults) throws -> Void
     ) throws {
@@ -27,11 +20,9 @@ struct TaskFolderLocatorTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let suite = "logue-locator-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        try body(root.resolvingSymlinksInPath(), defaults)
+        try withScratchDefaults(label: "logue-locator") { defaults in
+            try body(root.resolvingSymlinksInPath(), defaults)
+        }
     }
 
     private func makeLocator(root: URL, defaults: UserDefaults) -> TaskFolderLocator {
@@ -79,10 +70,15 @@ struct TaskFolderLocatorTests {
 
     @Test("The folder it trashes is the folder it stops believing in")
     func forgetsTheFolderItJustTrashed() throws {
-        // This is the ordering that was written the wrong way round three rounds running, and
-        // the reason `retire` is one method: forgetting first is undone by the resolve on the
-        // very next line, because resolving a marked folder is itself what teaches the memory.
-        // Move the `defer` in `TaskFolderLocator.retire` above `let folder` and this fails.
+        // The ordering `retire` exists to make unspellable: forgetting first is undone by the
+        // resolve on the very next line, because resolving a marked folder is itself what
+        // teaches the memory.
+        //
+        // To falsify: in `TaskFolderLocator.retire`, replace `defer { forget() }` with a plain
+        // `forget()` placed *above* `let folder = folderURL`. Hoisting the `defer` itself is a
+        // no-op — Swift runs it at scope exit wherever it is registered — so that is not the
+        // mutation. The straight-line version is what the code used to be, and it turns this
+        // case and two others red.
         try withScratchLibrary { root, defaults in
             let folder = try makeTaskFolder(named: "Errands", in: root)
             let locator = makeLocator(root: root, defaults: defaults)
@@ -119,7 +115,15 @@ struct TaskFolderLocatorTests {
             // Restored by hand, exactly as it was, marker included.
             try FileManager.default.moveItem(at: elsewhere, to: folder)
 
+            // The observation has to be a *resolve*, not another `UserDefaults` read: a read
+            // alone cannot be influenced by anything on disk, so it would restate the previous
+            // case rather than test the restore. What matters is that the restored folder is
+            // adopted afresh — it wins on being the only marked folder — and not because the
+            // app still believed in it. Its marker is unchanged, so the two are told apart by
+            // the memory having been empty at the moment of the resolve.
             #expect(remembered(defaults) == nil, "the restore must not resurrect the old memory")
+            #expect(samePath(locator.folderURL, folder), "adopted again, on its own merits")
+            #expect(remembered(defaults) == marker, "and re-learned only by that fresh resolve")
         }
     }
 
@@ -145,7 +149,7 @@ struct TaskFolderLocatorTests {
     }
 
     @Test("A trash that throws still stops us believing in the folder")
-    func aFailedTrashDoesNotForget() throws {
+    func aFailedTrashStillForgets() throws {
         // `retire` rethrows, so `clearAllData` logs and the folder survives. The forget still
         // happens, because it is in the `defer`: the user asked for that folder to be gone, and
         // the next resolve should read what is actually on disk rather than what we believed
@@ -204,26 +208,21 @@ struct TaskFolderLocatorTests {
         // An unmounted drive, a folder dragged elsewhere and a half-finished sync are
         // indistinguishable from "everything was deleted". Re-resolving here would answer
         // `<root>/Tasks`, and the next write would recreate the whole library underneath it.
+        //
+        // The root is really removed rather than hidden behind an injected `fileExists`. The
+        // injected version did not discriminate: `resolve(in:)` reaches the filesystem through
+        // `TaskFolderStore`, which never consults the closure, so with the guard deleted the
+        // walk still found the folder and the case passed either way — the very failure mode
+        // this suite exists to end.
         try withScratchLibrary { root, defaults in
             let folder = try makeTaskFolder(named: "Errands", in: root)
-            var rootIsPresent = true
-            let locator = TaskFolderLocator(
-                memory: TaskFolderMemory(
-                    defaults: defaults,
-                    key: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
-                ),
-                root: { root },
-                fileExists: { url in
-                    // The whole subtree goes with the root. Hiding only the root itself left the
-                    // cached folder readable, so the cache answered and the guard below it —
-                    // the thing this case exists for — was never reached.
-                    guard rootIsPresent || !url.path.hasPrefix(root.path) else { return false }
-                    return FileManager.default.fileExists(atPath: url.path)
-                }
-            )
+            let locator = makeLocator(root: root, defaults: defaults)
             #expect(samePath(locator.folderURL, folder))
 
-            rootIsPresent = false
+            try FileManager.default.removeItem(at: root)
+
+            // Delete the `guard fileExists(root)` in `resolvedFolderURL` and this answers
+            // `<root>/Tasks`, because the walk finds nothing and falls through to the default.
             #expect(samePath(locator.folderURL, folder), "not <root>/Tasks")
         }
     }
@@ -236,7 +235,7 @@ struct TaskFolderLocatorTests {
         try withScratchLibrary { root, defaults in
             let original = try makeTaskFolder(named: "Tasks", in: root)
             let locator = makeLocator(root: root, defaults: defaults)
-            #expect(locator.folderURL == original)
+            #expect(samePath(locator.folderURL, original))
 
             let renamed = root.appendingPathComponent("Errands", isDirectory: true)
             try FileManager.default.moveItem(at: original, to: renamed)

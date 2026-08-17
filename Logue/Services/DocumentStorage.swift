@@ -36,8 +36,11 @@ final class DocumentStorage {
                 mode.rawValue, forKey: AppConstants.UserDefaultsKeys.documentStorageMode
             )
             // Tasks follow this mode, and where their folder is depends on it. Dropped here
-            // rather than in each switch method so a mode set by any route — including the one
-            // read back at launch — cannot leave a remembered path from the other mode behind.
+            // rather than in each switch method so no switch can leave a remembered path from
+            // the other mode behind. This does *not* cover the value read back at launch:
+            // `private init()` assigns `mode` directly and property observers do not run during
+            // initialisation. Harmless, because a fresh process has an empty cache — but a
+            // future route that sets the mode before the first resolve needs its own drop.
             TaskStorage.invalidateFolderLocation()
         }
     }
@@ -426,10 +429,8 @@ final class DocumentStorage {
     /// Trash — restoring that folder for some unrelated reason then hands the user back a library
     /// they had told the app to retire — and, spelled as two statements, that omission looks like
     /// nothing in review. It was already the defect at two of the three original call sites.
-    private func retireRootAndForgetTasks(
-        using migrator: MarkdownStorageMigrator? = nil
-    ) throws {
-        try (migrator ?? MarkdownStorageMigrator(rootURL: Self.markdownRootURL)).retireRoot()
+    private func retireRootAndForgetTasks() throws {
+        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
         TaskStorage.forgetMarker()
     }
 
@@ -545,9 +546,8 @@ final class DocumentStorage {
     func clearMarkdownFolderContents() throws {
         guard mode.isMarkdown else { return }
 
-        let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
-        try retireRootAndForgetTasks(using: migrator)
-        try migrator.prepareRoot()
+        try retireRootAndForgetTasks()
+        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).prepareRoot()
         // The folder these ids referred to is gone, so the record refers to nothing.
         clearUnwritableDocuments()
         invalidateFileIndex()

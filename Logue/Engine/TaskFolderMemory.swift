@@ -3,10 +3,10 @@ import Foundation
 /// Which tasks folder this app believes is its own.
 ///
 /// Small, and separate from `TaskStorage`, for one reason: the rule it holds has been got wrong
-/// in three consecutive rounds of review, every time because it lived in a static that read
-/// `UserDefaults.standard` and could not be driven from a test. `TaskFolderStore`'s own header
-/// draws this line already — "takes its root as a parameter rather than reading a singleton, so
-/// it is testable" — and this is the state that was left on the wrong side of it.
+/// repeatedly in review because it lived in a static that read `UserDefaults.standard` and could
+/// not be driven from a test — see `TaskFolderLocator`'s header for that history, which is told
+/// once, there. `TaskFolderStore` draws the same line: "takes its root as a parameter rather than
+/// reading a singleton, so it is testable". This is the state that was left on the wrong side.
 ///
 /// The rule itself is one sentence: **learn once, forget deliberately.**
 ///

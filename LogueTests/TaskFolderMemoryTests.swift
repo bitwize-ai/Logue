@@ -5,8 +5,8 @@ import Testing
 
 /// Which folder the app believes is its own.
 ///
-/// This rule was got wrong in three consecutive rounds of review, every time because it lived in
-/// a static reading `UserDefaults.standard` that no test could reach.
+/// Kept honest by being driven directly; see `TaskFolderLocator`'s header for why this rule has
+/// its own type at all.
 ///
 /// `doesNotRelearn` and `forgettingAllowsRelearning` are the two that discriminate — they fail
 /// against refresh-on-every-resolve and against write-once-never-forget respectively. The rest
@@ -14,21 +14,15 @@ import Testing
 /// two shapes broke lives in `TaskFolderLocatorTests`, against a real folder.
 @Suite("TaskFolderMemory")
 struct TaskFolderMemoryTests {
-    /// A defaults suite per test, so nothing here touches the app's own preferences.
-    ///
-    /// `#require` rather than a fallback to `.standard`: a fallback would write the real
-    /// `lastTaskFolderMarker` key in the running user's preferences, wipe the folder they were
-    /// actually using, and pass.
     private func withScratchMemory(_ body: (TaskFolderMemory) throws -> Void) throws {
-        let name = "logue-memory-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        try body(
-            TaskFolderMemory(
-                defaults: defaults,
-                key: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
+        try withScratchDefaults(label: "logue-memory") { defaults in
+            try body(
+                TaskFolderMemory(
+                    defaults: defaults,
+                    key: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
+                )
             )
-        )
+        }
     }
 
     @Test("A fresh app remembers nothing")

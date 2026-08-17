@@ -27,7 +27,9 @@ final class TaskStorage {
     ///
     /// Everything here used to be statics over `DocumentStorage.markdownRootURL` and
     /// `UserDefaults.standard`. See `TaskFolderLocator` for why it is not any more.
-    nonisolated static let locator = TaskFolderLocator(root: { DocumentStorage.markdownRootURL })
+    nonisolated private static let locator = TaskFolderLocator(
+        root: { DocumentStorage.markdownRootURL }
+    )
 
     /// Forgets where the tasks folder is.
     nonisolated static func invalidateFolderLocation() {

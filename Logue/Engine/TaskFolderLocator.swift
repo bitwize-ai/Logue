@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Where the tasks folder is, and when to stop believing in it.
 ///
@@ -7,19 +8,22 @@ import Foundation
 /// a rule nothing can execute is a rule that gets rewritten wrong. Four consecutive rounds of
 /// review found a defect in this logic while it was a set of statics over those two globals, and
 /// each fix was written into a place no test could reach — so the next round found the next one.
+/// This paragraph is the one statement of that; `TaskFolderMemory` and both test suites point
+/// here rather than restating it in their own words and drifting.
 ///
 /// Everything stateful about locating the folder lives here: the path cache, the marker memory,
 /// and the retire sequence whose *order* is the thing that keeps being got wrong.
 ///
 /// `@unchecked Sendable`: every mutable member is `cachedFolderURL`, and every read and write of
 /// it happens with `lock` held. `memory` is a value type over `UserDefaults`, which is itself
-/// thread-safe, and `root` and `fileExists` are set once in `init` and never reassigned. Tasks
+/// thread-safe, and `root` is set once in `init` and never reassigned. Tasks
 /// are read and written from both the main actor and the file-watcher's queue, which is why this
 /// is a lock rather than actor isolation.
 final class TaskFolderLocator: @unchecked Sendable {
+    private static let logger = Logger(subsystem: AppConstants.bundleID, category: "TaskFolderLocator")
+
     private let memory: TaskFolderMemory
     private let root: () -> URL
-    private let fileExists: (URL) -> Bool
 
     private let lock = NSLock()
     /// The last resolved location, guarded by `lock`.
@@ -39,22 +43,30 @@ final class TaskFolderLocator: @unchecked Sendable {
     /// for the reason spelled out at the guard below.
     private var cachedFolderURL: URL?
 
-    init(
-        memory: TaskFolderMemory = TaskFolderMemory(),
-        root: @escaping () -> URL,
-        fileExists: @escaping (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
-    ) {
+    init(memory: TaskFolderMemory = TaskFolderMemory(), root: @escaping () -> URL) {
         self.memory = memory
         self.root = root
-        self.fileExists = fileExists
+    }
+
+    /// Deliberately not injected. It was, briefly, and the one test that faked it did not
+    /// discriminate: `resolve(in:)` reaches the filesystem through `TaskFolderStore`, which never
+    /// saw the fake, so the case passed with the guard it was named for deleted. A scratch root
+    /// that is really removed tests the real thing; a seam nothing injects is just surface.
+    private func fileExists(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
     }
 
     /// Forgets where the tasks folder is, without forgetting *which* folder is ours.
     ///
     /// Called from `DocumentStorage.invalidateFileIndex` and from the mode setter, so it drops
-    /// on everything that can move the folder: a scan, a space folder created, renamed or
-    /// retired, and a switch between storage modes. A rename made in Finder arrives through the
-    /// scan, which is how the app learns about every other external change too.
+    /// on the events the app knows about: a scan, a space folder created, renamed or retired,
+    /// and a switch between storage modes.
+    ///
+    /// It is deliberately **not** the only thing that drops a stale path. The scan debounces,
+    /// `rescan` returns early when one is already in flight, and it can fail to start at all,
+    /// so a rename made in Finder is caught by the existence check in `folderURL` on the very
+    /// next access rather than by an invalidation that may never arrive. Do not delete that
+    /// check on the strength of this one.
     func invalidate() {
         lock.lock()
         defer { lock.unlock() }
@@ -64,7 +76,7 @@ final class TaskFolderLocator: @unchecked Sendable {
     var folderURL: URL {
         lock.lock()
         defer { lock.unlock() }
-        return locked_folderURL()
+        return resolvedFolderURL()
     }
 
     /// Sends the tasks folder to the Trash and stops believing in it — in that order.
@@ -77,25 +89,28 @@ final class TaskFolderLocator: @unchecked Sendable {
     ///
     /// `trash` is passed in rather than called directly so the sequence can be driven without
     /// a Trash: it receives the resolved folder and is invoked only when that folder exists.
+    ///
+    /// The lock is taken by `folderURL` and by `forget()`, and is **not** held across `trash`.
+    /// `NSLock` is not recursive, so a closure that asked this locator anything — a log line
+    /// naming `TaskStorage.tasksFolderURL` would be enough — would deadlock the app while
+    /// deleting the user's tasks. Nothing about the ordering needs the two steps to be one
+    /// critical section: the point is that the resolve happens first, not that nothing else
+    /// runs in between.
     func retire(_ trash: (URL) throws -> Void) rethrows {
-        lock.lock()
-        defer { lock.unlock() }
-
-        let folder = locked_folderURL()
-        defer {
-            memory.forget()
-            cachedFolderURL = nil
-        }
+        // Resolving is itself what teaches the memory, so it has to happen before the forget.
+        let folder = folderURL
+        defer { forget() }
         guard fileExists(folder) else { return }
         try trash(folder)
     }
 
     /// Stops believing in the remembered folder, for a caller that has already disposed of it.
     ///
-    /// Prefer `retire(_:)`, which cannot be ordered wrongly. This exists for the two markdown
-    /// paths that retire the whole root — the tasks folder goes with it, but they are not the
-    /// ones doing it — and it is correct there only because the root is already gone by the
-    /// time they call.
+    /// Prefer `retire(_:)`, which cannot be ordered wrongly. This exists for the markdown paths
+    /// that retire the whole *root* — the tasks folder goes with it, but they are not the ones
+    /// doing it — and it is correct there only because the root is already gone by the time they
+    /// call. They all reach it through `DocumentStorage.retireRootAndForgetTasks`, which is the
+    /// one place to look for the current list.
     func forget() {
         lock.lock()
         defer { lock.unlock() }
@@ -106,7 +121,7 @@ final class TaskFolderLocator: @unchecked Sendable {
     // MARK: - Resolution
 
     /// - Precondition: `lock` is held.
-    private func locked_folderURL() -> URL {
+    private func resolvedFolderURL() -> URL {
         // A remembered path is only trusted while it is still there. Invalidation on a scan is
         // not enough on its own: the watcher debounces, `rescan` returns early when one is
         // already in flight, and it can fail to start at all — so between a rename made in
@@ -159,11 +174,19 @@ final class TaskFolderLocator: @unchecked Sendable {
                 "\(TaskFile.folderName) \(suffix)", isDirectory: true
             )
             if !TaskFolderStore(rootURL: candidate).isExistingSpaceFolder {
+                // Said out loud: the user gets a folder they did not name, and without this
+                // there is nothing anywhere that answers "why is there a Tasks 2".
+                Self.logger.info(
+                    "\(TaskFile.folderName, privacy: .public) is already a space; tasks will use \(candidate.lastPathComponent, privacy: .public)"
+                )
                 return candidate
             }
         }
         // Twenty spaces all named some variant of "Tasks" is not a real library; take the
         // preferred name back and let `prepare()` refuse it loudly.
+        Self.logger.error(
+            "Every candidate name up to 20 is already a space; tasks have nowhere to go and \(TaskFile.folderName, privacy: .public) will be refused"
+        )
         return preferred
     }
 }
