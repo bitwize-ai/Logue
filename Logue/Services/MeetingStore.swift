@@ -418,8 +418,18 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         // The transcriber finalises when it is confident, not when a sentence ends, so a thought
         // arrives split across two lines. Joined here, as it arrives, the stored transcript is made
         // of sentences and everything downstream inherits that rather than working around it.
+        // Both capture sources feeding one analyzer means consecutive lines can be different
+        // people, and nothing in the segment says which — so merging is held off until only one
+        // source is live. Read from the recorder rather than the meeting's mode because the mode
+        // is what was intended and this is what is actually running: a system tap that failed to
+        // start, or a muted mic, leaves one source and the merge is safe again.
+        let recorder = RecordingSessionManager.shared
+        let twoSources = recorder.isCapturingSystemAudio && recorder.isMicActive
+
         if let last = meetings[index].segments.last,
-           TranscriptSentenceMerge.shouldMerge(previous: last, next: segment)
+           TranscriptSentenceMerge.shouldMerge(
+               previous: last, next: segment, mayCarryTwoSpeakers: twoSources
+           )
         {
             meetings[index].segments[meetings[index].segments.count - 1] =
                 TranscriptSentenceMerge.merged(last, with: segment)

@@ -53,7 +53,7 @@ struct RecordingRecoveryTests {
         _ = try InProgressRecordingStore.directory(for: id)
         #expect(InProgressRecordingStore.pendingMeetingIDs().contains(id))
         #expect(
-            RecordingCheckpoint.read(meetingID: id) == nil,
+            RecordingCheckpoint.read(meetingID: id) == .absent,
             "a session that crashed inside its first checkpoint has nothing to rebuild from"
         )
     }

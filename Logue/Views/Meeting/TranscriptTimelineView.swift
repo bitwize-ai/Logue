@@ -48,7 +48,9 @@ struct TranscriptTimelineView: View {
         var hasher = Hasher()
         for segment in segments {
             hasher.combine(segment.id)
-            hasher.combine(segment.text.count)
+            // The text itself, not its length: realignment exists to swap a word for a better
+            // one of similar length, and a length-only hash calls that no change at all.
+            hasher.combine(segment.text)
         }
         return hasher.finalize()
     }
@@ -257,6 +259,12 @@ struct TranscriptTimelineView: View {
         .background(AppThemeConstants.contentBackground)
         .onAppear { recomputeBlocksIfNeeded() }
         .onChange(of: segments.count) { recomputeBlocksIfNeeded() }
+        // Text changing without the count changing is the ordinary case during recording, not an
+        // edge one: a continuation folded into the line before it by `TranscriptSentenceMerge`
+        // leaves the count alone, and realignment swaps words for better ones. Without this the
+        // key that discriminates on text was never re-evaluated, so the transcript stopped
+        // updating mid-recording — the defect this view's cache key was widened for.
+        .onChange(of: segmentTextHash) { recomputeBlocksIfNeeded() }
         .onChange(of: searchText) { recomputeBlocksIfNeeded() }
         .onChange(of: speakerColors) { forceRecomputeBlocks() }
         .onChange(of: speakerLabelHash) { forceRecomputeBlocks() }

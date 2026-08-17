@@ -24,8 +24,28 @@ enum TranscriptSentenceMerge {
     }
 
     /// Whether `next` should be folded into `previous`.
-    static func shouldMerge(previous: TranscriptSegment, next: TranscriptSegment) -> Bool {
-        // Never merge across speakers: a reply is a new line however it is punctuated.
+    ///
+    /// - Parameter mayCarryTwoSpeakers: whether more than one capture source is live, so a line
+    ///   and the line after it can come from different people. The speaker check below cannot
+    ///   answer that during recording: `SpeechTranscriberEngine` builds every segment with
+    ///   `speakerLabel: nil` because diarization has not run yet, so it is always `nil == nil`
+    ///   and always passes. With the mic and the system tap feeding one analyzer, a local
+    ///   utterance ending without punctuation followed shortly by a remote reply satisfies every
+    ///   other check and becomes one line carrying one id and one speaker — and nothing later
+    ///   splits it, because blocks are cut by time and diarization only adds labels.
+    ///
+    ///   Refusing outright while both sources are live is a bound, not the whole answer: telling
+    ///   the two apart needs the source tagged on the buffer that produced the segment, which the
+    ///   shared analyzer does not carry today. Until it does, an over-split line is a far cheaper
+    ///   artefact than two speakers merged into one.
+    static func shouldMerge(
+        previous: TranscriptSegment,
+        next: TranscriptSegment,
+        mayCarryTwoSpeakers: Bool = false
+    ) -> Bool {
+        guard !mayCarryTwoSpeakers else { return false }
+        // Never merge across speakers: a reply is a new line however it is punctuated. Effective
+        // only after diarization has labelled the segments.
         guard previous.speakerLabel == next.speakerLabel else { return false }
         guard !endsSentence(previous.text) else { return false }
         guard next.startTime - previous.endTime <= maximumGap else { return false }

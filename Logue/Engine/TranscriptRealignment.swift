@@ -91,9 +91,18 @@ enum TranscriptRealignment {
             )
         }
 
+        // Only this session's lines may receive this session's words. Shifting the words is not
+        // enough on its own: a session that produced no live lines of its own — the speech gate
+        // admitting nothing, or the transcriber erroring — leaves every shifted word past the end
+        // of every earlier line, and the nearest-segment fallback has no distance cap, so the
+        // whole second session was concatenated into the last line of the first. Five minutes of
+        // correct transcript then read as the wrong session.
+        let candidates = live.indices.filter { live[$0].startTime >= sessionStart }
+        guard !candidates.isEmpty else { return live }
+
         // Paired with their positions before sorting, so a word can be attributed back to the
         // segment it belongs to whatever order the times arrive in.
-        let ordered = live.indices
+        let ordered = candidates
             .map { (offset: $0, element: live[$0]) }
             .sorted { $0.element.startTime < $1.element.startTime }
         var collected: [Int: [String]] = [:]

@@ -92,9 +92,6 @@ final class DiarizationManager {
     // Extension-visible: +BatchASR
     let sampleRate: Float = 16000.0
 
-    /// Target format for diarization: 16 kHz mono Float32.
-    private var targetFormat: AVAudioFormat?
-
     /// Reports what each source is actually contributing to the session timeline.
     ///
     /// The saved file is written straight from the capture tap, so it can be perfectly audible while
@@ -111,8 +108,16 @@ final class DiarizationManager {
 
     /// Reusable AVAudioConverters for efficient resampling — one per capture source, lazily created
     /// and rebuilt only when that source's own input format changes.
-    private var resamplers: [AudioSource: AVAudioConverter] = [:]
-    private var resamplerInputFormats: [AudioSource: AVAudioFormat] = [:]
+    /// One converter per source, because the mic and the system tap rarely share a format and a
+    /// single shared one would be torn down and rebuilt on every buffer as the two alternate —
+    /// paying for the rebuild each time and losing the resampler's carried-over state with it.
+    ///
+    /// `TimelineAudioConverter` rather than a bare `AVAudioConverter`: this was a second copy of
+    /// that conversion, and the two had already drifted in both directions — the tested copy
+    /// carried a frame margin this lacked, this carried `primeMethod = .none` the tested copy
+    /// lacked. So `TimelineAudioConversionTests` guarded a type that never ran, and a regression
+    /// here left all four of its cases green.
+    private var resamplers: [AudioSource: TimelineAudioConverter] = [:]
 
     // MARK: - Streaming State
 
@@ -164,9 +169,6 @@ final class DiarizationManager {
     ) {
         self.config = config
         self.isEnabled = isEnabled
-        targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false
-        )
     }
 
     // MARK: - Initialization
@@ -467,50 +469,12 @@ final class DiarizationManager {
     // MARK: - Audio Conversion
 
     private func convertBufferToFloatArray(_ buffer: AVAudioPCMBuffer, from source: AudioSource) -> [Float]? {
-        let frameCount = Int(buffer.frameLength)
-        guard frameCount > 0, buffer.format.channelCount > 0, let targetFormat else { return nil }
-
-        if buffer.format == targetFormat, let channelData = buffer.floatChannelData {
-            return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
-        }
-
-        // One converter per source. The mic and the system tap rarely share a format, and a single
-        // shared converter would be torn down and rebuilt on every buffer as the two alternate —
-        // paying for the rebuild each time and losing the resampler's carried-over state with it.
-        if resamplers[source] == nil || resamplerInputFormats[source] != buffer.format {
-            guard let converter = AVAudioConverter(from: buffer.format, to: targetFormat) else { return nil }
-            converter.primeMethod = .none
-            resamplers[source] = converter
-            resamplerInputFormats[source] = buffer.format
-        }
-
-        guard let converter = resamplers[source] else { return nil }
-        guard buffer.format.sampleRate > 0 else { return nil }
-
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let outputFrameCount = AVAudioFrameCount((Double(frameCount) * ratio).rounded(.up))
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount) else {
-            return nil
-        }
-
-        var consumed = false
-        var nsError: NSError?
-        let status = converter.convert(to: outputBuffer, error: &nsError) { _, statusPtr in
-            if consumed {
-                statusPtr.pointee = .noDataNow
-                return nil
-            }
-            consumed = true
-            statusPtr.pointee = .haveData
-            return buffer
-        }
-
-        guard status != .error else {
-            logger.warning("Audio conversion failed: \(nsError?.localizedDescription ?? "unknown", privacy: .public)")
-            return nil
-        }
-        guard let channelData = outputBuffer.floatChannelData else { return nil }
-        return Array(UnsafeBufferPointer(start: channelData[0], count: Int(outputBuffer.frameLength)))
+        let converter = resamplers[source] ?? {
+            let made = TimelineAudioConverter()
+            resamplers[source] = made
+            return made
+        }()
+        return converter.samples(from: buffer)
     }
 
     // MARK: - Reset
@@ -520,7 +484,6 @@ final class DiarizationManager {
         mixer.removeAll()
         lastError = nil
         resamplers.removeAll()
-        resamplerInputFormats.removeAll()
         samplesAccumulatedSinceLastProcess = 0
     }
 }

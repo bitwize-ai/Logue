@@ -54,19 +54,37 @@ extension RecordingSessionManager {
     }
 
     private func recoverSession(_ meetingID: UUID) async {
-        guard let checkpoint = RecordingCheckpoint.read(meetingID: meetingID) else {
+        let checkpoint: RecordingCheckpoint
+        switch RecordingCheckpoint.read(meetingID: meetingID) {
+        case let .checkpoint(read):
+            checkpoint = read
+        case .absent:
             // A working directory with no checkpoint is a session that crashed inside its first
             // thirty seconds. There is nothing to rebuild from, so it is cleared rather than kept.
             logger.info("Discarding an interrupted session with no checkpoint")
             InProgressRecordingStore.clear(meetingID: meetingID)
             return
+        case .unreadable:
+            // A checkpoint that exists but will not decrypt says nothing about the audio beside
+            // it. Kept, so a restored-from-backup Mac does not destroy the recording it was
+            // meant to rebuild.
+            logger.error("Checkpoint could not be read — keeping the interrupted recording")
+            return
         }
 
         guard MeetingStore.shared.meetings.contains(where: { $0.id == meetingID }) else {
-            // Only safe to conclude this because the library is known to have loaded — see
-            // `waitForMeetingStore`. Deleting on an unloaded store destroys good recordings.
-            guard MeetingStore.shared.isLoaded else {
-                logger.warning("Meeting not found but the library is not loaded — keeping the recording")
+            // `isLoaded` on its own is not evidence the library was read. `loadFromDiskAsync`
+            // sets it on all four terminal paths, two of which are failures: every meeting file
+            // failing to decrypt leaves `meetings` empty, and a decode error substitutes seed
+            // data. Either would make a real meeting look deleted — and this branch removes the
+            // recording's audio, which is the outcome `waitForMeetingStore` exists to prevent.
+            // So all three have to hold: loading finished, it did not fall back to seed data,
+            // and it actually produced meetings.
+            let store = MeetingStore.shared
+            guard store.isLoaded, !store.loadedSeedData, !store.meetings.isEmpty else {
+                logger.warning(
+                    "Meeting not found but the library did not load cleanly — keeping the recording"
+                )
                 return
             }
             logger.info("Interrupted session belongs to a meeting that no longer exists — discarding")

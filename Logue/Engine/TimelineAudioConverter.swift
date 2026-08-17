@@ -34,6 +34,9 @@ final class TimelineAudioConverter {
 
         if converter == nil || converterInputFormat != buffer.format {
             guard let made = AVAudioConverter(from: buffer.format, to: timelineFormat) else { return nil }
+            // No priming latency. Left at the default the resampler emits leading silence the
+            // timeline has no room for, which walks every later placement off by that much.
+            made.primeMethod = .none
             converter = made
             converterInputFormat = buffer.format
         }

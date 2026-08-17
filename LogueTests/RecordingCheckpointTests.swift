@@ -52,7 +52,11 @@ struct RecordingCheckpointTests {
             asText.contains("a confidential sentence") == false,
             "the transcript is sitting on disk in the clear for the length of every meeting"
         )
-        #expect(RecordingCheckpoint.read(meetingID: id)?.segments.first?.text == "a confidential sentence")
+        guard case let .checkpoint(read) = RecordingCheckpoint.read(meetingID: id) else {
+            Issue.record("the checkpoint should still be readable by the app that wrote it")
+            return
+        }
+        #expect(read.segments.first?.text == "a confidential sentence")
     }
 
     @Test("Placements survive, because they are the part that cannot be recomputed")
@@ -92,15 +96,34 @@ struct RecordingCheckpointTests {
 
         let original = checkpoint(meetingID: id)
         try RecordingCheckpoint.write(original)
-        let restored = try #require(RecordingCheckpoint.read(meetingID: id))
+        guard case let .checkpoint(restored) = RecordingCheckpoint.read(meetingID: id) else {
+            Issue.record("a checkpoint just written should read back")
+            return
+        }
         #expect(restored == original)
     }
 
-    @Test("Reading a meeting with no checkpoint returns nothing rather than throwing")
-    func missingCheckpointIsNil() {
+    @Test("A meeting with no checkpoint reads as absent, not as unreadable")
+    func missingCheckpointIsAbsent() {
+        // The two are told apart because recovery deletes the recording on one of them.
         let id = UUID()
         defer { InProgressRecordingStore.clear(meetingID: id) }
-        #expect(RecordingCheckpoint.read(meetingID: id) == nil)
+        #expect(RecordingCheckpoint.read(meetingID: id) == .absent)
+    }
+
+    @Test("A checkpoint that will not decrypt reads as unreadable, not as absent")
+    func corruptCheckpointIsUnreadable() throws {
+        // The case a Mac restored from a backup hits: the key is stored
+        // WhenUnlockedThisDeviceOnly, so a fresh one cannot open the old file. Reading that
+        // as "no checkpoint" removed the working directory and the audio inside it.
+        let id = UUID()
+        defer { InProgressRecordingStore.clear(meetingID: id) }
+
+        let url = try InProgressRecordingStore.directory(for: id)
+            .appending(component: "checkpoint.json")
+        try Data("not an encrypted checkpoint".utf8).write(to: url)
+
+        #expect(RecordingCheckpoint.read(meetingID: id) == .unreadable)
     }
 
     @Test("A cleared session leaves nothing pending")

@@ -79,6 +79,16 @@ final class RecordingSessionManager {
         recordingState == .stopping
     }
 
+    /// Whether an interrupted session is being rebuilt.
+    ///
+    /// Surfaced because the rebuild holds `recordingState` for minutes on a long meeting —
+    /// splicing a multi-hour file, then initialising the diarizer — and `startRecording`
+    /// refuses throughout. Without this the toolbar rendered a live, enabled Record button the
+    /// whole time, so a press looked accepted and did nothing.
+    var isRecovering: Bool {
+        recordingState == .recovering
+    }
+
     var currentMeetingID: UUID?
     var errorMessage: String?
     var isDiarizing = false
@@ -297,7 +307,13 @@ final class RecordingSessionManager {
     func startRecording(for meeting: MeetingNote) async {
         guard recordingState == .idle else {
             if recordingState == .recovering {
+                // Said out loud, because the refusal is otherwise invisible and two of the three
+                // ways a recording starts destroy the request rather than retrying it: the
+                // workspace clears `pendingAutoRecord` before awaiting this, so automatic
+                // capture silently does nothing, and the menu-bar item shows the recording panel
+                // for a session that never began.
                 logger.info("Not starting a recording while an interrupted session is being rebuilt")
+                captureNotice = "Finishing an interrupted recording…"
             }
             return
         }
@@ -449,6 +465,11 @@ final class RecordingSessionManager {
             try audioRecorder.startRecording()
             recordingState = .recording
             isMicActive = true
+            // A mute belongs to the session it was made in. Left set, it survived into every
+            // later meeting of the same run: the mic looked live, and the first device
+            // renegotiation refused to resume it — silent capture loss, which is the failure
+            // the device-loss handling exists to prevent.
+            isMicMuted = false
             micSegments.sourceStarted(atSessionTime: 0, fileDuration: 0)
         } catch {
             errorMessage = RecordingError.micStartFailed(error.localizedDescription).localizedDescription
@@ -471,6 +492,7 @@ final class RecordingSessionManager {
             recordingState = .idle
             isCapturingSystemAudio = false
             isMicActive = false
+            isMicMuted = false
         }
 
         let meeting = MeetingStore.shared.meetings.first { $0.id == meetingID }

@@ -47,16 +47,35 @@ struct RecordingCheckpoint: Codable, Equatable {
         try data.write(to: url, options: .atomic)
     }
 
-    static func read(meetingID: UUID) -> RecordingCheckpoint? {
+    /// What a read found, told apart because the caller deletes the recording on one of them.
+    ///
+    /// `absent` and `unreadable` used to be the same `nil`, and recovery reads that as "the
+    /// session crashed inside its first thirty seconds" and removes the working directory —
+    /// mic file, system file and all, with `removeItem` rather than the Trash. Encrypting the
+    /// checkpoint added a second way to reach it: the key is stored
+    /// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, so a Mac restored from a backup or
+    /// migrated to new hardware generates a fresh one, `AES.GCM.open` fails, and the audio of
+    /// a crash-interrupted meeting is destroyed on first launch.
+    enum ReadOutcome: Equatable {
+        case checkpoint(RecordingCheckpoint)
+        /// No file. Nothing was ever written, so there is nothing to rebuild from.
+        case absent
+        /// The file is there and could not be read. Says nothing about the audio beside it.
+        case unreadable
+    }
+
+    static func read(meetingID: UUID) -> ReadOutcome {
         do {
             let directory = try InProgressRecordingStore.directory(for: meetingID)
             let url = directory.appending(component: fileName)
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            guard FileManager.default.fileExists(atPath: url.path) else { return .absent }
             let data = try Data(contentsOf: url)
-            return try EncryptionManager.decryptCodable(RecordingCheckpoint.self, from: data)
+            return try .checkpoint(
+                EncryptionManager.decryptCodable(RecordingCheckpoint.self, from: data)
+            )
         } catch {
             logger.error("Could not read checkpoint: \(error.localizedDescription, privacy: .public)")
-            return nil
+            return .unreadable
         }
     }
 }

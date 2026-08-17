@@ -283,7 +283,9 @@ extension MeetingWorkspaceView {
 
     @ViewBuilder
     func startStopButton(for meeting: MeetingNote) -> some View {
-        if recorder.isStartingRecording {
+        if recorder.isRecovering {
+            recordProgressButton(label: "Finishing an interrupted recording…")
+        } else if recorder.isStartingRecording {
             recordProgressButton(label: "Starting…")
         } else if recorder.isStopping {
             recordProgressButton(label: "Stopping…")
