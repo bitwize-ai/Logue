@@ -5,6 +5,15 @@ import os.log
 /// Diarization-related methods extracted from RecordingSessionManager.
 /// Handles speaker detection, merging, alignment, and Sortformer streaming updates.
 extension RecordingSessionManager {
+    /// Whether the diarization pass in flight belongs to this meeting.
+    ///
+    /// `isDiarizing` on its own is global, and the summary panel reads it as if it were
+    /// per-meeting — which put a spinner over a finished meeting's saved Smart Minutes for the
+    /// whole of another meeting's pass, because that branch is taken ahead of the content.
+    func isDiarizing(for meetingID: UUID) -> Bool {
+        isDiarizing && diarizingMeetingID == meetingID
+    }
+
     // MARK: - Model Initialization
 
     /// Waits for diarization model initialization, capped at

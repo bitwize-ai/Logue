@@ -21,7 +21,10 @@ struct MeetingSpeakersPanelView: View {
 
     var body: some View {
         Group {
-            if recorder.isDiarizing {
+            // Scoped to this meeting: the loading branch is taken ahead of the speakers this
+            // meeting already has, so a global flag blanks a finished meeting's speaker list for
+            // the length of another meeting's pass.
+            if recorder.isDiarizing(for: meeting.id) {
                 diarizationLoadingView
             } else if speakerStats.isEmpty {
                 EmptyStateView(

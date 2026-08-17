@@ -56,19 +56,4 @@ enum RecordingStartOutcome: Equatable {
             false
         }
     }
-
-    /// What to tell the user, when the refusal is worth mentioning.
-    ///
-    /// `nil` where the app already says it another way: a started session is visible, and the
-    /// permission and engine failures set `errorMessage`.
-    var notice: String? {
-        switch self {
-        case .rebuildingInterruptedSession:
-            "Finishing an interrupted recording — this will start when it is done."
-        case .previousSessionStopping:
-            "Saving the last recording — this will start when it is done."
-        case .started, .alreadyStarting, .microphoneDenied, .engineUnavailable, .captureFailed:
-            nil
-        }
-    }
 }

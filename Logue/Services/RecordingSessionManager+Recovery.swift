@@ -170,9 +170,11 @@ extension RecordingSessionManager {
         }
 
         isDiarizing = true
+        diarizingMeetingID = meetingID
         diarizationStage = "Recovering meeting…"
         defer {
             isDiarizing = false
+            diarizingMeetingID = nil
             diarizationStage = ""
         }
 

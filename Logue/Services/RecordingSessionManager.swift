@@ -92,6 +92,12 @@ final class RecordingSessionManager {
     var currentMeetingID: UUID?
     var errorMessage: String?
     var isDiarizing = false
+
+    /// Which meeting the in-flight diarization pass belongs to. Read via `isDiarizing(for:)`.
+    ///
+    /// Extension-visible: +Recovery
+    var diarizingMeetingID: UUID?
+
     /// Human-readable label for the current post-recording diarization stage. Empty when idle.
     var diarizationStage = ""
     /// Status of speaker detection during recording.
@@ -252,7 +258,8 @@ final class RecordingSessionManager {
     /// Single-consumer stream that coalesces audio buffers from the audio thread.
     /// Replaces per-buffer `Task { @MainActor }` creation to prevent MainActor flooding.
     var audioBufferContinuation: AsyncStream<CapturedAudio>.Continuation?
-    private var audioBufferConsumerTask: Task<Void, Never>?
+    // Extension-visible: +AudioStream
+    var audioBufferConsumerTask: Task<Void, Never>?
 
     // MARK: - Computed
 
@@ -312,9 +319,14 @@ final class RecordingSessionManager {
     // swiftlint:disable:next function_body_length
     func startRecording(for meeting: MeetingNote) async -> RecordingStartOutcome {
         guard recordingState == .idle else {
+            // Deliberately not written to `captureNotice`. That banner renders only while
+            // `isRecording`, which is false in every state that reaches here, so it could never
+            // be seen at the moment it was true — and nothing clears it until the *next* session
+            // tears down, so it then sat over that recording as a stale warning. The toolbar is
+            // the channel that works: `startStopButton` already reads `.recovering` and
+            // `.stopping` and says which one is holding things up.
             let refusal = RecordingStartOutcome(refusedIn: recordingState)
             logger.info("Recording not started: \(String(describing: refusal), privacy: .public)")
-            captureNotice = refusal.notice ?? captureNotice
             return refusal
         }
         recordingState = .starting
@@ -538,6 +550,7 @@ final class RecordingSessionManager {
         let capturedDiarizer = diarizationManager
         diarizationManager = nil
         isDiarizing = capturedDiarizer != nil
+        diarizingMeetingID = capturedDiarizer != nil ? meetingID : nil
 
         postRecordingTask = Task { [weak self] in
             // If models are still initializing, Sortformer is not streaming yet and diarization
@@ -736,49 +749,6 @@ final class RecordingSessionManager {
         audioRecorder.onAudioBuffer = nil
         isMicActive = false
         logger.info("Microphone muted")
-    }
-
-    // MARK: - Audio Buffer Stream
-
-    /// Creates a single-consumer async stream for audio buffers.
-    /// One MainActor Task processes all buffers sequentially, instead of spawning a new Task per buffer.
-    private func startAudioBufferConsumer(engine: SpeechTranscriberEngine, diarizer: DiarizationManager) {
-        // Clean up any existing stream
-        audioBufferContinuation?.finish()
-        audioBufferConsumerTask?.cancel()
-
-        let (stream, continuation) = AsyncStream<CapturedAudio>.makeStream()
-        audioBufferContinuation = continuation
-
-        audioBufferConsumerTask = Task { [weak self, weak engine, weak diarizer] in
-            for await captured in stream {
-                guard !Task.isCancelled else { break }
-
-                // The diarizer and the file get every buffer, always. Only the transcriber is
-                // gated, and only on the microphone: the system tap is already silent when nothing
-                // is playing, and gating it could cost a remote speaker's opening word for nothing.
-                diarizer?.processAudioBuffer(captured.buffer, from: captured.source)
-
-                guard captured.source == .microphone, let self else {
-                    engine?.streamAudio(captured.buffer)
-                    continue
-                }
-
-                for buffer in await admitToTranscriber(captured.buffer, diarizer: diarizer) {
-                    engine?.streamAudio(buffer)
-                }
-            }
-        }
-    }
-
-    /// Runs a microphone buffer past the voice-activity gate, falling back to passing it straight
-    /// through whenever the model is not available.
-    private func admitToTranscriber(
-        _ buffer: AVAudioPCMBuffer,
-        diarizer: DiarizationManager?
-    ) async -> [AVAudioPCMBuffer] {
-        guard let vad = await diarizer?.ensureVadManager() else { return [buffer] }
-        return await speechGate.admit(buffer, at: sessionElapsed, vad: vad)
     }
 
     // MARK: - Permissions

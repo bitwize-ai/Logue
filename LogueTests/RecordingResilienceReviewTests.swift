@@ -139,12 +139,13 @@ struct RecordingResilienceReviewTests {
     func startedKeepsNothing() {
         #expect(RecordingStartOutcome.started.started)
         #expect(RecordingStartOutcome.started.clearsOnItsOwn == false)
-        #expect(RecordingStartOutcome.started.notice == nil)
     }
 
     @Test("Each blocked recorder state maps to the refusal that describes it", arguments: [
-        (RecordingSessionManager.RecordingState.recovering,
-         RecordingStartOutcome.rebuildingInterruptedSession),
+        (
+            RecordingSessionManager.RecordingState.recovering,
+            RecordingStartOutcome.rebuildingInterruptedSession
+        ),
         (.stopping, .previousSessionStopping),
         (.starting, .alreadyStarting),
     ])
@@ -153,14 +154,5 @@ struct RecordingResilienceReviewTests {
         expected: RecordingStartOutcome
     ) {
         #expect(RecordingStartOutcome(refusedIn: state) == expected)
-    }
-
-    @Test("The two waits explain themselves; the permanent failures are reported elsewhere")
-    func onlyWaitsCarryANotice() {
-        #expect(RecordingStartOutcome.rebuildingInterruptedSession.notice != nil)
-        #expect(RecordingStartOutcome.previousSessionStopping.notice != nil)
-        // These set `errorMessage` instead, so a notice would say it twice.
-        #expect(RecordingStartOutcome.microphoneDenied.notice == nil)
-        #expect(RecordingStartOutcome.engineUnavailable.notice == nil)
     }
 }
