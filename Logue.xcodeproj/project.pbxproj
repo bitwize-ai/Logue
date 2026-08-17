@@ -275,6 +275,7 @@
 		6D5F5E356DF157A16246B26C /* NeighborhoodTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D417341CA0E1725E2C8FB9BA /* NeighborhoodTests.swift */; };
 		6D80A163739F4E45394B2AC9 /* PromptRegistry+Writing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C843F0CCD12C0AFFD804F85 /* PromptRegistry+Writing.swift */; };
 		6D86DD0D26811B19EEE00299 /* AIContentScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCC95C3045D2301DCC960849 /* AIContentScorer.swift */; };
+		6DAA46367DD76A4D62BC2B67 /* SourcesPanelContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE731B3E0B169C32E1D10C9 /* SourcesPanelContentTests.swift */; };
 		6E33CC2D3A37790D824199A3 /* MeetingStore+Diarization.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7FD01A02C6FB9C64A0238CF /* MeetingStore+Diarization.swift */; };
 		6E577F8B48F4A11B36E16B66 /* SelectableOptionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54288BA1E89F95FD74442B71 /* SelectableOptionCard.swift */; };
 		6E66E9B993B63623F605E552 /* BlockPasteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C42C0A1E60F8FC22AC2EF3 /* BlockPasteTests.swift */; };
@@ -869,6 +870,7 @@
 		7A901D5DCF74B145662923EA /* DocumentStore+Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DocumentStore+Persistence.swift"; sourceTree = "<group>"; };
 		7AB95EB1E8811078D07C7524 /* ChatBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatBubble.swift; sourceTree = "<group>"; };
 		7ABC89CED798F0088E00B682 /* CommandCenterComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandCenterComposeView.swift; sourceTree = "<group>"; };
+		7AE731B3E0B169C32E1D10C9 /* SourcesPanelContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourcesPanelContentTests.swift; sourceTree = "<group>"; };
 		7BE9BA34E8404D7F7AB815F1 /* WikiLinkClickTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkClickTests.swift; sourceTree = "<group>"; };
 		7CB8F29FAA5817D348722762 /* MultiBlockSelectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiBlockSelectionState.swift; sourceTree = "<group>"; };
 		7CD8FDAFABDFD03AEBAB2750 /* InsightsSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsSectionView.swift; sourceTree = "<group>"; };
@@ -1310,6 +1312,7 @@
 				361DCA7F1668F213992E9448 /* SidebarItemPersistenceTests.swift */,
 				5EC0BFF05793C2090F8A90C1 /* SidebarWidthLimitTests.swift */,
 				20A9DCED765C659BAD6BA11C /* SortformerTimelineTests.swift */,
+				7AE731B3E0B169C32E1D10C9 /* SourcesPanelContentTests.swift */,
 				382510F54B865B60B16FDE73 /* SpaceFileTests.swift */,
 				A4ADE45DAEF548E410D5FEB6 /* SpaceFolderAdoptionTests.swift */,
 				62A5299B26C4D742EB7BABD3 /* SpaceFolderLayoutTests.swift */,
@@ -2410,6 +2413,7 @@
 				152732F0E74B6DB0CF3896CF /* SidebarItemPersistenceTests.swift in Sources */,
 				F5591335FF5786E244D72E2E /* SidebarWidthLimitTests.swift in Sources */,
 				480E2F2ECBABB70296373573 /* SortformerTimelineTests.swift in Sources */,
+				6DAA46367DD76A4D62BC2B67 /* SourcesPanelContentTests.swift in Sources */,
 				AA1456FCC75FBB7DFEFC1BE0 /* SpaceFileTests.swift in Sources */,
 				F00F684F4A965C5A8303A1D5 /* SpaceFolderAdoptionTests.swift in Sources */,
 				9C2E27B8A6B79A81F9495399 /* SpaceFolderLayoutTests.swift in Sources */,

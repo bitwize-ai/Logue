@@ -137,4 +137,9 @@ jobs:
             -skipPackagePluginValidation \
             -only-testing:LogueTests/WhatsNewGateTests \
             -only-testing:LogueTests/AppVersionTests \
+            -only-testing:LogueTests/HomeAskPromptsTests \
+            -only-testing:LogueTests/HomeSuggestionsTests \
+            -only-testing:LogueTests/HomeContinueGridTests \
+            -only-testing:LogueTests/SourcesPanelContentTests \
+            -only-testing:LogueTests/SidebarItemPersistenceTests \
             CODE_SIGNING_ALLOWED=NO

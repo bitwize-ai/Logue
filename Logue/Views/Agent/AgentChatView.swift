@@ -96,9 +96,9 @@ struct AgentChatView: View {
                 CanvasPaneView()
                     .frame(minWidth: 380, idealWidth: 480, maxWidth: .infinity)
                     .animation(Motion.spring, value: canvas.snapshots.count)
-            } else if showSourcesPanel, hasAnswerSources {
+            } else if showSourcesPanel, hasSourcesToShow {
                 // Both conditions, not just the toggle. `showSourcesPanel` is the user's
-                // preference; `hasAnswerSources` is whether there is anything to show. On
+                // preference; `hasSourcesToShow` is whether there is anything to draw. On
                 // Home — and in any conversation the agent has not sourced — the answer is
                 // no, and a panel that opens onto nothing is a dead half of the window.
                 Divider()
@@ -135,7 +135,7 @@ struct AgentChatView: View {
         }
         .onAppear {
             ensureActiveConversation()
-            showSourcesPanel = hasAnswerSources
+            showSourcesPanel = hasAgentSources
         }
         .onChange(of: activeConversation?.messages.last?.content) { _, content in
             // Phase C: open Canvas automatically for long code or
@@ -155,7 +155,7 @@ struct AgentChatView: View {
             // Switching conversations (or starting a new one) hides the panel.
             withAnimation(Motion.spring) { showSourcesPanel = false }
         }
-        .onChange(of: hasAnswerSources) { _, has in
+        .onChange(of: hasAgentSources) { _, has in
             // Auto-open the panel as soon as the agent emits sourced output;
             // never auto-close mid-conversation since the user may have
             // closed it intentionally — only the conversation-id change does.
@@ -165,17 +165,27 @@ struct AgentChatView: View {
         }
     }
 
-    /// Does the active conversation contain any answer-derived sources?
+    /// Is there anything for the sources panel to draw?
     ///
-    /// Drives both the right pane's auto-open and whether its toolbar button exists, so it
-    /// asks `SourcesPanelContent` — the same rules the panel renders from. A tool-name
-    /// heuristic here instead would hide the button for conversations whose sources came
-    /// from a tool it did not think to name.
-    private var hasAnswerSources: Bool {
+    /// Drives whether the toolbar button exists, so it asks `SourcesPanelContent` — the same
+    /// rules the panel renders from. A tool-name heuristic here instead would hide the button
+    /// for conversations whose sources came from a tool it did not think to name.
+    private var hasSourcesToShow: Bool {
         SourcesPanelContent.hasContent(
             messages: activeConversation?.messages ?? [],
             attachmentCount: inputAttachments.count
         )
+    }
+
+    /// Has the *agent* sourced an answer? The auto-open's question, which is not the panel's.
+    ///
+    /// Deliberately blind to staged attachments: dropping a file onto the prompt bar is not the
+    /// agent producing sources, and counting it threw the panel open over Home's landing.
+    ///
+    /// Read once per message change rather than per body pass — `body` re-evaluates on every
+    /// streamed token, and this regex-sweeps every tool result's text.
+    private var hasAgentSources: Bool {
+        SourcesPanelContent.hasAnswerSources(in: activeConversation?.messages ?? [])
     }
 
     // MARK: - Layouts
@@ -288,9 +298,7 @@ struct AgentChatView: View {
 
         inputBar
             .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
-            .frame(maxWidth: AppThemeConstants.contentColumnWidth)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24)
+            .homeContentColumn()
             .padding(.bottom, 12)
     }
 
@@ -371,7 +379,7 @@ struct AgentChatView: View {
             // Only offered once the agent has actually cited something. A toggle that is
             // always present on Home advertises a panel with nothing in it, and pressing
             // it is a dead end rather than a feature.
-            if hasAnswerSources {
+            if hasSourcesToShow {
                 Button {
                     showSourcesPanel.toggle()
                 } label: {

@@ -7,14 +7,28 @@ import Testing
 /// wrapping grid replaced a carousel to avoid.
 @Suite("HomeContinueGrid")
 struct HomeContinueGridTests {
-    @Test("Two rows, at every width")
-    func neverExceedsTwoRows() {
-        // Every width from a very narrow pane to an ultrawide display.
-        for width in stride(from: CGFloat(120), through: 3000, by: 4) {
-            let columns = HomeContinueGrid.columnCount(forWidth: width)
+    @Test("Every column fits a whole card, at every width")
+    func columnsAlwaysFitTheirCards() {
+        // The row cap cannot be checked against `maximumItems`, which is *defined* as
+        // `columnCount * maxRows` — that arithmetic holds for any `columnCount` at all, so
+        // replacing it with `{ _ in 47 }` passed at every sampled width. What actually decides
+        // whether a third row appears is that a column is never narrower than a card: too many
+        // columns and the grid wraps.
+        for width in stride(from: CGFloat(200), through: 3000, by: 4) {
+            let columns = CGFloat(HomeContinueGrid.columnCount(forWidth: width))
+            let needed = columns * HomeContinueGrid.minCardWidth
+                + (columns - 1) * HomeContinueGrid.spacing
+            #expect(needed <= width, "\(Int(columns)) columns do not fit in \(width)pt")
+        }
+    }
+
+    @Test("Two rows of full-width cards is the most that is ever fetched")
+    func neverFetchesMoreThanTwoRows() {
+        for width in stride(from: CGFloat(200), through: 3000, by: 4) {
             let items = HomeContinueGrid.maximumItems(forWidth: width)
-            let rows = Int((Double(items) / Double(columns)).rounded(.up))
-            #expect(rows <= HomeContinueGrid.maxRows, "at width \(width)")
+            let columns = HomeContinueGrid.columnCount(forWidth: width)
+            #expect(items == columns * HomeContinueGrid.maxRows, "at width \(width)")
+            #expect(items >= HomeContinueGrid.maxRows, "at width \(width)")
         }
     }
 
@@ -44,14 +58,13 @@ struct HomeContinueGridTests {
         #expect(HomeContinueGrid.columnCount(forWidth: exactlyThree - 1) == 2)
     }
 
-    @Test("The fetch limit fills both rows at the full content column")
-    func fetchLimitFillsTheWidestLayout() {
-        // These two numbers live in different files; nothing but this ties them together.
-        #expect(
-            HomeContinueGrid.fetchLimit
-                == HomeContinueGrid.maximumItems(forWidth: AppThemeConstants.contentColumnWidth)
-        )
-        #expect(HomeContinueGrid.fetchLimit >= HomeContinueGrid.maxRows)
+    @Test("The fetch limit is six: three columns, two rows")
+    func fetchLimitIsSix() {
+        // Written out rather than derived. `fetchLimit` *is*
+        // `maximumItems(forWidth: contentColumnWidth)`, so comparing the two was `x == x` and
+        // held however either side changed. Six is what the design was drawn against, and
+        // retuning the content column or the minimum card width has to come past this line.
+        #expect(HomeContinueGrid.fetchLimit == 6)
     }
 
     @Test("The content column fits three columns")

@@ -6,20 +6,15 @@ import SwiftUI
 /// Logue's #1 brand cue and should appear wherever the user is making a
 /// decision (typing a message, picking a model, opening Settings).
 ///
-/// There was a `.banner` variant for a full-width line under the input. Home's landing
-/// replaced the hero that used it, and the window subtitle says the same thing from
-/// `UICopy.Trust.bannerFull`, so it went with its last caller.
+/// There was a full-width banner form for a line under the input. Home's landing replaced the
+/// hero that used it, and the window subtitle says the same thing from `UICopy.Trust.bannerFull`,
+/// so it went with its last caller — and the single-case enum that selected between them went
+/// too, rather than being left as a choice the type no longer offers.
 struct TrustChip: View {
-    enum Variant {
-        case compact
-    }
-
-    let variant: Variant
     let label: String
     let detail: String?
 
-    init(variant: Variant = .compact, label: String = "Local", detail: String? = nil) {
-        self.variant = variant
+    init(label: String = "Local", detail: String? = nil) {
         self.label = label
         self.detail = detail
     }
@@ -52,6 +47,6 @@ struct TrustChip: View {
 }
 
 #Preview {
-    TrustChip(variant: .compact, label: "Local")
+    TrustChip(label: "Local")
         .padding()
 }

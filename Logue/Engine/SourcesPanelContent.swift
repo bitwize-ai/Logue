@@ -62,6 +62,18 @@ enum SourcesPanelContent {
         if attachmentCount > 0 {
             return true
         }
+        return hasAnswerSources(in: messages)
+    }
+
+    /// Whether the *agent* has produced anything worth showing — references or cited URLs.
+    ///
+    /// Separate from `hasContent` because the panel and its auto-open ask different questions.
+    /// "Is there anything to draw?" counts a file the user has staged in the prompt bar; "has the
+    /// agent sourced an answer?" must not. Folding the two together meant dropping a PDF onto
+    /// Home's landing threw open a 280pt panel over the screen whose own comment calls a panel
+    /// there "a dead half of the window" — and sending the message closed it again, because
+    /// clearing the attachments took the condition back down.
+    static func hasAnswerSources(in messages: [AgentMessage]) -> Bool {
         if !referenceKeys(in: messages).isEmpty {
             return true
         }
