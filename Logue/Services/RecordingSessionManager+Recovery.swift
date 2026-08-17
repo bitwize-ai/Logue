@@ -48,7 +48,16 @@ extension RecordingSessionManager {
             if MeetingStore.shared.isLoaded {
                 return true
             }
-            try? await Task.sleep(for: AppConstants.Delays.meetingStoreLoadPoll)
+            // Not `try?`. The one thing `Task.sleep` throws is cancellation, and swallowing it
+            // here leaves a loop with no suspension left in its body: `.task` on the root view
+            // cancels this when the window closes during launch, and it then span the main actor
+            // flat out for the rest of the 30-second budget — a beachball exactly when the
+            // store is slow, which is when this code runs at all.
+            do {
+                try await Task.sleep(for: AppConstants.Delays.meetingStoreLoadPoll)
+            } catch {
+                return false
+            }
         }
         return MeetingStore.shared.isLoaded
     }
@@ -123,7 +132,18 @@ extension RecordingSessionManager {
     /// belongs on the meeting, and they cannot be worked out afterwards from the files themselves.
     private func captureSources(from checkpoint: RecordingCheckpoint) -> CaptureSources {
         var sources = CaptureSources()
-        guard let directory = try? InProgressRecordingStore.directory(for: checkpoint.meetingID) else {
+        let directory: URL
+        do {
+            directory = try InProgressRecordingStore.directory(for: checkpoint.meetingID)
+        } catch {
+            // Silently returning empty sources here loses the recording and says nothing: the
+            // audio never gets attached, the batch pass declines, and the meeting comes back
+            // with only its checkpointed transcript. `SandboxContainerMigrator` moving the
+            // container is exactly the case recovery exists to tolerate, and exactly the case
+            // that makes this throw.
+            logger.error(
+                "Recovery could not reach its working directory: \(error.localizedDescription, privacy: .public)"
+            )
             return sources
         }
 
@@ -169,11 +189,9 @@ extension RecordingSessionManager {
             return
         }
 
-        isDiarizing = true
         diarizingMeetingID = meetingID
         diarizationStage = "Recovering meeting…"
         defer {
-            isDiarizing = false
             diarizingMeetingID = nil
             diarizationStage = ""
         }

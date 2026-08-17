@@ -38,12 +38,23 @@ enum TranscriptSentenceMerge {
     ///   the two apart needs the source tagged on the buffer that produced the segment, which the
     ///   shared analyzer does not carry today. Until it does, an over-split line is a far cheaper
     ///   artefact than two speakers merged into one.
+    /// - Parameter sessionStart: where the *current* session begins on the meeting's timeline.
+    ///   A merge may never reach back across it — see the guard below.
     static func shouldMerge(
         previous: TranscriptSegment,
         next: TranscriptSegment,
-        mayCarryTwoSpeakers: Bool = false
+        mayCarryTwoSpeakers: Bool = false,
+        sessionStart: TimeInterval = 0
     ) -> Bool {
         guard !mayCarryTwoSpeakers else { return false }
+        // Never merge across a session boundary. Pressing record again sets the new session's
+        // offset to `lastEnd + 1.0`, which is inside `maximumGap`, so the first words of session
+        // two were folded into the last line of session one — a line the previous session
+        // produced, minutes or hours earlier, rewritten by a recording that had nothing to do
+        // with it. The speaker guard does not catch it: during recording every label is `nil`.
+        guard !(previous.startTime < sessionStart && next.startTime >= sessionStart) else {
+            return false
+        }
         // Never merge across speakers: a reply is a new line however it is punctuated. Effective
         // only after diarization has labelled the segments.
         guard previous.speakerLabel == next.speakerLabel else { return false }

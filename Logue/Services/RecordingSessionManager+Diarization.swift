@@ -11,7 +11,7 @@ extension RecordingSessionManager {
     /// per-meeting — which put a spinner over a finished meeting's saved Smart Minutes for the
     /// whole of another meeting's pass, because that branch is taken ahead of the content.
     func isDiarizing(for meetingID: UUID) -> Bool {
-        isDiarizing && diarizingMeetingID == meetingID
+        diarizingMeetingID == meetingID
     }
 
     // MARK: - Model Initialization
@@ -62,7 +62,7 @@ extension RecordingSessionManager {
         savedAudio: SavedRecording,
         sessionDuration: TimeInterval
     ) async {
-        isDiarizing = true
+        diarizingMeetingID = meetingID
         diarizationStage = "Identifying speakers…"
 
         // Primary path: Sortformer processComplete on full audio buffer
@@ -82,7 +82,7 @@ extension RecordingSessionManager {
 
         guard let result = await diarizer.finishProcessing() else {
             logger.warning("Post-recording diarization returned no result (empty audio or not initialized)")
-            isDiarizing = false
+            diarizingMeetingID = nil
             diarizationStage = ""
             return
         }
@@ -91,7 +91,7 @@ extension RecordingSessionManager {
         // Map FluidAudio results into our Speaker + SpeakerSegment models
         let store = MeetingStore.shared
         guard let meeting = store.meetings.first(where: { $0.id == meetingID }) else {
-            isDiarizing = false
+            diarizingMeetingID = nil
             return
         }
 
@@ -119,7 +119,7 @@ extension RecordingSessionManager {
         // Auto-merge duplicate speakers detected by FluidAudio's SpeakerManager
         await autoMergeSpeakers(for: meetingID, diarizer: diarizer)
 
-        isDiarizing = false
+        diarizingMeetingID = nil
         diarizationStage = ""
         logger.info("Diarization complete: \(speakers.count) speakers, \(speakerSegments.count) segments")
     }
@@ -142,7 +142,6 @@ extension RecordingSessionManager {
             savedAudio: savedAudio,
             sessionDuration: sessionDuration
         )
-        let heardDuration = pass.heardDuration
         let sortformerUpdates = pass.speakers
         let batchSegments = pass.segments
 
@@ -154,8 +153,10 @@ extension RecordingSessionManager {
         // not require it. Sortformer produces time ranges, not text, so the labels below apply to
         // the live segments perfectly well, and the transcript never changes under anyone.
         //
-        // `batchSegments` is still computed: it is what the speaker timeline is derived from, and
-        // `heardDuration` still bounds how much of the session that timeline may speak for.
+        // `batchSegments` is still computed: it is what the speaker timeline is derived from.
+        // Note this path applies no `TranscriptReplacement` bound — it does not replace the
+        // transcript at all, so there is nothing for one to bound. The disk route in
+        // `+LongRecording` is where `heardDuration` does its work.
         // The batch pass is more accurate word for word, but its sentence boundaries are its own.
         // Adopting them re-cut the transcript the user had been reading. So its words are poured
         // into the live segments instead: every line keeps its identity, its start and its end, and
@@ -208,7 +209,7 @@ extension RecordingSessionManager {
             )
         }
 
-        isDiarizing = false
+        diarizingMeetingID = nil
         diarizationStage = ""
         logger.info("Sortformer post-recording diarization complete for meeting \(meetingID)")
         return true

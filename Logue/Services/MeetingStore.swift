@@ -437,10 +437,16 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         // this is what is actually running, and a system tap that failed to start should not
         // cost the merge.
         let mayCarryTwoSpeakers = RecordingSessionManager.shared.isCapturingSystemAudio
+        // Where this session starts on the meeting's timeline, so a line from an earlier session
+        // is never extended by this one.
+        let sessionStart = RecordingSessionManager.shared.timeOffset
 
         if let last = meetings[index].segments.last,
            TranscriptSentenceMerge.shouldMerge(
-               previous: last, next: segment, mayCarryTwoSpeakers: mayCarryTwoSpeakers
+               previous: last,
+               next: segment,
+               mayCarryTwoSpeakers: mayCarryTwoSpeakers,
+               sessionStart: sessionStart
            )
         {
             meetings[index].segments[meetings[index].segments.count - 1] =

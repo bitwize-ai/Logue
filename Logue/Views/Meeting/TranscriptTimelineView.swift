@@ -42,8 +42,7 @@ struct TranscriptTimelineView: View {
     @State private var blockCacheKey: String = ""
 
     /// Cheap signature of the transcript's text, so a change that leaves the segment count alone
-    /// still redraws. Hashes each id with its text length rather than the text itself: the same
-    /// discrimination for a fraction of the work on a long meeting.
+    /// still redraws. Hashes each id with its text — see below for why the length is not enough.
     private var segmentTextHash: Int {
         var hasher = Hasher()
         for segment in segments {

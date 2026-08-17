@@ -322,7 +322,7 @@ extension MeetingWorkspaceView {
             recordProgressButton(label: "Starting…")
         } else if recorder.isStopping {
             recordProgressButton(label: "Stopping…")
-        } else if recorder.isDiarizing {
+        } else if recorder.isDiarizing(for: meeting.id) {
             recordProgressButton(
                 label: recorder.diarizationStage.isEmpty ? "Identifying speakers…" : recorder.diarizationStage
             )

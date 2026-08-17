@@ -61,4 +61,31 @@ struct TranscriptSentenceMergeTests {
         let second = segment("and still going", 29.1, 40)
         #expect(TranscriptSentenceMerge.shouldMerge(previous: first, next: second) == false)
     }
+
+    @Test("A second session's first words never extend the first session's last line")
+    func mergeRefusedAcrossASessionBoundary() {
+        // Pressing record again sets the new offset to `lastEnd + 1.0` — inside `maximumGap` —
+        // so this was merged, rewriting a line the earlier session produced. Every label is
+        // `nil` during recording, so the speaker guard does not catch it.
+        let closing = segment("so what I think is", 298, 300)
+        let opening = segment("actually the opposite", 301, 303)
+
+        #expect(
+            TranscriptSentenceMerge.shouldMerge(
+                previous: closing, next: opening, sessionStart: 301
+            ) == false
+        )
+    }
+
+    @Test("Lines inside one session are still joined")
+    func mergeStillHappensWithinASession() {
+        let first = segment("the agent helps assemble", 301, 303)
+        let second = segment("it into something you can judge", 303.3, 305)
+
+        #expect(
+            TranscriptSentenceMerge.shouldMerge(
+                previous: first, next: second, sessionStart: 301
+            )
+        )
+    }
 }

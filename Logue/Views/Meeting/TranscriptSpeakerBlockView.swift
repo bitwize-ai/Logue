@@ -28,7 +28,6 @@ struct SpeakerBlockView: View {
     /// to one boolean made SwiftUI anchor the picker to whichever button happened to render last —
     /// so it opened at the bottom of the transcript instead of beside the button pressed.
     @State private var bookmarkingSegmentID: UUID?
-    @State private var showBookmarkAdded = false
     @State private var isEditingSpeakerName = false
     @State private var speakerNameDraft = ""
     @FocusState private var isSpeakerNameFocused: Bool
@@ -386,11 +385,6 @@ struct SpeakerBlockView: View {
                 // time, so that was the beginning of the transcript.
                 onAddBookmark?(segment.startTime, label, color)
                 bookmarkingSegmentID = nil
-                showBookmarkAdded = true
-                Task {
-                    try? await Task.sleep(for: AppConstants.Delays.bookmarkConfirm)
-                    showBookmarkAdded = false
-                }
             },
             onDismiss: { bookmarkingSegmentID = nil }
         )

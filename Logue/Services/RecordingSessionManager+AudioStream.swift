@@ -1,8 +1,13 @@
 import AVFoundation
 import Foundation
 
-/// Every captured buffer's path from a capture source to the transcriber, the diarizer and the
-/// file — one consumer, in arrival order, so the three never see a different sequence.
+/// Every captured buffer's path from a capture source to the diarizer and the transcriber.
+///
+/// Two consumers, not three: the file is written on the audio thread *before* the buffer is
+/// handed here — system audio at `RecordingSessionManager.captureSystemAudio`, the microphone
+/// inside `AudioRecorder` — so nothing in this file touches one, and this ordering says nothing
+/// about it. What it does say is that a single `Task` drains the stream, so the diarizer and the
+/// transcriber see buffers in arrival order and in the same order as each other.
 extension RecordingSessionManager {
     /// Creates a single-consumer async stream for audio buffers.
     /// One MainActor Task processes all buffers sequentially, instead of spawning a new Task per buffer.

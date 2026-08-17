@@ -91,12 +91,21 @@ final class RecordingSessionManager {
 
     var currentMeetingID: UUID?
     var errorMessage: String?
-    var isDiarizing = false
-
-    /// Which meeting the in-flight diarization pass belongs to. Read via `isDiarizing(for:)`.
+    /// Which meeting the in-flight diarization pass belongs to, or `nil` when none is running.
     ///
-    /// Extension-visible: +Recovery
+    /// One field rather than a `Bool` beside it. `isDiarizing(for:)` is
+    /// `diarizingMeetingID == meetingID`, so a site that set the flag and forgot the id would
+    /// turn every scoped spinner off, and one that cleared the flag and left the id would strand
+    /// it — and there are seven such sites across three files.
+    ///
+    /// Extension-visible: +Recovery, +Diarization
     var diarizingMeetingID: UUID?
+
+    /// Whether any diarization pass is running. Ask `isDiarizing(for:)` unless the question is
+    /// genuinely about the app rather than about a meeting.
+    var isDiarizing: Bool {
+        diarizingMeetingID != nil
+    }
 
     /// Human-readable label for the current post-recording diarization stage. Empty when idle.
     var diarizationStage = ""
@@ -155,7 +164,7 @@ final class RecordingSessionManager {
     /// rather than waiting to be switched on.
     private let systemAudioArming = SystemAudioArmingMonitor()
 
-    // Extension-visible: +DeviceLoss
+    // Extension-visible: +DeviceLoss, +AudioStream
     /// Keeps silence out of the transcriber. Only ever consulted for microphone audio, and never
     /// for what is written to disk or handed to the diarizer.
     let speechGate = MicrophoneSpeechGate()
@@ -185,7 +194,7 @@ final class RecordingSessionManager {
     /// of the meeting.
     var sessionStartDate: Date?
 
-    // Extension-visible: +DeviceLoss
+    // Extension-visible: +DeviceLoss, +AudioStream
     /// Seconds since this recording session started, independent of any one capture device.
     var sessionElapsed: TimeInterval {
         sessionStartDate.map { Date().timeIntervalSince($0) } ?? 0
@@ -254,7 +263,7 @@ final class RecordingSessionManager {
         let source: AudioSource
     }
 
-    // Extension-visible: +DeviceLoss
+    // Extension-visible: +DeviceLoss, +AudioStream
     /// Single-consumer stream that coalesces audio buffers from the audio thread.
     /// Replaces per-buffer `Task { @MainActor }` creation to prevent MainActor flooding.
     var audioBufferContinuation: AsyncStream<CapturedAudio>.Continuation?
@@ -549,7 +558,6 @@ final class RecordingSessionManager {
         // Launch diarization + post-recording AI as a non-blocking background pipeline
         let capturedDiarizer = diarizationManager
         diarizationManager = nil
-        isDiarizing = capturedDiarizer != nil
         diarizingMeetingID = capturedDiarizer != nil ? meetingID : nil
 
         postRecordingTask = Task { [weak self] in

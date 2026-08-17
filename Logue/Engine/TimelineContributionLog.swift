@@ -59,7 +59,8 @@ struct TimelineContributionLog {
             let name = String(describing: source)
             logger.warning(
                 """
-                Timeline: dropped \(count, privacy: .public) buffer(s) from \(name, privacy: .public)                 — conversion produced nothing
+                Timeline: dropped \(count, privacy: .public) buffer(s) from \
+                \(name, privacy: .public) — conversion produced nothing
                 """
             )
         }

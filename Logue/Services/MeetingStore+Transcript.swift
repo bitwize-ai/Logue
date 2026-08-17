@@ -19,9 +19,10 @@ extension MeetingStore {
 
     /// Puts back what a session held in memory when the app stopped.
     ///
-    /// The checkpointed segments replace whatever is on the meeting rather than appending to it: a
-    /// checkpoint is a snapshot of the whole session's transcript, so appending would duplicate
-    /// every line that had already been saved.
+    /// The checkpoint and the saved transcript are merged by id, never one assigned over the
+    /// other. A checkpoint is a snapshot of the whole session, so a blind append would duplicate
+    /// every line already saved — and a blind replace would delete the lines saved *since* the
+    /// last checkpoint, which is the more common case. See the body for which one wins.
     func restoreRecoveredSession(for meetingID: UUID, segments: [TranscriptSegment], duration: TimeInterval) {
         guard let index = meetingIndex(for: meetingID) else { return }
 

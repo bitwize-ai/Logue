@@ -46,7 +46,12 @@ enum TranscriptRealignment {
 
         func flush() {
             guard let first = pending.first, let last = pending.last else { return }
+            // The SentencePiece word marker is a word *boundary*, not a character of the word.
+            // It is accepted as a word start above, and it is not whitespace — so joining the
+            // pieces verbatim wrote `▁the▁agent` into the user's transcript a minute after they
+            // stopped recording, with no word separation and the marker visible.
             let text = pending.map(\.text).joined()
+                .replacingOccurrences(of: "\u{2581}", with: " ")
             guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
                 pending.removeAll()
                 return
