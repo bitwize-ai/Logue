@@ -14,13 +14,13 @@ struct TaskInspectorPanel: View {
     let task: TaskItem
     let meetingTitle: String?
     let onChange: (TaskItem) -> Void
-    /// Applies typed title and notes to the task with this id, whatever that task holds now.
+    /// Applies a text edit to the task it was typed into, whatever that task holds now.
     ///
     /// Separate from `onChange` on purpose: the free-text fields are the only controls here
     /// whose value can be older than the record, because they are held as drafts while the
-    /// user types. Sending the two strings and letting the owner apply them means a text
-    /// commit cannot carry a stale copy of any other field with it.
-    let onCommitText: (UUID, String, String) -> Void
+    /// user types. `TaskTextCommit` names the task and carries only the fields that actually
+    /// changed, so a commit cannot bring a stale copy of anything else with it.
+    let onCommitText: (TaskTextCommit) -> Void
     let onDelete: () -> Void
     let onOpenSource: () -> Void
     let onClose: () -> Void
@@ -308,16 +308,18 @@ struct TaskInspectorPanel: View {
     /// since selection — a due date, a priority, a tag, or the list row's completion tick,
     /// which took `completedCount` back with it.
     private func commitDrafts() {
-        guard var source = draftSource else { return }
-        let sanitised = TaskTextParser.sanitisedTitle(titleDraft)
-        guard sanitised != source.title || notesDraft != source.notes else { return }
+        guard var source = draftSource,
+              let commit = TaskTextCommit.make(
+                  loadedFrom: source, titleDraft: titleDraft, notesDraft: notesDraft
+              )
+        else { return }
 
-        onCommitText(source.id, sanitised, notesDraft)
+        onCommitText(commit)
 
         // What was just committed is what the fields now hold, so a later blur with no further
-        // typing has nothing to send.
-        source.title = sanitised
-        source.notes = notesDraft
+        // typing has nothing to send. Applied to the loaded values rather than reassigned from
+        // the drafts, so the sanitised title is what is remembered.
+        source = commit.applied(to: source) ?? source
         draftSource = source
     }
 

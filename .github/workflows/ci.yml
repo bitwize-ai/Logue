@@ -138,6 +138,8 @@ jobs:
             -only-testing:LogueTests/WhatsNewGateTests \
             -only-testing:LogueTests/AppVersionTests \
             -only-testing:LogueTests/TaskStorageResilienceTests \
+            -only-testing:LogueTests/TaskTextCommitTests \
+            -only-testing:LogueTests/SpaceFolderWriteTests \
             -only-testing:LogueTests/TaskFolderStoreTests \
             -only-testing:LogueTests/TaskFolderIsolationTests \
             -only-testing:LogueTests/TaskModeSwitchTests \

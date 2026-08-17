@@ -306,6 +306,7 @@
 		734957AB953D227AAB99B235 /* MarkdownFolderScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECE5E10FE57E5C4B9E6658E /* MarkdownFolderScan.swift */; };
 		741C509F3A43CBF008D9C4BC /* ModelManager+Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9230215EEC7592F9378CA66C /* ModelManager+Discovery.swift */; };
 		7574BF423E60FC56B9897A92 /* DeepResearchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293A43BD40C7FE1683585702 /* DeepResearchModels.swift */; };
+		7596EB185C35404F37571D7B /* TaskTextCommitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F736650FD9301A96321554D6 /* TaskTextCommitTests.swift */; };
 		75E00B6D645BDF14E88D8DDB /* DocumentSearchState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D771D4ECF4472264165F1C /* DocumentSearchState.swift */; };
 		760A4F0409E4004EFA20E182 /* VerifyPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8756576B17C7D359AC9FC6A0 /* VerifyPanelView.swift */; };
 		7685B4E18D7F1A25AE0F6738 /* MeetingLLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D05F3B9F242D1B1198B528 /* MeetingLLMTests.swift */; };
@@ -453,6 +454,7 @@
 		BE88BCF76C23EF2AA75C6C63 /* ResourceUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7992EC4C49987E7A2371D257 /* ResourceUsageView.swift */; };
 		BF60DD1A219110F9B529468F /* TranscriptReplacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81121A106491181334F7EFE /* TranscriptReplacement.swift */; };
 		BFE1C5095AF1AD62B4373C3B /* MeetingStore+AI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E69663E0AE733F0F38C648 /* MeetingStore+AI.swift */; };
+		C088FDD1AA2E2EF7D0EEBD2B /* TaskTextCommit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1776C796F0B99DBB09B48E12 /* TaskTextCommit.swift */; };
 		C1241C8C0A855F4CF8808740 /* ChartTypeInferrer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ABF1E17FE2163DCFCF2C448 /* ChartTypeInferrer.swift */; };
 		C19DCD6397A5B1B82359F1A8 /* CategorySidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 920C02E8AB5AA086F500AFC5 /* CategorySidebarView.swift */; };
 		C352E5633C879D5E7144BDE7 /* TempAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AD3B3CBFE4ACCFF98237A81 /* TempAttachment.swift */; };
@@ -692,6 +694,7 @@
 		15DD5F0F004960A0D0B66E8B /* TroubleshootingActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TroubleshootingActions.swift; sourceTree = "<group>"; };
 		160A71994367176C72C11277 /* AgentConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversation.swift; sourceTree = "<group>"; };
 		1643D88F8D9EE575F4C03507 /* TextDiff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextDiff.swift; sourceTree = "<group>"; };
+		1776C796F0B99DBB09B48E12 /* TaskTextCommit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTextCommit.swift; sourceTree = "<group>"; };
 		18FE2DA61E472719558C6774 /* TaskFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFile.swift; sourceTree = "<group>"; };
 		1901226D04BF84D785946809 /* MarkdownFolderScanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownFolderScanTests.swift; sourceTree = "<group>"; };
 		19129D8F0F9161BC3E21AA0F /* CommandCenterChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandCenterChatView.swift; sourceTree = "<group>"; };
@@ -1223,6 +1226,7 @@
 		F686C58A65228625D6D45D32 /* OfficeExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeExtractor.swift; sourceTree = "<group>"; };
 		F6CEC2D65780182BE2B4F4F8 /* EntityExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityExtractor.swift; sourceTree = "<group>"; };
 		F6EA5546BBF8C4D1187CD26E /* LangGraph-Swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "LangGraph-Swift"; path = "Vendor/LangGraph-Swift"; sourceTree = SOURCE_ROOT; };
+		F736650FD9301A96321554D6 /* TaskTextCommitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTextCommitTests.swift; sourceTree = "<group>"; };
 		F78B9E200B32B9974F32CF7D /* LLMResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMResponseParser.swift; sourceTree = "<group>"; };
 		F7B886861180D41A132F1B6A /* AgentChatView+Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentChatView+Input.swift"; sourceTree = "<group>"; };
 		F7E1089CE3E964A5BC0545A8 /* whatsnew-wikilinks.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-wikilinks.png"; sourceTree = "<group>"; };
@@ -1388,6 +1392,7 @@
 				F177793CD00EDA556070B983 /* TaskPromotionTests.swift */,
 				2791A3F1CD378EB474CA0995 /* TaskStorageResilienceTests.swift */,
 				41C0416ED8CE675F6EF78FA0 /* TaskStoreTests.swift */,
+				F736650FD9301A96321554D6 /* TaskTextCommitTests.swift */,
 				7A1FE7F1ABAA323ABC1BC67F /* TaskTextParserTests.swift */,
 				5967FC0A683B57D96AAAB8CF /* TaskTriageTests.swift */,
 				8D2D61B85F962E88AA1E5062 /* TextAnalysisRequestTests.swift */,
@@ -1792,6 +1797,7 @@
 				E93998CDEA76314D90824839 /* SystemAudioCapture.swift */,
 				5A7CF78966914DEE0103EDB4 /* TaskEdit.swift */,
 				18FE2DA61E472719558C6774 /* TaskFile.swift */,
+				1776C796F0B99DBB09B48E12 /* TaskTextCommit.swift */,
 				8E366631BFF6453332DAB21D /* TaskTextParser.swift */,
 				42FA58E9E9D16008C0F7FF4E /* TaskTriage.swift */,
 				A81121A106491181334F7EFE /* TranscriptReplacement.swift */,
@@ -2535,6 +2541,7 @@
 				92C760AB1AEF1DD7B362722A /* TaskPromotionTests.swift in Sources */,
 				5211037E2451AF80678BB50D /* TaskStorageResilienceTests.swift in Sources */,
 				E775E71B9205D0713CC8EC7D /* TaskStoreTests.swift in Sources */,
+				7596EB185C35404F37571D7B /* TaskTextCommitTests.swift in Sources */,
 				6765AD16B5A380740696AD62 /* TaskTextParserTests.swift in Sources */,
 				25A2038F3D3B1815856A1913 /* TaskTriageTests.swift in Sources */,
 				A30AAC62CDAE227B36E45511 /* TextAnalysisRequestTests.swift in Sources */,
@@ -2977,6 +2984,7 @@
 				932DA0AD4447BAA9D0E82836 /* TaskRowView.swift in Sources */,
 				495BE7EFB1B8D764F6671C24 /* TaskStorage.swift in Sources */,
 				67D1E585E7E2ABBE54EB8DF5 /* TaskStore.swift in Sources */,
+				C088FDD1AA2E2EF7D0EEBD2B /* TaskTextCommit.swift in Sources */,
 				0CF6BCC52C2F99F600ED2889 /* TaskTextParser.swift in Sources */,
 				D6B9E0FF77EA15E76017A662 /* TaskTriage.swift in Sources */,
 				F65839F4C027A8BEB29EDDEE /* TaskTriagePanelView.swift in Sources */,

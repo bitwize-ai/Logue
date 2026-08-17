@@ -35,6 +35,10 @@ final class DocumentStorage {
             UserDefaults.standard.set(
                 mode.rawValue, forKey: AppConstants.UserDefaultsKeys.documentStorageMode
             )
+            // Tasks follow this mode, and where their folder is depends on it. Dropped here
+            // rather than in each switch method so a mode set by any route — including the one
+            // read back at launch — cannot leave a remembered path from the other mode behind.
+            TaskStorage.invalidateFolderLocation()
         }
     }
 
@@ -94,6 +98,9 @@ final class DocumentStorage {
     func invalidateFileIndex() {
         cachedFileIndex = nil
         cachedSpaceFolders = nil
+        // Where the tasks folder is was read from the same tree, so it goes stale on exactly
+        // the same events — a scan, a space folder created, renamed or retired, a mode switch.
+        TaskStorage.invalidateFolderLocation()
     }
 
     /// Fills whichever of the two caches is cold, from a **single** traversal.

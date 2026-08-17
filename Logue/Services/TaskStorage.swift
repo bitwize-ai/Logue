@@ -23,16 +23,50 @@ final class TaskStorage {
 
     // MARK: - Locations
 
+    /// The last resolved location, guarded by `locationLock`.
+    ///
+    /// Remembered because resolving reads the filesystem and this is asked on every task load,
+    /// save and delete: with the root pointed at a synced vault, ticking one checkbox meant
+    /// walking the library before writing a byte.
+    ///
+    /// The risk this trades against is real and was the reason it was not cached before — a
+    /// stale path is how a folder stops being found at all — so it is dropped at both moments
+    /// the answer can change: the storage mode switching, and a scan reconciling the folder
+    /// with what is on disk. A rename made in Finder arrives through the second of those,
+    /// which is how the app learns about every other external change too.
+    nonisolated(unsafe) private static var cachedFolderURL: URL?
+    private static let locationLock = NSLock()
+
+    /// Forgets where the tasks folder is.
+    ///
+    /// Called from `DocumentStorage.invalidateFileIndex` and from the mode setter, so it drops
+    /// on everything that can move the folder: a scan, a space folder created, renamed or
+    /// retired, and a switch between storage modes. A rename made in Finder arrives through the
+    /// scan, which is how the app learns about every other external change too.
+    nonisolated static func invalidateFolderLocation() {
+        locationLock.lock()
+        defer { locationLock.unlock() }
+        cachedFolderURL = nil
+    }
+
+    nonisolated static var tasksFolderURL: URL {
+        locationLock.lock()
+        defer { locationLock.unlock() }
+        if let cachedFolderURL {
+            return cachedFolderURL
+        }
+        let resolved = resolveTasksFolderURL()
+        cachedFolderURL = resolved
+        return resolved
+    }
+
     /// Where tasks live, avoiding a folder that is already a space.
     ///
     /// `Tasks` is an obvious name for a space and users really do have one — a real library
     /// turned out to have `~/Logue/Tasks` holding a hundred documents. Writing our marker in
     /// there would put two identities on one folder, and the loser would be the space, taking
     /// its documents with it. So an occupied name is stepped over rather than shared.
-    ///
-    /// Resolved by looking, not remembered: the answer changes when the user renames a space,
-    /// and a stale cached path is how a folder stops being found at all.
-    nonisolated static var tasksFolderURL: URL {
+    nonisolated private static func resolveTasksFolderURL() -> URL {
         let root = DocumentStorage.markdownRootURL
 
         // Identity first. The name is only ever the *creation-time* default: once the folder

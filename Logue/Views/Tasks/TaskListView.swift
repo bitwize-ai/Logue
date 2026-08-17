@@ -68,13 +68,14 @@ struct TaskListView: View {
                     task: selectedTask,
                     meetingTitle: meetingTitle(for: selectedTask),
                     onChange: { store.update($0) },
-                    onCommitText: { id, title, notes in
+                    onCommitText: { commit in
                         // Applied to the record as it stands, not to the copy the panel was
-                        // showing when the field was first focused.
-                        guard var latest = store.tasks.first(where: { $0.id == id }) else { return }
-                        latest.title = title
-                        latest.notes = notes
-                        store.update(latest)
+                        // showing when the field was first focused, and only the fields the
+                        // commit actually carries.
+                        guard let latest = store.tasks.first(where: { $0.id == commit.taskID }),
+                              let updated = commit.applied(to: latest)
+                        else { return }
+                        store.update(updated)
                     },
                     onDelete: {
                         store.delete(id: selectedTask.id)
