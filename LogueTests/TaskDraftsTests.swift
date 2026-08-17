@@ -134,4 +134,32 @@ struct TaskDraftsTests {
 
         #expect(resynced.commit()?.title == "New")
     }
+
+    @Test("A focused field with nothing typed does not undo a change made elsewhere")
+    func focusedFieldWithNoEditCommitsNothing() {
+        // The defect this type was extracted to end, one level down: the base moved for the
+        // focused field while its draft deliberately did not, so an untouched draft differed
+        // from the new base and the next blur sent a value the user never typed.
+        let original = task("Old")
+        let drafts = TaskDrafts.loaded(from: original)
+        var renamed = original
+        renamed.title = "New"
+
+        let resynced = drafts.resynced(with: renamed, focused: .title) ?? drafts
+
+        #expect(resynced.commit() == nil, "the user typed nothing, so nothing may be written")
+    }
+
+    @Test("A focused field with real typing still commits it")
+    func focusedFieldWithEditStillCommits() {
+        // The bound must not swallow a genuine edit made while the record moved underneath.
+        let original = task("Old")
+        let typing = TaskDrafts.loaded(from: original).edited(title: "Mine")
+        var renamed = original
+        renamed.title = "Theirs"
+
+        let resynced = typing.resynced(with: renamed, focused: .title) ?? typing
+
+        #expect(resynced.commit()?.title == "Mine")
+    }
 }

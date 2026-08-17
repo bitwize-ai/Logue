@@ -4,8 +4,8 @@ import Foundation
 ///
 /// The other half of `TaskTextCommit`. That type moved the *commit* direction out of the view
 /// after the rule was got wrong three times running; this moves the *load* direction out for
-/// the same reason, before it earns its own history. Between them a text edit has no state
-/// left inside `TaskInspectorPanel` except the two `@State` strings SwiftUI binds to.
+/// the same reason. Between them a text edit has no state left inside `TaskInspectorPanel` at
+/// all: the view holds one of these and reports focus changes and keystrokes into it.
 ///
 /// The two questions this answers are the ones that kept being conflated:
 ///
@@ -40,13 +40,19 @@ struct TaskDrafts: Equatable {
     func resynced(with task: TaskItem, focused: Field?) -> TaskDrafts? {
         guard task.id == loaded.id else { return nil }
 
+        // A field's draft and the base it is measured against move together or not at all.
+        // Advancing the base for a focused field — whose draft is deliberately left alone —
+        // makes the untouched draft differ from the new base, so the next blur "commits" a value
+        // the user never typed and undoes the change that arrived from elsewhere. That is the
+        // same defect this type was extracted to end, reintroduced one level down.
         var updated = self
-        updated.loaded = task
         if focused != .title {
             updated.title = task.title
+            updated.loaded.title = task.title
         }
         if focused != .notes {
             updated.notes = task.notes
+            updated.loaded.notes = task.notes
         }
         return updated == self ? nil : updated
     }

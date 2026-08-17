@@ -30,10 +30,11 @@ final class TaskStorage {
     /// walking the library before writing a byte.
     ///
     /// The risk this trades against is real and was the reason it was not cached before — a
-    /// stale path is how a folder stops being found at all — so it is dropped at both moments
-    /// the answer can change: the storage mode switching, and a scan reconciling the folder
-    /// with what is on disk. A rename made in Finder arrives through the second of those,
-    /// which is how the app learns about every other external change too.
+    /// stale path is how a folder stops being found at all — so it is dropped whenever the
+    /// answer can change: the storage mode switching, a scan reconciling the folder with what is
+    /// on disk, the remembered folder no longer being there, and the markdown root itself going
+    /// missing. A rename made in Finder is caught by the third of those on the very next access,
+    /// rather than waiting for a scan that debounces and can fail to start at all.
     nonisolated(unsafe) private static var cachedFolderURL: URL?
     private static let locationLock = NSLock()
 

@@ -223,4 +223,68 @@ struct TaskStorageResilienceTests {
         #expect(TaskFolderStore.markedFolder(in: root)?.standardizedFileURL == moved.standardizedFileURL)
         _ = temporary
     }
+
+    // MARK: - Which marked folder wins
+
+    @Test("An empty folder at the conventional name does not shadow one holding tasks")
+    func emptyConventionalFolderDoesNotShadow() throws {
+        // The restore sequence: the real folder is renamed, trashed by a reset, and one write
+        // mints a fresh `Tasks` while it is away. Dragging the real one back has to bring the
+        // tasks with it — the marker keeps them out of the document library too, so losing this
+        // election leaves them reachable from nowhere.
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+
+        let real = root.appendingPathComponent("Errands", isDirectory: true)
+        try TaskFolderStore(rootURL: real).prepare()
+        var task = TaskItem(id: UUID())
+        task.title = "Water the plants"
+        #expect(TaskFolderStore(rootURL: real).save(task))
+
+        let minted = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        try TaskFolderStore(rootURL: minted).prepare()
+
+        #expect(
+            TaskFolderStore.markedFolder(in: root)?.standardizedFileURL == real.standardizedFileURL
+        )
+        _ = temporary
+    }
+
+    @Test("The conventional name still wins when both folders hold tasks")
+    func conventionalNameWinsAmongEquals() throws {
+        // Content decides first; the documented name rule decides the rest. A plain copy of the
+        // folder must still resolve the way it always did.
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+
+        for name in [TaskFile.folderName, "Tasks copy"] {
+            let folder = root.appendingPathComponent(name, isDirectory: true)
+            try TaskFolderStore(rootURL: folder).prepare()
+            var task = TaskItem(id: UUID())
+            task.title = "in \(name)"
+            #expect(TaskFolderStore(rootURL: folder).save(task))
+        }
+
+        let expected = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        #expect(
+            TaskFolderStore.markedFolder(in: root)?.standardizedFileURL
+                == expected.standardizedFileURL
+        )
+        _ = temporary
+    }
+
+    @Test("A tasks folder holding nothing is still found when it is the only one")
+    func emptyFolderIsStillFoundWhenAlone() throws {
+        // Requiring task files on the fast path must not lose a folder that is legitimately
+        // empty — a library where every task was completed and cleared.
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        let only = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        try TaskFolderStore(rootURL: only).prepare()
+
+        #expect(
+            TaskFolderStore.markedFolder(in: root)?.standardizedFileURL == only.standardizedFileURL
+        )
+        _ = temporary
+    }
 }

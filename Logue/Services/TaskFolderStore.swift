@@ -103,9 +103,9 @@ struct TaskFolderStore {
         let resolvedRoot = root.resolvingSymlinksInPath()
 
         // The folder where it was created, checked first. This is every library that has not
-        // had its tasks folder moved or renamed, and it costs a few `fileExists` calls instead
-        // of walking the tree — which matters because this resolves on every task read, write
-        // and delete, on the main actor, and the documented use for the root is a synced vault.
+        // had its tasks folder moved or renamed, and it costs one directory listing instead of a
+        // walk of the tree — which matters because this resolves on every task read, write and
+        // delete, on the main actor, and the documented use for the root is a synced vault.
         //
         // It has to be holding tasks to win, though. An *empty* folder at this name is exactly
         // what gets minted when the real one is briefly missing — trashed by a reset, or not yet
