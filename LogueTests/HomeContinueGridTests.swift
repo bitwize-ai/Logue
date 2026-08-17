@@ -22,13 +22,16 @@ struct HomeContinueGridTests {
         }
     }
 
-    @Test("Two rows of full-width cards is the most that is ever fetched")
-    func neverFetchesMoreThanTwoRows() {
+    @Test("The fetch limit is the column count times the row cap")
+    func maximumItemsMultipliesColumnsByTheRowCap() {
+        // Named for what it actually pins. It restates `maximumItems`'s definition, so it
+        // detects only someone decoupling it from `maxRows` — replace `columnCount` with a
+        // constant and both sides still agree. The row cap itself is held by
+        // `columnsAlwaysFitTheirCards` and by `fetchLimitIsSix`; this is not a third witness.
         for width in stride(from: CGFloat(200), through: 3000, by: 4) {
             let items = HomeContinueGrid.maximumItems(forWidth: width)
             let columns = HomeContinueGrid.columnCount(forWidth: width)
             #expect(items == columns * HomeContinueGrid.maxRows, "at width \(width)")
-            #expect(items >= HomeContinueGrid.maxRows, "at width \(width)")
         }
     }
 

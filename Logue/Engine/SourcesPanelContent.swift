@@ -14,31 +14,73 @@ enum SourcesPanelContent {
         toolName.contains("meeting") || toolName.contains("document")
     }
 
-    static func citedURLs(in messages: [AgentMessage], limit: Int = 10) -> [URL] {
-        let pattern = #"https?://[^\s\)\]\"'<>]+"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return []
-        }
+    /// Compiled once. Built from a local `let` on every call, this was recompiled per sweep, and
+    /// the sweeps are frequent: `body` re-evaluates on every streamed token and asks about
+    /// sources two or three times per pass.
+    private static let urlPattern = try? NSRegularExpression(
+        pattern: #"https?://[^\s\)\]\"'<>]+"#, options: []
+    )
 
+    /// Trailing sentence punctuation is not part of the URL it follows.
+    private static let trailingPunctuation = CharacterSet(charactersIn: ".,;:)")
+
+    static func citedURLs(in messages: [AgentMessage], limit: Int = 10) -> [URL] {
         var urls: [URL] = []
         var seen = Set<String>()
+        forEachCitedURL(in: messages) { url in
+            guard !seen.contains(url.absoluteString) else { return true }
+            seen.insert(url.absoluteString)
+            urls.append(url)
+            // Stop at the cap rather than collecting every URL in the conversation and
+            // discarding the tail: a web-research thread holds tens of tool results.
+            return urls.count < limit
+        }
+        return urls
+    }
+
+    /// Whether *any* URL was cited, without building the list.
+    ///
+    /// The panel needs the URLs; the toolbar button and the auto-open need only this, and they
+    /// are the ones asked on every body pass. Answering them through `citedURLs` swept every
+    /// tool result to the end so the count could be compared with zero.
+    static func hasCitedURL(in messages: [AgentMessage]) -> Bool {
+        var found = false
+        forEachCitedURL(in: messages) { _ in
+            found = true
+            return false
+        }
+        return found
+    }
+
+    /// Walks the URLs in tool output, in first-seen order. `body` returns whether to continue.
+    private static func forEachCitedURL(
+        in messages: [AgentMessage],
+        _ body: (URL) -> Bool
+    ) {
+        guard let regex = urlPattern else { return }
+
         for msg in messages {
             guard let text = msg.toolResult?.output else { continue }
-            let range = NSRange(text.startIndex..., in: text)
-            regex.enumerateMatches(in: text, range: range) { match, _, _ in
+            var wantsMore = true
+            regex.enumerateMatches(
+                in: text, range: NSRange(text.startIndex..., in: text)
+            ) { match, _, stop in
                 guard let hit = match, let hitRange = Range(hit.range, in: text) else { return }
-                let raw = String(text[hitRange])
-                let cleaned = raw.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:)"))
+                let cleaned = String(text[hitRange])
+                    .trimmingCharacters(in: trailingPunctuation)
                 guard let url = URL(string: cleaned),
                       let host = url.host,
-                      !host.isEmpty,
-                      !seen.contains(url.absoluteString)
+                      !host.isEmpty
                 else { return }
-                seen.insert(url.absoluteString)
-                urls.append(url)
+                wantsMore = body(url)
+                // The stop pointer, so the enumeration ends here rather than running the rest
+                // of a 4000-character tool result and ignoring every match.
+                if !wantsMore {
+                    stop.pointee = true
+                }
             }
+            guard wantsMore else { return }
         }
-        return Array(urls.prefix(limit))
     }
 
     /// Keys identifying each referenced meeting or document, in first-seen order.
@@ -77,6 +119,6 @@ enum SourcesPanelContent {
         if !referenceKeys(in: messages).isEmpty {
             return true
         }
-        return !citedURLs(in: messages).isEmpty
+        return hasCitedURL(in: messages)
     }
 }

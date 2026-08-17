@@ -99,4 +99,14 @@ struct HomeAskPromptsTests {
         #expect(HomeAskPrompts.meeting(title: "", isSummarized: false).contains("Untitled meeting"))
         #expect(HomeAskPrompts.document(title: "").contains("Untitled document"))
     }
+
+    @Test("An apostrophe in a title survives, because it delimits nothing")
+    func apostrophesAreNotStripped() {
+        // macOS smart substitution makes `’` the ordinary spelling, so stripping it turns
+        // `Alice’s 1:1` into a meeting the user does not have — the chip shows a name they
+        // never wrote and the prompt asks about a title matching nothing in the store.
+        // Restoring `‘ ’` to `disallowedCharacters` fails this and nothing else.
+        #expect(HomeAskPrompts.sanitize("Alice\u{2019}s 1:1", fallback: "x") == "Alice\u{2019}s 1:1")
+        #expect(HomeAskPrompts.sanitize("Alice's 1:1", fallback: "x") == "Alice's 1:1")
+    }
 }

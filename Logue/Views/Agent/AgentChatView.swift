@@ -98,9 +98,9 @@ struct AgentChatView: View {
                     .animation(Motion.spring, value: canvas.snapshots.count)
             } else if showSourcesPanel, hasSourcesToShow {
                 // Both conditions, not just the toggle. `showSourcesPanel` is the user's
-                // preference; `hasSourcesToShow` is whether there is anything to draw. On
-                // Home — and in any conversation the agent has not sourced — the answer is
-                // no, and a panel that opens onto nothing is a dead half of the window.
+                // preference; `hasSourcesToShow` is whether there is anything to draw — the
+                // agent's sources or a staged attachment. With neither, a panel would open
+                // onto nothing, which is a dead half of the window.
                 Divider()
                 SourcesPanelView(
                     conversationID: AgentConversationStore.shared.selectedConversationID,
@@ -182,8 +182,11 @@ struct AgentChatView: View {
     /// Deliberately blind to staged attachments: dropping a file onto the prompt bar is not the
     /// agent producing sources, and counting it threw the panel open over Home's landing.
     ///
-    /// Read once per message change rather than per body pass — `body` re-evaluates on every
-    /// streamed token, and this regex-sweeps every tool result's text.
+    /// Asked on every body pass, which during streaming is every token, so it goes through
+    /// `hasCitedURL` — which stops at the first match instead of collecting every URL in the
+    /// conversation to compare a count with zero. `onChange(of:)` takes its value as an
+    /// ordinary parameter, not an autoclosure, so there is no once-per-change evaluation to
+    /// rely on here.
     private var hasAgentSources: Bool {
         SourcesPanelContent.hasAnswerSources(in: activeConversation?.messages ?? [])
     }
@@ -376,9 +379,11 @@ struct AgentChatView: View {
             }
             .help("New conversation")
 
-            // Only offered once the agent has actually cited something. A toggle that is
-            // always present on Home advertises a panel with nothing in it, and pressing
-            // it is a dead end rather than a feature.
+            // Offered once there is anything to draw — the agent's sources, or a file the user
+            // has staged in the prompt bar. A toggle that is always present on Home advertises
+            // a panel with nothing in it, and pressing it is a dead end rather than a feature.
+            // Note this is the panel's question, not the auto-open's: `hasAgentSources` is the
+            // narrower one, and the two are deliberately not the same.
             if hasSourcesToShow {
                 Button {
                     showSourcesPanel.toggle()

@@ -77,11 +77,26 @@ struct SourcesPanelContentTests {
         #expect(SourcesPanelContent.citedURLs(in: messages).count == 1)
     }
 
-    @Test("Something that is not a URL is not offered as one")
-    func nonURLsAreIgnored() {
-        // `URL(string:)` accepts a great deal; requiring a host is what keeps bare words out.
+    @Test("A bare scheme in prose is not offered as a URL")
+    func bareSchemesAreIgnored() {
+        // The regex settles this one: it requires at least one non-space character after
+        // `://`, so this never reaches the host guard. Kept because it is what a tool result
+        // discussing protocols actually looks like.
         let messages = [toolResult("read the http:// docs and ftp mirrors")]
         #expect(SourcesPanelContent.citedURLs(in: messages).isEmpty)
+    }
+
+    @Test("Something the regex matches but that names no host is not offered as one", arguments: [
+        // Parses, `host` is nil.
+        "see https:///notes for detail",
+        // Parses, `host` is the empty string — the other half of the same guard.
+        "see http://:8080/status for detail",
+    ])
+    func matchesWithoutAHostAreIgnored(text: String) {
+        // These reach `guard let host = url.host, !host.isEmpty` and are what makes it earn its
+        // place. Delete that guard and this fails; the case that used to stand here did not.
+        #expect(SourcesPanelContent.citedURLs(in: [toolResult(text)]).isEmpty)
+        #expect(SourcesPanelContent.hasCitedURL(in: [toolResult(text)]) == false)
     }
 
     @Test("The list of URLs is capped")
