@@ -9,6 +9,19 @@ final class PostRecordingPipeline {
     private let logger = Logger(subsystem: AppConstants.bundleID, category: "PostRecordingPipeline")
 
     var isGeneratingAISummary = false
+
+    /// Whether the pass in flight belongs to this meeting.
+    ///
+    /// The flag above is pipeline-global, and two panels read it as though it were per-meeting.
+    /// That was harmless while starting any recording cancelled whatever was running; now that a
+    /// pass belonging to another meeting is deliberately left alone, an unscoped read puts a
+    /// spinner over *B*'s summary for the whole of *A*'s pass — and `MeetingSummaryPanelView`
+    /// takes the loading branch ahead of the minutes it already has, so existing content
+    /// disappears behind it.
+    func isGenerating(for meetingID: UUID) -> Bool {
+        isGeneratingAISummary && currentMeetingID == meetingID
+    }
+
     var suggestedSpaceID: UUID?
     var suggestedSpaceMeetingID: UUID?
 

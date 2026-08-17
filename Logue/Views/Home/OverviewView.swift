@@ -172,7 +172,7 @@ struct OverviewView: View {
             // quick actions for a banner reading "Recording…" whose Stop button was dead —
             // `stopQuickRecording` guards on `currentMeetingID`, which a refused start never
             // sets — leaving an orphan voice note behind it.
-            isQuickRecording = await recorder.startRecording(for: note)
+            isQuickRecording = await recorder.startRecording(for: note).started
         }
     }
 

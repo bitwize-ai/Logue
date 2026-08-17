@@ -160,12 +160,21 @@ struct MeetingWorkspaceView: View {
             .task(id: meeting.id) {
                 await takeAutoRecordRequest(for: meeting)
             }
-            // Retried when the rebuild finishes. Keeping the request was only half the fix: the
-            // `.task` above re-runs on a change of meeting, not on the recorder becoming free,
-            // so a calendar-triggered capture that arrived during recovery sat there unclaimed.
-            .onChange(of: recorder.isRecovering) { wasRecovering, isRecovering in
-                guard wasRecovering, !isRecovering else { return }
+            // Retried whenever the recorder frees up — a rebuild finishing, or the previous
+            // session finishing being written. The `.task` above re-runs on a change of meeting,
+            // not on the recorder becoming free, so a queued capture sat unclaimed.
+            .onChange(of: recorder.recordingState) { _, state in
+                guard state == .idle else { return }
                 Task { await takeAutoRecordRequest(for: meeting) }
+            }
+            // A request belongs to the meeting that is open. Leaving before the recorder frees
+            // up strands it otherwise: this view is the only thing that can take it, so it
+            // survived for the life of the process and started recording the next time that
+            // meeting was merely opened to read.
+            .onDisappear {
+                if store.pendingAutoRecord == meeting.id {
+                    store.pendingAutoRecord = nil
+                }
             }
             .onAppear {
                 audioPlaybackService.segments = meeting.segments
@@ -295,16 +304,12 @@ extension MeetingWorkspaceView {
             store.pendingAutoRecord = nil
             return
         }
-        if await recorder.startRecording(for: meeting) {
-            store.pendingAutoRecord = nil
-            return
-        }
-        // Kept only while a rebuild is the reason, because that is the one refusal that ends by
-        // itself. Every other — microphone permission denied, the speech engine failing to set
-        // up, capture never reaching `.recording` — will not resolve on its own, and a request
-        // that outlives its refusal is worse than a lost one: `.task(id:)` runs again on the
-        // next open, so merely reopening the meeting to read it would start recording into it.
-        if !recorder.isRecovering {
+        // The outcome says whether the obstacle clears on its own; only then is the request
+        // worth keeping for the retry. Deriving that here from `isRecovering` missed the window
+        // where the previous session was still being written, and treated a denied microphone
+        // as temporary — leaving a request armed to fire the next time the meeting was opened.
+        let outcome = await recorder.startRecording(for: meeting)
+        if !outcome.clearsOnItsOwn {
             store.pendingAutoRecord = nil
         }
     }

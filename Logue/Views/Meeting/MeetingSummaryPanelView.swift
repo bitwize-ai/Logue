@@ -30,7 +30,7 @@ struct MeetingSummaryPanelView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if recorder.postRecordingPipeline.isGeneratingAISummary || recorder.isDiarizing {
+                    if recorder.postRecordingPipeline.isGenerating(for: meeting.id) || recorder.isDiarizing {
                         aiSummaryLoadingView
                     } else if let smartMinutes = meeting.smartMinutes {
                         smartMinutesView(smartMinutes)

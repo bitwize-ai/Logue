@@ -310,12 +310,12 @@ final class RecordingSessionManager {
     /// consumed and never retried.
     @discardableResult
     // swiftlint:disable:next function_body_length
-    func startRecording(for meeting: MeetingNote) async -> Bool {
+    func startRecording(for meeting: MeetingNote) async -> RecordingStartOutcome {
         guard recordingState == .idle else {
-            if recordingState == .recovering {
-                logger.info("Not starting a recording while an interrupted session is being rebuilt")
-            }
-            return false
+            let refusal = RecordingStartOutcome(refusedIn: recordingState)
+            logger.info("Recording not started: \(String(describing: refusal), privacy: .public)")
+            captureNotice = refusal.notice ?? captureNotice
+            return refusal
         }
         recordingState = .starting
         errorMessage = nil
@@ -327,7 +327,7 @@ final class RecordingSessionManager {
         guard hasPermission else {
             errorMessage = RecordingError.micPermissionDenied.localizedDescription
             recordingState = .idle
-            return false
+            return .microphoneDenied
         }
 
         await awaitPreviousPostRecordingTask()
@@ -369,7 +369,7 @@ final class RecordingSessionManager {
             errorMessage = RecordingError.speechEngineSetupFailed(error.localizedDescription).localizedDescription
             logger.error("Speech engine setup failed: \(error.localizedDescription, privacy: .public)")
             recordingState = .idle
-            return false
+            return .engineUnavailable
         }
 
         speechEngine = engine
@@ -407,7 +407,7 @@ final class RecordingSessionManager {
         if recordingState != .recording {
             diarizationManager = nil
             recordingState = .idle
-            return false
+            return .captureFailed
         }
 
         // Initialize diarization in background (models download while transcription runs)
@@ -452,7 +452,7 @@ final class RecordingSessionManager {
             startCheckpointing()
             logger.info("Recording started for meeting \(meetingID)")
         }
-        return isRecording
+        return isRecording ? .started : .captureFailed
     }
 
     private func startMicrophoneRecording(engine: SpeechTranscriberEngine, diarizer: DiarizationManager) async {

@@ -164,7 +164,7 @@ struct MeetingActionItemsPanelView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(isExtracting || recorder.postRecordingPipeline.isGeneratingAISummary)
+                    .disabled(isExtracting || recorder.postRecordingPipeline.isGenerating(for: meeting.id))
                     .help("Re-extract action items with latest transcript")
                 }
             }

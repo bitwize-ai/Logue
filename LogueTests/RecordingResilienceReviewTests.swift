@@ -108,4 +108,59 @@ struct RecordingResilienceReviewTests {
         #expect(snapped[0].text == "the agent helps assemble it.")
         #expect(snapped[1].text == "into something you can judge")
     }
+
+    // MARK: - Whether a queued capture survives a refusal
+
+    @Test("A refusal that clears on its own keeps the request", arguments: [
+        RecordingStartOutcome.rebuildingInterruptedSession,
+        .previousSessionStopping,
+        .alreadyStarting,
+    ])
+    func selfClearingRefusalsKeepTheRequest(outcome: RecordingStartOutcome) {
+        // `.previousSessionStopping` is the one the previous rule missed: pressing Stop and
+        // immediately clicking the next calendar event dropped the capture in silence, because
+        // the view re-derived the reason from `isRecovering` and that was false.
+        #expect(outcome.clearsOnItsOwn)
+    }
+
+    @Test("A refusal that will not resolve itself drops the request", arguments: [
+        RecordingStartOutcome.microphoneDenied,
+        .engineUnavailable,
+        .captureFailed,
+    ])
+    func permanentRefusalsDropTheRequest(outcome: RecordingStartOutcome) {
+        // A kept request outlives its refusal: `.task(id:)` runs again on the next open, so
+        // denying the microphone once left a request armed to start recording the next time the
+        // user merely opened that meeting to read it.
+        #expect(outcome.clearsOnItsOwn == false)
+    }
+
+    @Test("A started session is not a refusal and keeps nothing")
+    func startedKeepsNothing() {
+        #expect(RecordingStartOutcome.started.started)
+        #expect(RecordingStartOutcome.started.clearsOnItsOwn == false)
+        #expect(RecordingStartOutcome.started.notice == nil)
+    }
+
+    @Test("Each blocked recorder state maps to the refusal that describes it", arguments: [
+        (RecordingSessionManager.RecordingState.recovering,
+         RecordingStartOutcome.rebuildingInterruptedSession),
+        (.stopping, .previousSessionStopping),
+        (.starting, .alreadyStarting),
+    ])
+    func blockedStatesMapToTheirRefusal(
+        state: RecordingSessionManager.RecordingState,
+        expected: RecordingStartOutcome
+    ) {
+        #expect(RecordingStartOutcome(refusedIn: state) == expected)
+    }
+
+    @Test("The two waits explain themselves; the permanent failures are reported elsewhere")
+    func onlyWaitsCarryANotice() {
+        #expect(RecordingStartOutcome.rebuildingInterruptedSession.notice != nil)
+        #expect(RecordingStartOutcome.previousSessionStopping.notice != nil)
+        // These set `errorMessage` instead, so a notice would say it twice.
+        #expect(RecordingStartOutcome.microphoneDenied.notice == nil)
+        #expect(RecordingStartOutcome.engineUnavailable.notice == nil)
+    }
 }
