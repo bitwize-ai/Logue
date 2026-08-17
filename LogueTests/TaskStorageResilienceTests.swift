@@ -226,49 +226,68 @@ struct TaskStorageResilienceTests {
 
     // MARK: - Which marked folder wins
 
-    @Test("An empty folder at the conventional name does not shadow one holding tasks")
-    func emptyConventionalFolderDoesNotShadow() throws {
-        // The restore sequence: the real folder is renamed, trashed by a reset, and one write
-        // mints a fresh `Tasks` while it is away. Dragging the real one back has to bring the
-        // tasks with it — the marker keeps them out of the document library too, so losing this
-        // election leaves them reachable from nowhere.
+    @Test("A folder minted while the real one was away does not shadow it")
+    func mintedFolderDoesNotShadowTheRealOne() throws {
+        // The restore sequence, performed rather than described: the real folder is renamed,
+        // trashed by a reset, and one task write mints a fresh `Tasks` while it is away. That
+        // write is the point — `prepare()` is only ever reached from `save` and `exportAll`,
+        // both of which write immediately, so a minted folder is never empty. Dragging the real
+        // one back has to bring its tasks with it; the marker keeps them out of the document
+        // library too, so losing this election leaves them reachable from nowhere.
         let temporary = TemporaryFolder()
         let root = temporary.url
 
         let real = root.appendingPathComponent("Errands", isDirectory: true)
         try TaskFolderStore(rootURL: real).prepare()
-        var task = TaskItem(id: UUID())
-        task.title = "Water the plants"
-        #expect(TaskFolderStore(rootURL: real).save(task))
+        for title in ["Water the plants", "Call the dentist", "File the tax return"] {
+            var task = TaskItem(id: UUID())
+            task.title = title
+            #expect(TaskFolderStore(rootURL: real).save(task))
+        }
 
-        let minted = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
-        try TaskFolderStore(rootURL: minted).prepare()
+        // The mint: a save into the conventional name, which creates the folder and writes.
+        let minted = TaskFolderStore(
+            rootURL: root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        )
+        var stray = TaskItem(id: UUID())
+        stray.title = "Made while the real folder was in the Trash"
+        #expect(minted.save(stray))
+
+        // The marker the app was using before the folder went missing is what tells a restore
+        // from a copy: the minted folder carries a fresh one.
+        let realMarker = TaskFolderStore(rootURL: real).markerIdentifier
 
         #expect(
-            TaskFolderStore.markedFolder(in: root)?.standardizedFileURL == real.standardizedFileURL
+            TaskFolderStore.markedFolder(in: root, remembering: realMarker)?.standardizedFileURL
+                == real.standardizedFileURL,
+            "the folder the app was already using wins, not the one that happens to be named Tasks"
         )
         _ = temporary
     }
 
-    @Test("The conventional name still wins when both folders hold tasks")
-    func conventionalNameWinsAmongEquals() throws {
-        // Content decides first; the documented name rule decides the rest. A plain copy of the
-        // folder must still resolve the way it always did.
+    @Test("A copy of the folder still resolves to the one named Tasks")
+    func aCopyStillResolvesByName() throws {
+        // The other shape of two marked folders, and the reason identity decides first: a copy
+        // carries the *same* marker as its original, so the remembered marker matches both and
+        // decides nothing. The documented name rule has to still settle it.
         let temporary = TemporaryFolder()
         let root = temporary.url
 
-        for name in [TaskFile.folderName, "Tasks copy"] {
-            let folder = root.appendingPathComponent(name, isDirectory: true)
-            try TaskFolderStore(rootURL: folder).prepare()
-            var task = TaskItem(id: UUID())
-            task.title = "in \(name)"
-            #expect(TaskFolderStore(rootURL: folder).save(task))
-        }
+        let original = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        try TaskFolderStore(rootURL: original).prepare()
+        var task = TaskItem(id: UUID())
+        task.title = "Water the plants"
+        #expect(TaskFolderStore(rootURL: original).save(task))
 
-        let expected = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
+        // A copy in the Finder sense: same marker, same files, different name.
+        let copy = root.appendingPathComponent("Tasks copy", isDirectory: true)
+        try FileManager.default.copyItem(at: original, to: copy)
+
+        let marker = TaskFolderStore(rootURL: original).markerIdentifier
+        #expect(TaskFolderStore(rootURL: copy).markerIdentifier == marker, "a copy shares its marker")
         #expect(
-            TaskFolderStore.markedFolder(in: root)?.standardizedFileURL
-                == expected.standardizedFileURL
+            TaskFolderStore.markedFolder(in: root, remembering: marker)?.standardizedFileURL
+                == original.standardizedFileURL
         )
         _ = temporary
     }

@@ -89,13 +89,31 @@ final class TaskStorage {
     /// turned out to have `~/Logue/Tasks` holding a hundred documents. Writing our marker in
     /// there would put two identities on one folder, and the loser would be the space, taking
     /// its documents with it. So an occupied name is stepped over rather than shared.
+    /// The marker of the folder this app last used, if it has used one.
+    ///
+    /// Persisted rather than held in memory: the sequence it exists for — the folder renamed,
+    /// trashed by a reset, a write minting a replacement, then the real one restored — can
+    /// easily span a relaunch, and the two folders are indistinguishable without it.
+    nonisolated private static var rememberedMarker: UUID? {
+        UserDefaults.standard.string(forKey: AppConstants.UserDefaultsKeys.lastTaskFolderMarker)
+            .flatMap(UUID.init(uuidString:))
+    }
+
+    nonisolated private static func rememberMarker(of folder: URL) {
+        guard let marker = TaskFolderStore(rootURL: folder).markerIdentifier else { return }
+        UserDefaults.standard.set(
+            marker.uuidString, forKey: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
+        )
+    }
+
     nonisolated private static func resolveTasksFolderURL() -> URL {
         let root = DocumentStorage.markdownRootURL
 
         // Identity first. The name is only ever the *creation-time* default: once the folder
         // exists it is found by the marker it carries, so renaming it in Finder — which the
         // marker file explicitly invites — keeps tasks working instead of emptying the list.
-        if let marked = TaskFolderStore.markedFolder(in: root) {
+        if let marked = TaskFolderStore.markedFolder(in: root, remembering: rememberedMarker) {
+            rememberMarker(of: marked)
             return marked
         }
 

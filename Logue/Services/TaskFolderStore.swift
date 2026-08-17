@@ -97,32 +97,19 @@ struct TaskFolderStore {
     /// missing, every task vanishes from the app, and the next save quietly recreates an empty
     /// one beside the real files, which that same marker keeps out of the document library.
     ///
-    /// Ambiguity is not resolved by guessing: two marked folders keep the one actually named
-    /// `TaskFile.folderName` if either is, and the situation is logged.
-    static func markedFolder(in root: URL) -> URL? {
+    /// Ambiguity is resolved by identity, not by name. Two marked folders are usually a copy of
+    /// one another, which share a marker; a restore is two *different* markers, because the
+    /// folder minted while the real one was away got a fresh one. `remembering` is the marker
+    /// this app last used, so the two cases are told apart by the thing the marker exists for.
+    ///
+    /// There is deliberately no fast path for the conventional name. One was added when this
+    /// resolved on every read and write, and it short-circuited past exactly the ambiguity this
+    /// function exists to detect: a folder minted at `Tasks` while the user's renamed folder sat
+    /// in the Trash won on its name and hid every restored task for good. `TaskStorage` now
+    /// remembers the answer between the events that can move it, so the walk runs once per
+    /// invalidation rather than per operation, and the reason for the short-circuit is gone.
+    static func markedFolder(in root: URL, remembering rememberedMarker: UUID? = nil) -> URL? {
         let resolvedRoot = root.resolvingSymlinksInPath()
-
-        // The folder where it was created, checked first. This is every library that has not
-        // had its tasks folder moved or renamed, and it costs one directory listing instead of a
-        // walk of the tree — which matters because this resolves on every task read, write and
-        // delete, on the main actor, and the documented use for the root is a synced vault.
-        //
-        // It has to be holding tasks to win, though. An *empty* folder at this name is exactly
-        // what gets minted when the real one is briefly missing — trashed by a reset, or not yet
-        // restored — and short-circuiting on it then shadows the real folder for good the moment
-        // it comes back: the walk that would have found the second marker never runs, so the
-        // restored tasks are invisible in the app while the marker also keeps them out of the
-        // document library. Falling through costs one walk on a genuinely empty library, which
-        // is the case where a walk is cheapest.
-        let conventional = TaskFolderStore(
-            rootURL: resolvedRoot.appendingPathComponent(TaskFile.folderName, isDirectory: true)
-        )
-        if conventional.isMarkedTaskFolder,
-           !conventional.isExistingSpaceFolder,
-           (conventional.taskFileCount ?? 0) > 0
-        {
-            return conventional.rootURL
-        }
 
         // Otherwise searched below the root too, because that is where the marker can end up
         // and where `FolderSnapshot.taskFolders` already finds it. Listing only the root's
@@ -186,14 +173,20 @@ struct TaskFolderStore {
 
         guard marked.count > 1 else { return marked.first }
 
-        // Content decides before the name does. Two marked folders is usually a copy, but it is
-        // also what a restore produces: the real folder comes back beside an empty one this code
-        // minted at the conventional name while it was away. Preferring the name there hands the
-        // user an empty list and leaves their tasks reachable from nowhere.
-        let holdingTasks = marked.filter { (TaskFolderStore(rootURL: $0).taskFileCount ?? 0) > 0 }
-        let preferred = holdingTasks.isEmpty ? marked : holdingTasks
-        let byName = preferred.first { $0.lastPathComponent == TaskFile.folderName }
-        let chosen = byName ?? preferred.min { $0.path < $1.path }
+        // The marker this app last wrote wins. A copy carries the same marker as its original,
+        // so this decides nothing there and the name rule below still does — but a folder minted
+        // while the user's real one was missing carries a *different* marker, and preferring the
+        // name there handed them an empty list while their tasks stayed reachable from nowhere.
+        if let rememberedMarker,
+           let known = marked.first(where: {
+               TaskFolderStore(rootURL: $0).markerIdentifier == rememberedMarker
+           })
+        {
+            return known
+        }
+
+        let byName = marked.first { $0.lastPathComponent == TaskFile.folderName }
+        let chosen = byName ?? marked.min { $0.path < $1.path }
         let chosenName = chosen?.lastPathComponent ?? ""
         logger.error(
             "\(marked.count, privacy: .public) folders carry the task marker; using \(chosenName, privacy: .public)"
