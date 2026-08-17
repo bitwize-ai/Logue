@@ -191,9 +191,9 @@ struct TaskFolderStore {
         // minted at the conventional name while it was away. Preferring the name there hands the
         // user an empty list and leaves their tasks reachable from nowhere.
         let holdingTasks = marked.filter { (TaskFolderStore(rootURL: $0).taskFileCount ?? 0) > 0 }
-        let candidates = holdingTasks.isEmpty ? marked : holdingTasks
-        let byName = candidates.first { $0.lastPathComponent == TaskFile.folderName }
-        let chosen = byName ?? candidates.min { $0.path < $1.path }
+        let preferred = holdingTasks.isEmpty ? marked : holdingTasks
+        let byName = preferred.first { $0.lastPathComponent == TaskFile.folderName }
+        let chosen = byName ?? preferred.min { $0.path < $1.path }
         let chosenName = chosen?.lastPathComponent ?? ""
         logger.error(
             "\(marked.count, privacy: .public) folders carry the task marker; using \(chosenName, privacy: .public)"
