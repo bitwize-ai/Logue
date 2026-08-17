@@ -115,8 +115,8 @@ struct TaskFolderStore {
             return conventional.rootURL
         }
 
-        // Otherwise searched at every depth, because that is where the marker can end up and
-        // where `FolderSnapshot.taskFolders` already looks for it. Listing only the root's
+        // Otherwise searched below the root too, because that is where the marker can end up
+        // and where `FolderSnapshot.taskFolders` already finds it. Listing only the root's
         // immediate children meant dragging `Tasks/` into another folder in Finder read as
         // missing: the list emptied, the next save recreated an empty folder beside the real
         // files, and the marker kept those files out of the document library too — visible in
@@ -142,11 +142,25 @@ struct TaskFolderStore {
         )
         else { return nil }
 
-        // Annotated so the key path below resolves: a DirectoryEnumerator yields `Any`, and
-        // without a stated element type the chain gives the compiler nothing to infer from.
-        let candidates: [TaskFolderStore] = enumerator
-            .compactMap { $0 as? URL }
-            .filter { TaskFile.isFolderMarker(filename: $0.lastPathComponent) }
+        // Bounded to the depth a space hierarchy can reach, and stopped from descending any
+        // further rather than filtered afterwards: the root is documented as somewhere to point
+        // at an existing vault, and walking a whole synced library per task read is the cost
+        // this bound exists to cap. A marker below this depth is not somewhere the app can have
+        // put one.
+        var found: [URL] = []
+        while let url = enumerator.nextObject() as? URL {
+            if enumerator.level > SpaceFolderLayout.maxDepth {
+                enumerator.skipDescendants()
+                continue
+            }
+            if TaskFile.isFolderMarker(filename: url.lastPathComponent) {
+                found.append(url)
+            }
+        }
+
+        // Annotated so the key path below resolves: without a stated element type the chain
+        // gives the compiler nothing to infer from.
+        let candidates: [TaskFolderStore] = found
             .map { TaskFolderStore(rootURL: $0.deletingLastPathComponent()) }
             // The root is never the tasks folder. A stray `_tasks.md` copied to `~/Logue` —
             // made to read it, a Finder drag that flattened the folder, a sync duplicate —

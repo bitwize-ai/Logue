@@ -194,4 +194,33 @@ struct TaskStorageResilienceTests {
         #expect(TaskFolderStore.markedFolder(in: root) == nil)
         _ = temporary
     }
+
+    // MARK: - Bounding the folder search
+
+    @Test("A marker buried below the space-depth cap is not searched for")
+    func searchIsBoundedToTheSpaceDepthCap() throws {
+        // The root is documented as somewhere to point at an existing vault, and this resolves
+        // on every task read and write. A marker deeper than a space hierarchy can reach is not
+        // somewhere the app can have put one, so the walk stops rather than paying for it.
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        let deep = (0 ... SpaceFolderLayout.maxDepth + 2)
+            .reduce(root) { $0.appendingPathComponent("d\($1)", isDirectory: true) }
+        try TaskFolderStore(rootURL: deep).prepare()
+
+        #expect(TaskFolderStore.markedFolder(in: root) == nil)
+        _ = temporary
+    }
+
+    @Test("A tasks folder one level down is still found")
+    func shallowNestingIsStillFound() throws {
+        // The bound must not undo the moved-folder fix it sits beside.
+        let temporary = TemporaryFolder()
+        let root = temporary.url
+        let moved = root.appendingPathComponent("Archive/Tasks", isDirectory: true)
+        try TaskFolderStore(rootURL: moved).prepare()
+
+        #expect(TaskFolderStore.markedFolder(in: root)?.standardizedFileURL == moved.standardizedFileURL)
+        _ = temporary
+    }
 }

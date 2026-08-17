@@ -14,6 +14,13 @@ struct TaskInspectorPanel: View {
     let task: TaskItem
     let meetingTitle: String?
     let onChange: (TaskItem) -> Void
+    /// Applies typed title and notes to the task with this id, whatever that task holds now.
+    ///
+    /// Separate from `onChange` on purpose: the free-text fields are the only controls here
+    /// whose value can be older than the record, because they are held as drafts while the
+    /// user types. Sending the two strings and letting the owner apply them means a text
+    /// commit cannot carry a stale copy of any other field with it.
+    let onCommitText: (UUID, String, String) -> Void
     let onDelete: () -> Void
     let onOpenSource: () -> Void
     let onClose: () -> Void
@@ -25,8 +32,11 @@ struct TaskInspectorPanel: View {
     @State private var titleDraft = ""
     @State private var notesDraft = ""
     @State private var newTag = ""
-    /// The task the drafts were loaded from. Held whole rather than by id so a commit can be
-    /// built from it after `task` has already moved on to another row.
+    /// The values the drafts were loaded with, and the row they came from.
+    ///
+    /// Kept to answer one question: did the *user* type something? Comparing the drafts
+    /// against the live record instead reads an edit made elsewhere — a rename in the list —
+    /// as a change made here, and writes the old text back over it.
     @State private var draftSource: TaskItem?
     @FocusState private var focus: Field?
 
@@ -58,9 +68,9 @@ struct TaskInspectorPanel: View {
         .frame(width: panelWidth)
         .background(AppThemeConstants.surfaceBackground)
         .onAppear(perform: loadDrafts)
-        // Switching rows commits the outgoing row's text to the outgoing row, then loads
-        // the new one. `commitDrafts` writes to `draftSource`, so nothing can land on the
-        // task that just became selected.
+        // Switching rows sends the outgoing row's text under the outgoing row's id, then
+        // loads the new one. The id travels with the text, so nothing can land on the task
+        // that just became selected.
         .onChange(of: task.id) {
             commitDrafts()
             loadDrafts()
@@ -282,38 +292,33 @@ struct TaskInspectorPanel: View {
     /// that saves on every focus change would stamp `updatedAt` and rewrite the file just
     /// for being looked at, which reorders any list sorted by recency.
     ///
-    /// Writes the drafts onto the row they were typed into.
+    /// Sends the typed title and notes to the row they were typed into.
     ///
-    /// Still the current row, whenever it is still the current row. Every other control here
-    /// builds its update from the live `task` and `TaskStore.update` replaces the record
-    /// wholesale, so committing text onto a snapshot taken at selection would put back
-    /// whatever changed in between — set a due date, type a note, click away, and the date is
-    /// gone. Ticking the row's checkbox and typing a note did the same to `completedCount`.
+    /// Two separate questions, and answering both from one record is what kept going wrong.
+    /// *Did the user type something?* is answered against `draftSource`, the values the fields
+    /// were loaded with — comparing against the live record instead means an edit made
+    /// elsewhere reads as something typed here, so renaming the task in the list and closing
+    /// the inspector wrote the old title back over it. *What should the text be applied to?*
+    /// is not this view's question at all: it hands over the id and the two strings, and the
+    /// owner applies them to whatever that task holds now.
     ///
-    /// The snapshot is used only when the row has already changed underneath, which is the
-    /// id-change path below: `task` is the incoming row by then, and building from it wrote
-    /// the outgoing row's title and notes onto the newly-selected one — in markdown mode also
-    /// renaming its file and trashing the original. Two clicks, no typing required.
+    /// Carrying a whole `TaskItem` is what made this unfixable from here. A text commit built
+    /// on the live record wrote the outgoing row's text onto the incoming one when the
+    /// selection had already moved; built on the snapshot, it reverted every field changed
+    /// since selection — a due date, a priority, a tag, or the list row's completion tick,
+    /// which took `completedCount` back with it.
     private func commitDrafts() {
-        guard let source = draftSource else { return }
-        commitDrafts(onto: source.id == task.id ? task : source)
-    }
-
-    private func commitDrafts(onto target: TaskItem) {
-        var updated = target
-        var changed = false
-
+        guard var source = draftSource else { return }
         let sanitised = TaskTextParser.sanitisedTitle(titleDraft)
-        if sanitised != target.title {
-            updated.title = sanitised
-            changed = true
-        }
-        if notesDraft != target.notes {
-            updated.notes = notesDraft
-            changed = true
-        }
-        guard changed else { return }
-        onChange(updated)
+        guard sanitised != source.title || notesDraft != source.notes else { return }
+
+        onCommitText(source.id, sanitised, notesDraft)
+
+        // What was just committed is what the fields now hold, so a later blur with no further
+        // typing has nothing to send.
+        source.title = sanitised
+        source.notes = notesDraft
+        draftSource = source
     }
 
     private func commitTag() {
