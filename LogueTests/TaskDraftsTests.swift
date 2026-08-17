@@ -60,9 +60,11 @@ struct TaskDraftsTests {
         var renamed = original
         renamed.title = "New"
 
-        let resynced = typing.resynced(with: renamed, focused: .title)
-
-        #expect(resynced?.title == "Old and a half")
+        // `nil` is the right answer here and the point of the case: with the focused field's
+        // draft and its base both held back, nothing moved at all, and returning an equal value
+        // would let the view write state for a no-op.
+        #expect(typing.resynced(with: renamed, focused: .title) == nil)
+        #expect(typing.title == "Old and a half")
     }
 
     @Test("The other field still follows while one is focused")
