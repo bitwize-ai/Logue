@@ -56,8 +56,10 @@ struct TaskStorageResilienceTests {
         let root = temporary.url
         let contested = root.appendingPathComponent("Tasks", isDirectory: true)
         try TaskFolderStore(rootURL: contested).prepare()
-        try write("---\n_logue_space_id: \(UUID().uuidString)\n---\n",
-                  to: contested.appendingPathComponent(SpaceFile.filename))
+        try write(
+            "---\n_logue_space_id: \(UUID().uuidString)\n---\n",
+            to: contested.appendingPathComponent(SpaceFile.filename)
+        )
 
         #expect(TaskFolderStore.markedFolder(in: root) == nil)
         _ = temporary
@@ -79,8 +81,10 @@ struct TaskStorageResilienceTests {
         #expect(folder.save(task))
 
         // Carries a task identifier that is not a UUID: presents as a task, cannot be parsed.
-        try write("---\n_logue_task_id: not-a-uuid\ntitle: Broken\n---\n",
-                  to: temporary.url.appendingPathComponent("broken.md"))
+        try write(
+            "---\n_logue_task_id: not-a-uuid\ntitle: Broken\n---\n",
+            to: temporary.url.appendingPathComponent("broken.md")
+        )
 
         let loaded = folder.load()
         #expect(loaded.tasks.count == 1)
@@ -96,8 +100,10 @@ struct TaskStorageResilienceTests {
         let temporary = TemporaryFolder()
         let folder = TaskFolderStore(rootURL: temporary.url)
         try folder.prepare()
-        try write("# Shopping\n\nnothing to do with tasks\n",
-                  to: temporary.url.appendingPathComponent("note.md"))
+        try write(
+            "# Shopping\n\nnothing to do with tasks\n",
+            to: temporary.url.appendingPathComponent("note.md")
+        )
 
         let loaded = folder.load()
         #expect(loaded.tasks.isEmpty)
@@ -188,8 +194,10 @@ struct TaskStorageResilienceTests {
         let temporary = TemporaryFolder()
         let root = temporary.url
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try write(TaskFile.folderMarkerContents(id: UUID()),
-                  to: root.appendingPathComponent(TaskFile.folderMarkerFilename))
+        try write(
+            TaskFile.folderMarkerContents(id: UUID()),
+            to: root.appendingPathComponent(TaskFile.folderMarkerFilename)
+        )
 
         #expect(TaskFolderStore.markedFolder(in: root) == nil)
         _ = temporary
@@ -261,33 +269,6 @@ struct TaskStorageResilienceTests {
             TaskFolderStore.markedFolder(in: root, remembering: realMarker)?.standardizedFileURL
                 == real.standardizedFileURL,
             "the folder the app was already using wins, not the one that happens to be named Tasks"
-        )
-        _ = temporary
-    }
-
-    @Test("A copy of the folder still resolves to the one named Tasks")
-    func aCopyStillResolvesByName() throws {
-        // The other shape of two marked folders, and the reason identity decides first: a copy
-        // carries the *same* marker as its original, so the remembered marker matches both and
-        // decides nothing. The documented name rule has to still settle it.
-        let temporary = TemporaryFolder()
-        let root = temporary.url
-
-        let original = root.appendingPathComponent(TaskFile.folderName, isDirectory: true)
-        try TaskFolderStore(rootURL: original).prepare()
-        var task = TaskItem(id: UUID())
-        task.title = "Water the plants"
-        #expect(TaskFolderStore(rootURL: original).save(task))
-
-        // A copy in the Finder sense: same marker, same files, different name.
-        let copy = root.appendingPathComponent("Tasks copy", isDirectory: true)
-        try FileManager.default.copyItem(at: original, to: copy)
-
-        let marker = TaskFolderStore(rootURL: original).markerIdentifier
-        #expect(TaskFolderStore(rootURL: copy).markerIdentifier == marker, "a copy shares its marker")
-        #expect(
-            TaskFolderStore.markedFolder(in: root, remembering: marker)?.standardizedFileURL
-                == original.standardizedFileURL
         )
         _ = temporary
     }

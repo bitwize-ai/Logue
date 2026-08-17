@@ -99,10 +99,31 @@ final class TaskStorage {
             .flatMap(UUID.init(uuidString:))
     }
 
-    nonisolated private static func rememberMarker(of folder: URL) {
-        guard let marker = TaskFolderStore(rootURL: folder).markerIdentifier else { return }
+    /// Records which folder this app is using, the first time it learns.
+    ///
+    /// Deliberately written once and not refreshed. Rewriting it on every resolve destroyed the
+    /// thing it exists for: with the real folder in the Trash, a task write mints a replacement,
+    /// and on the next launch that replacement is the only marked folder — so it was returned
+    /// *and* remembered, and restoring the original then lost the election exactly as it had
+    /// before the memory existed. A relaunch was precisely what wiped the memory meant to
+    /// survive one.
+    ///
+    /// A memory left pointing at a folder the user really did delete is harmless: it matches
+    /// nothing, so the election falls through to the name rule. `forgetMarker` covers the case
+    /// where they say so deliberately.
+    nonisolated private static func rememberMarkerIfUnknown(of folder: URL) {
+        guard rememberedMarker == nil,
+              let marker = TaskFolderStore(rootURL: folder).markerIdentifier
+        else { return }
         UserDefaults.standard.set(
             marker.uuidString, forKey: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
+        )
+    }
+
+    /// Drops the remembered folder, for a reset the user asked for.
+    nonisolated static func forgetMarker() {
+        UserDefaults.standard.removeObject(
+            forKey: AppConstants.UserDefaultsKeys.lastTaskFolderMarker
         )
     }
 
@@ -113,7 +134,7 @@ final class TaskStorage {
         // exists it is found by the marker it carries, so renaming it in Finder — which the
         // marker file explicitly invites — keeps tasks working instead of emptying the list.
         if let marked = TaskFolderStore.markedFolder(in: root, remembering: rememberedMarker) {
-            rememberMarker(of: marked)
+            rememberMarkerIfUnknown(of: marked)
             return marked
         }
 
@@ -237,6 +258,12 @@ final class TaskStorage {
     /// the tasks would return on the next switch. Conversely a reset in encrypted mode never
     /// touched the folder at all.
     func clearAllData() {
+        // A reset is the user saying this folder is no longer the one. Without forgetting it,
+        // the write-once memory would keep pointing at a folder now in the Trash and hand the
+        // library back to it the moment they restored it for some other reason.
+        Self.forgetMarker()
+        Self.invalidateFolderLocation()
+
         let directory = encryptedDirectory
         if FileManager.default.fileExists(atPath: directory.path) {
             do {

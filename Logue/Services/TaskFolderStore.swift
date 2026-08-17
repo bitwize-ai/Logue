@@ -168,30 +168,24 @@ struct TaskFolderStore {
         // A folder claimed by a space is not a task folder: space identity is older, holds
         // documents, and misreading it destroys them. Same precedence the snapshot applies.
         let marked = candidates
-            .filter { !$0.isExistingSpaceFolder && $0.isMarkedTaskFolder }
-            .map(\.rootURL)
+            .filter { !$0.isExistingSpaceFolder }
+            .compactMap { store -> TaskFolderElection.Candidate? in
+                guard let marker = store.markerIdentifier else { return nil }
+                return TaskFolderElection.Candidate(url: store.rootURL, marker: marker)
+            }
 
-        guard marked.count > 1 else { return marked.first }
+        // The rule itself is in `TaskFolderElection`, where it can be tested without building a
+        // directory tree. It had to be: the version before it elected by enumerator order, which
+        // is a name hash rather than a sort, and no filesystem test noticed.
+        let outcome = TaskFolderElection.elect(among: marked, remembering: rememberedMarker)
 
-        // The marker this app last wrote wins. A copy carries the same marker as its original,
-        // so this decides nothing there and the name rule below still does — but a folder minted
-        // while the user's real one was missing carries a *different* marker, and preferring the
-        // name there handed them an empty list while their tasks stayed reachable from nowhere.
-        if let rememberedMarker,
-           let known = marked.first(where: {
-               TaskFolderStore(rootURL: $0).markerIdentifier == rememberedMarker
-           })
-        {
-            return known
+        if outcome.wasAmbiguous {
+            let chosenName = outcome.chosen?.lastPathComponent ?? ""
+            logger.error(
+                "\(marked.count, privacy: .public) folders carry the task marker; using \(chosenName, privacy: .public)"
+            )
         }
-
-        let byName = marked.first { $0.lastPathComponent == TaskFile.folderName }
-        let chosen = byName ?? marked.min { $0.path < $1.path }
-        let chosenName = chosen?.lastPathComponent ?? ""
-        logger.error(
-            "\(marked.count, privacy: .public) folders carry the task marker; using \(chosenName, privacy: .public)"
-        )
-        return chosen
+        return outcome.chosen
     }
 
     // MARK: - Reading
