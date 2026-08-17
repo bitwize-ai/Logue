@@ -14,6 +14,14 @@ final class PostRecordingPipeline {
 
     private var aiGenerationTask: Task<Void, Never>?
     private var currentAITaskID: UUID?
+    /// The meeting the in-flight pass belongs to.
+    ///
+    /// Kept so `cancel(startingInstead:)` can refuse to take work that is not the caller's.
+    /// Starting a recording cancels the previous meeting's pass on purpose — the two compete for
+    /// the same model — but recovery starts a pass for the *recovered* meeting and then leaves
+    /// `.recovering`, and an automatic capture waiting on exactly that edge cancelled it one
+    /// statement later. The recovered meeting kept its default title and never got a summary.
+    private var currentMeetingID: UUID?
 
     // B11: Use [weak self] and only clear state if not cancelled (a new task hasn't replaced us)
     func start(for meetingID: UUID) {
@@ -22,6 +30,7 @@ final class PostRecordingPipeline {
         isGeneratingAISummary = true
         let taskID = UUID()
         currentAITaskID = taskID
+        currentMeetingID = meetingID
         let task = Task { [weak self] in
             defer {
                 // Only reset UI state if this is still the active task (not replaced by a newer one)
@@ -68,10 +77,20 @@ final class PostRecordingPipeline {
         aiGenerationTask = task
     }
 
-    func cancel() {
+    /// Cancels the in-flight pass.
+    ///
+    /// - Parameter startingInstead: the meeting whose recording is about to begin. A pass
+    ///   belonging to a *different* meeting is left alone: it is not competing for the recording
+    ///   that is starting, and cancelling it loses that meeting's summary, highlights and linked
+    ///   document with nothing to restart them. Pass `nil` to cancel unconditionally.
+    func cancel(startingInstead meetingID: UUID? = nil) {
+        if let meetingID, let currentMeetingID, currentMeetingID != meetingID {
+            return
+        }
         aiGenerationTask?.cancel()
         aiGenerationTask = nil
         currentAITaskID = nil
+        currentMeetingID = nil
         isGeneratingAISummary = false
     }
 

@@ -293,7 +293,18 @@ extension MeetingWorkspaceView {
         guard store.pendingAutoRecord == meeting.id else { return }
         if recorder.isRecording {
             store.pendingAutoRecord = nil
-        } else if await recorder.startRecording(for: meeting) {
+            return
+        }
+        if await recorder.startRecording(for: meeting) {
+            store.pendingAutoRecord = nil
+            return
+        }
+        // Kept only while a rebuild is the reason, because that is the one refusal that ends by
+        // itself. Every other — microphone permission denied, the speech engine failing to set
+        // up, capture never reaching `.recording` — will not resolve on its own, and a request
+        // that outlives its refusal is worse than a lost one: `.task(id:)` runs again on the
+        // next open, so merely reopening the meeting to read it would start recording into it.
+        if !recorder.isRecovering {
             store.pendingAutoRecord = nil
         }
     }

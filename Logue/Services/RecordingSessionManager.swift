@@ -331,7 +331,9 @@ final class RecordingSessionManager {
         }
 
         await awaitPreviousPostRecordingTask()
-        postRecordingPipeline.cancel()
+        // Scoped to this meeting: an unconditional cancel here took the recovered meeting's
+        // pass when an automatic capture started on the edge where recovery ended.
+        postRecordingPipeline.cancel(startingInstead: meeting.id)
 
         currentMeetingID = meeting.id
         let meetingID = meeting.id
