@@ -57,12 +57,26 @@ final class TaskStorage {
         // not enough on its own: the watcher debounces, `rescan` returns early when one is
         // already in flight, and it can fail to start at all — so between a rename made in
         // Finder and the next scan the cache still names the old folder. A write in that window
-        // recreates `<root>/Tasks`, which then wins the conventional fast path for good and
-        // hides every task file in the folder the user actually renamed. One `fileExists` on a
-        // path we already hold is cheap; the walk it guards is not.
+        // recreates `<root>/Tasks`, which then hides every file in the folder the user actually
+        // renamed. One `fileExists` on a path we already hold is cheap; the walk it guards
+        // is not.
         if let cachedFolderURL, FileManager.default.fileExists(atPath: cachedFolderURL.path) {
             return cachedFolderURL
         }
+
+        // A missing root is not a moved folder. An unmounted drive, a folder dragged elsewhere
+        // and a sync that has not finished all look identical to "everything was deleted", and
+        // the document side refuses to act on that at all — `MarkdownFolderScan.isRootPresent`,
+        // and the rule in CLAUDE.md. Re-resolving here would answer `<root>/Tasks`, and the next
+        // write would recreate the whole root underneath it. The remembered path is kept until
+        // the root is back, so the folder is found again rather than replaced.
+        let root = DocumentStorage.markdownRootURL
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            return cachedFolderURL ?? root.appendingPathComponent(
+                TaskFile.folderName, isDirectory: true
+            )
+        }
+
         let resolved = resolveTasksFolderURL()
         cachedFolderURL = resolved
         return resolved

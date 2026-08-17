@@ -29,15 +29,10 @@ struct TaskInspectorPanel: View {
     /// resizable; it is not wired up here yet.
     private let panelWidth: CGFloat = 320
 
-    @State private var titleDraft = ""
-    @State private var notesDraft = ""
     @State private var newTag = ""
-    /// The values the drafts were loaded with, and the row they came from.
-    ///
-    /// Kept to answer one question: did the *user* type something? Comparing the drafts
-    /// against the live record instead reads an edit made elsewhere — a rename in the list —
-    /// as a change made here, and writes the old text back over it.
-    @State private var draftSource: TaskItem?
+    /// The free-text fields and what they were loaded from. `TaskDrafts` holds the rule; this
+    /// view only reports focus changes and edits into it.
+    @State private var drafts: TaskDrafts?
     @FocusState private var focus: Field?
 
     private enum Field: Hashable {
@@ -68,9 +63,9 @@ struct TaskInspectorPanel: View {
         .frame(width: panelWidth)
         .background(AppThemeConstants.surfaceBackground)
         .onAppear(perform: loadDrafts)
-        // Switching rows sends the outgoing row's text under the outgoing row's id, then
-        // loads the new one. The id travels with the text, so nothing can land on the task
-        // that just became selected.
+        // Switching rows sends the outgoing row's text under the outgoing row's id, then loads
+        // the new one. The id travels with the text, so nothing can land on the task that just
+        // became selected.
         .onChange(of: task.id) {
             commitDrafts()
             loadDrafts()
@@ -80,21 +75,15 @@ struct TaskInspectorPanel: View {
                 commitDrafts()
             }
         }
-        // A field the user is not typing in must never show text older than the record.
-        // Renaming the row in the list changes `task.title` without changing `task.id`, so
-        // nothing above re-runs: the field kept the old title, and an edit typed there sent
-        // that stale value back as the base — undoing the rename, and in markdown mode
-        // trashing the renamed file. The focused field is left alone, because resyncing it
-        // would overwrite what is being typed.
-        .onChange(of: task.title) { _, latest in
-            guard focus != .title else { return }
-            titleDraft = latest
-            draftSource?.title = latest
-        }
-        .onChange(of: task.notes) { _, latest in
-            guard focus != .notes else { return }
-            notesDraft = latest
-            draftSource?.notes = latest
+        // A field the user is not typing in must never show text older than the record — a
+        // rename made in the list row changes the title without changing the id, so nothing
+        // above re-runs. `resynced` refuses a record from a different row, so this is safe
+        // whatever order SwiftUI delivers these in.
+        .onChange(of: task) { _, latest in
+            guard let resynced = drafts?.resynced(with: latest, focused: focusedField) else {
+                return
+            }
+            drafts = resynced
         }
         .onDisappear(perform: commitDrafts)
     }
@@ -122,7 +111,7 @@ struct TaskInspectorPanel: View {
 
     private var titleSection: some View {
         section("Title") {
-            TextField("Title", text: $titleDraft, axis: .vertical)
+            TextField("Title", text: titleBinding, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1 ... 4)
                 .focused($focus, equals: .title)
@@ -244,7 +233,7 @@ struct TaskInspectorPanel: View {
 
     private var notesSection: some View {
         section("Notes") {
-            TextEditor(text: $notesDraft)
+            TextEditor(text: notesBinding)
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 90)
@@ -299,44 +288,40 @@ struct TaskInspectorPanel: View {
     // MARK: - Editing
 
     private func loadDrafts() {
-        titleDraft = task.title
-        notesDraft = task.notes
-        draftSource = task
+        drafts = .loaded(from: task)
     }
 
-    /// Writes the free-text fields back, but only when they actually differ — an inspector
-    /// that saves on every focus change would stamp `updatedAt` and rewrite the file just
-    /// for being looked at, which reorders any list sorted by recency.
+    /// Which field the drafts should treat as being typed into.
+    private var focusedField: TaskDrafts.Field? {
+        switch focus {
+        case .title: .title
+        case .notes: .notes
+        case .tag, nil: nil
+        }
+    }
+
+    private var titleBinding: Binding<String> {
+        Binding(
+            get: { drafts?.title ?? "" },
+            set: { drafts = drafts?.edited(title: $0) }
+        )
+    }
+
+    private var notesBinding: Binding<String> {
+        Binding(
+            get: { drafts?.notes ?? "" },
+            set: { drafts = drafts?.edited(notes: $0) }
+        )
+    }
+
+    /// Sends whatever the user actually typed to the row they typed it into.
     ///
-    /// Sends the typed title and notes to the row they were typed into.
-    ///
-    /// Two separate questions, and answering both from one record is what kept going wrong.
-    /// *Did the user type something?* is answered against `draftSource`, the values the fields
-    /// were loaded with — comparing against the live record instead means an edit made
-    /// elsewhere reads as something typed here, so renaming the task in the list and closing
-    /// the inspector wrote the old title back over it. *What should the text be applied to?*
-    /// is not this view's question at all: it hands over the id and the two strings, and the
-    /// owner applies them to whatever that task holds now.
-    ///
-    /// Carrying a whole `TaskItem` is what made this unfixable from here. A text commit built
-    /// on the live record wrote the outgoing row's text onto the incoming one when the
-    /// selection had already moved; built on the snapshot, it reverted every field changed
-    /// since selection — a due date, a priority, a tag, or the list row's completion tick,
-    /// which took `completedCount` back with it.
+    /// The rule itself lives in `TaskDrafts` and `TaskTextCommit`, where it is covered by
+    /// tests. It was got wrong three times while it lived here.
     private func commitDrafts() {
-        guard var source = draftSource,
-              let commit = TaskTextCommit.make(
-                  loadedFrom: source, titleDraft: titleDraft, notesDraft: notesDraft
-              )
-        else { return }
-
+        guard let current = drafts, let commit = current.commit() else { return }
         onCommitText(commit)
-
-        // What was just committed is what the fields now hold, so a later blur with no further
-        // typing has nothing to send. Applied to the loaded values rather than reassigned from
-        // the drafts, so the sanitised title is what is remembered.
-        source = commit.applied(to: source) ?? source
-        draftSource = source
+        drafts = current.committed(commit)
     }
 
     private func commitTag() {

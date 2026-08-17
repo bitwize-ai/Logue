@@ -103,15 +103,24 @@ struct TaskFolderStore {
         let resolvedRoot = root.resolvingSymlinksInPath()
 
         // The folder where it was created, checked first. This is every library that has not
-        // had its tasks folder moved or renamed, and it costs two `fileExists` calls instead
+        // had its tasks folder moved or renamed, and it costs a few `fileExists` calls instead
         // of walking the tree — which matters because this resolves on every task read, write
-        // and delete, on the main actor, and the documented use for the root is a synced
-        // vault. It cannot disagree with the walk below either: when a folder actually named
-        // `Tasks` carries the marker, that is the one the ambiguity rule already prefers.
+        // and delete, on the main actor, and the documented use for the root is a synced vault.
+        //
+        // It has to be holding tasks to win, though. An *empty* folder at this name is exactly
+        // what gets minted when the real one is briefly missing — trashed by a reset, or not yet
+        // restored — and short-circuiting on it then shadows the real folder for good the moment
+        // it comes back: the walk that would have found the second marker never runs, so the
+        // restored tasks are invisible in the app while the marker also keeps them out of the
+        // document library. Falling through costs one walk on a genuinely empty library, which
+        // is the case where a walk is cheapest.
         let conventional = TaskFolderStore(
             rootURL: resolvedRoot.appendingPathComponent(TaskFile.folderName, isDirectory: true)
         )
-        if conventional.isMarkedTaskFolder, !conventional.isExistingSpaceFolder {
+        if conventional.isMarkedTaskFolder,
+           !conventional.isExistingSpaceFolder,
+           (conventional.taskFileCount ?? 0) > 0
+        {
             return conventional.rootURL
         }
 
@@ -177,8 +186,14 @@ struct TaskFolderStore {
 
         guard marked.count > 1 else { return marked.first }
 
-        let byName = marked.first { $0.lastPathComponent == TaskFile.folderName }
-        let chosen = byName ?? marked.min { $0.path < $1.path }
+        // Content decides before the name does. Two marked folders is usually a copy, but it is
+        // also what a restore produces: the real folder comes back beside an empty one this code
+        // minted at the conventional name while it was away. Preferring the name there hands the
+        // user an empty list and leaves their tasks reachable from nowhere.
+        let holdingTasks = marked.filter { (TaskFolderStore(rootURL: $0).taskFileCount ?? 0) > 0 }
+        let candidates = holdingTasks.isEmpty ? marked : holdingTasks
+        let byName = candidates.first { $0.lastPathComponent == TaskFile.folderName }
+        let chosen = byName ?? candidates.min { $0.path < $1.path }
         let chosenName = chosen?.lastPathComponent ?? ""
         logger.error(
             "\(marked.count, privacy: .public) folders carry the task marker; using \(chosenName, privacy: .public)"
