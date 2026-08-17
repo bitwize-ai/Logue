@@ -9,6 +9,16 @@ struct MeetingSpeakersPanelView: View {
     @State private var editingSpeaker: String?
     @State private var newName = ""
 
+    /// Whether pressing "Start Meeting" would actually start one.
+    ///
+    /// `isRecovering` is in here because neither of the other two flags is set while an
+    /// interrupted session is being rebuilt — so the button rendered enabled, `startRecording`
+    /// refused, and nothing told the user why.
+    private var canStartMeeting: Bool {
+        meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording
+            && !recorder.isRecovering
+    }
+
     var body: some View {
         Group {
             if recorder.isDiarizing {
@@ -18,8 +28,8 @@ struct MeetingSpeakersPanelView: View {
                     icon: "person.2",
                     title: "No speakers detected",
                     description: "Speaker labels are assigned during transcription based on audio patterns.",
-                    actionLabel: meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording ? "Start Meeting" : nil,
-                    action: meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording ? {
+                    actionLabel: canStartMeeting ? "Start Meeting" : nil,
+                    action: canStartMeeting ? {
                         Task { await recorder.startRecording(for: meeting) }
                     } : nil
                 )

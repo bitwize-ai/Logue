@@ -132,11 +132,25 @@ enum TranscriptRealignment {
     ///
     /// The number of lines, their identities and their times are all left alone — only where the
     /// text is cut moves, and only far enough to reach the sentence end already sitting nearby.
-    static func snappedToSentences(_ segments: [TranscriptSegment]) -> [TranscriptSegment] {
+    /// - Parameter sessionStart: where the session being realigned begins. Text is never moved
+    ///   across that line. Bounding `realign` alone was half the fix: this runs on its output and
+    ///   moves words between neighbouring lines, so the last line of an earlier session and the
+    ///   first of this one are neighbours — and a sentence "finished" across the join rewrites a
+    ///   line the current session has nothing to do with.
+    static func snappedToSentences(
+        _ segments: [TranscriptSegment],
+        sessionStart: TimeInterval = 0
+    ) -> [TranscriptSegment] {
         guard segments.count > 1 else { return segments }
         var result = segments
 
         for index in 0 ..< (result.count - 1) {
+            // Both sides have to belong to the session, so the join between two sessions is
+            // never a place text can cross.
+            guard result[index].startTime >= sessionStart,
+                  result[index + 1].startTime >= sessionStart
+            else { continue }
+
             let current = result[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !current.isEmpty, !endsSentence(current) else { continue }
 

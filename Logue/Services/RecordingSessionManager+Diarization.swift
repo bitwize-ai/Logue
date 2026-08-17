@@ -159,7 +159,8 @@ extension RecordingSessionManager {
                     live: meeting.segments,
                     words: diarizer.lastBatchWords,
                     sessionStart: sessionStart
-                )
+                ),
+                sessionStart: sessionStart
             )
             MeetingStore.shared.updateSegments(realigned, for: meetingID)
             logger.info(

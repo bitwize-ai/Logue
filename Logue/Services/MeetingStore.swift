@@ -424,10 +424,14 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         // the mic muted is the case with the most speakers and the least protection, and it is
         // the mode this branch exists for.
         //
-        // Mic-only is left merging. One microphone in a room can still pick up two people, but
-        // that is what shipped before this branch and telling them apart needs the same
-        // per-buffer source tagging the shared analyzer does not carry; disabling it here would
-        // turn every split sentence back into two lines for a risk this PR did not introduce.
+        // Mic-only is left merging, and that is a judgement rather than a safe default: merging
+        // does not exist on main — `appendSegment` there is a plain append — so one microphone
+        // welding two people in a room into one line is a risk this branch introduces, not one
+        // it inherits. It is left on because the split-sentence join is the feature, and telling
+        // two in-room speakers apart before diarization needs per-buffer source tagging the
+        // shared analyzer does not carry. If that trade is not wanted, the place to make merging
+        // safe is after diarization has labelled the segments, where `speakerLabel` finally
+        // discriminates — not here.
         //
         // Read from the recorder rather than the meeting's mode: the mode is what was intended,
         // this is what is actually running, and a system tap that failed to start should not

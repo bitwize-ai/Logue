@@ -158,17 +158,14 @@ struct MeetingWorkspaceView: View {
                 }
             }
             .task(id: meeting.id) {
-                if store.pendingAutoRecord == meeting.id {
-                    if recorder.isRecording {
-                        store.pendingAutoRecord = nil
-                    } else if await recorder.startRecording(for: meeting) {
-                        store.pendingAutoRecord = nil
-                    }
-                    // Otherwise the request is kept. Clearing it before awaiting meant a
-                    // calendar-triggered capture landing while an interrupted recording was
-                    // being rebuilt was consumed and never retried — this feature silently
-                    // doing nothing, on the one path nobody is watching.
-                }
+                await takeAutoRecordRequest(for: meeting)
+            }
+            // Retried when the rebuild finishes. Keeping the request was only half the fix: the
+            // `.task` above re-runs on a change of meeting, not on the recorder becoming free,
+            // so a calendar-triggered capture that arrived during recovery sat there unclaimed.
+            .onChange(of: recorder.isRecovering) { wasRecovering, isRecovering in
+                guard wasRecovering, !isRecovering else { return }
+                Task { await takeAutoRecordRequest(for: meeting) }
             }
             .onAppear {
                 audioPlaybackService.segments = meeting.segments
@@ -283,6 +280,21 @@ extension MeetingWorkspaceView {
             ToolbarItem(placement: .primaryAction) {
                 quickBookmarkButton(for: meeting)
             }
+        }
+    }
+
+    /// Starts the recording this meeting was opened to start, if it still wants one.
+    ///
+    /// The request is only cleared once it has actually been taken — by this call starting a
+    /// session, or by one already running. A refused start leaves it in place for the retry
+    /// above, because consuming it meant automatic capture silently did nothing whenever it
+    /// landed while an interrupted recording was being rebuilt.
+    func takeAutoRecordRequest(for meeting: MeetingNote) async {
+        guard store.pendingAutoRecord == meeting.id else { return }
+        if recorder.isRecording {
+            store.pendingAutoRecord = nil
+        } else if await recorder.startRecording(for: meeting) {
+            store.pendingAutoRecord = nil
         }
     }
 

@@ -78,4 +78,34 @@ struct RecordingResilienceReviewTests {
             )
         )
     }
+
+    @Test("Snapping never moves text across a session boundary")
+    func snappingStaysInsideItsSession() {
+        // `realign` was bounded; this runs on its output and moves words between neighbouring
+        // lines, so the last line of session one and the first of session two are neighbours.
+        // A sentence "finished" across that join rewrites a line the current session did not
+        // produce.
+        let live = [
+            segment("the first session ends mid", start: 0, end: 300),
+            segment("thought. and the second begins", start: 301, end: 310),
+        ]
+
+        let snapped = TranscriptRealignment.snappedToSentences(live, sessionStart: 301)
+
+        #expect(snapped[0].text == "the first session ends mid")
+        #expect(snapped[1].text == "thought. and the second begins")
+    }
+
+    @Test("Snapping still tidies lines inside one session")
+    func snappingStillWorksWithinASession() {
+        let live = [
+            segment("the agent helps assemble", start: 0, end: 2),
+            segment("it. into something you can judge", start: 2, end: 5),
+        ]
+
+        let snapped = TranscriptRealignment.snappedToSentences(live)
+
+        #expect(snapped[0].text == "the agent helps assemble it.")
+        #expect(snapped[1].text == "into something you can judge")
+    }
 }
