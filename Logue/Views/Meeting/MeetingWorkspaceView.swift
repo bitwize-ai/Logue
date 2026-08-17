@@ -159,10 +159,15 @@ struct MeetingWorkspaceView: View {
             }
             .task(id: meeting.id) {
                 if store.pendingAutoRecord == meeting.id {
-                    store.pendingAutoRecord = nil
-                    if !recorder.isRecording {
-                        await recorder.startRecording(for: meeting)
+                    if recorder.isRecording {
+                        store.pendingAutoRecord = nil
+                    } else if await recorder.startRecording(for: meeting) {
+                        store.pendingAutoRecord = nil
                     }
+                    // Otherwise the request is kept. Clearing it before awaiting meant a
+                    // calendar-triggered capture landing while an interrupted recording was
+                    // being rebuilt was consumed and never retried — this feature silently
+                    // doing nothing, on the one path nobody is watching.
                 }
             }
             .onAppear {

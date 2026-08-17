@@ -5,9 +5,10 @@ import Testing
 
 /// The review findings on #58 that are decidable without a microphone.
 ///
-/// Each fails against the code as it stood at `3ce89922`. The three covered here are the ones
-/// whose failure mode is losing a user's recording or their transcript; the rest are wiring
-/// changes in the capture pipeline, which needs a device.
+/// Each fails against the code as it stood at `3ce89922`, which is the only property that makes
+/// a regression test worth keeping. Cases that already had a home — `TranscriptRealignmentTests`
+/// owns the offset, `TranscriptSentenceMergeTests` owns the speaker guard — were left there
+/// rather than restated here.
 @Suite("Recording resilience review")
 struct RecordingResilienceReviewTests {
     private func segment(
@@ -44,32 +45,17 @@ struct RecordingResilienceReviewTests {
         #expect(result == sessionOne)
     }
 
-    @Test("A session's own lines still receive its words")
-    func realignmentStillAppliesWithinTheSession() {
-        // The bound must not disable the feature it guards.
-        let live = [
-            segment("earlier session", start: 0, end: 100),
-            segment("mis heard", start: 301, end: 305),
-        ]
-        let words = [
-            TranscriptRealignment.TimedWord(text: "misheard ", startTime: 1, endTime: 2),
-            TranscriptRealignment.TimedWord(text: "words", startTime: 2, endTime: 3),
-        ]
-
-        let result = TranscriptRealignment.realign(live: live, words: words, sessionStart: 301)
-
-        #expect(result[0].text == "earlier session")
-        #expect(result[1].text == "misheard words")
-    }
-
     // MARK: - Merging cannot join two speakers
 
-    @Test("Lines are not merged while both capture sources are live")
-    func mergeRefusedWhenTwoSourcesAreLive() {
-        // During recording every segment carries `speakerLabel: nil`, so the cross-speaker guard
-        // is always nil == nil and always passes. With the mic and the system tap feeding one
-        // analyzer, a local utterance and a remote reply became one line carrying one id and one
-        // speaker, and nothing downstream could split it again.
+    @Test("Lines are not merged while the system tap is live")
+    func mergeRefusedWhileTheSystemTapIsLive() {
+        // Every segment carries `speakerLabel: nil` during recording, so the cross-speaker guard
+        // is always nil == nil and always passes. The system tap carries every remote
+        // participant, so two consecutive lines from it can be two people, and the merge welded
+        // them into one line with one id that nothing downstream could split.
+        //
+        // Gating on the mic being live *as well* had this backwards: a meeting with the mic
+        // muted has the most speakers and would have had the least protection.
         let previous = segment("so what I think is", start: 0, end: 2)
         let next = segment("actually the opposite", start: 2.3, end: 4)
 
@@ -80,8 +66,9 @@ struct RecordingResilienceReviewTests {
         )
     }
 
-    @Test("Lines are still merged when only one source is live")
-    func mergeStillHappensWithOneSource() {
+    @Test("Lines are still merged when the system tap is not running")
+    func mergeStillHappensWithoutTheSystemTap() {
+        // The split-sentence join is the feature; an in-person recording keeps it.
         let previous = segment("the agent helps assemble", start: 0, end: 2)
         let next = segment("it into something you can judge", start: 2.3, end: 4)
 
@@ -90,14 +77,5 @@ struct RecordingResilienceReviewTests {
                 previous: previous, next: next, mayCarryTwoSpeakers: false
             )
         )
-    }
-
-    @Test("A labelled speaker change is still refused")
-    func labelledSpeakerChangeStillRefused() {
-        // The original guard has to keep working after diarization has labelled the segments.
-        let previous = segment("so what I think is", start: 0, end: 2, speaker: "Speaker 1")
-        let next = segment("actually the opposite", start: 2.3, end: 4, speaker: "Speaker 2")
-
-        #expect(TranscriptSentenceMerge.shouldMerge(previous: previous, next: next) == false)
     }
 }

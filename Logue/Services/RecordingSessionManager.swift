@@ -303,19 +303,19 @@ final class RecordingSessionManager {
         postRecordingTask = nil
     }
 
+    /// Starts a session, reporting whether one actually began.
+    ///
+    /// The result is not advisory: callers acted as though a press had been accepted, so a
+    /// refused start left an island, a banner with a dead Stop button, and an automatic capture
+    /// consumed and never retried.
+    @discardableResult
     // swiftlint:disable:next function_body_length
-    func startRecording(for meeting: MeetingNote) async {
+    func startRecording(for meeting: MeetingNote) async -> Bool {
         guard recordingState == .idle else {
             if recordingState == .recovering {
-                // Said out loud, because the refusal is otherwise invisible and two of the three
-                // ways a recording starts destroy the request rather than retrying it: the
-                // workspace clears `pendingAutoRecord` before awaiting this, so automatic
-                // capture silently does nothing, and the menu-bar item shows the recording panel
-                // for a session that never began.
                 logger.info("Not starting a recording while an interrupted session is being rebuilt")
-                captureNotice = "Finishing an interrupted recording…"
             }
-            return
+            return false
         }
         recordingState = .starting
         errorMessage = nil
@@ -327,7 +327,7 @@ final class RecordingSessionManager {
         guard hasPermission else {
             errorMessage = RecordingError.micPermissionDenied.localizedDescription
             recordingState = .idle
-            return
+            return false
         }
 
         await awaitPreviousPostRecordingTask()
@@ -367,7 +367,7 @@ final class RecordingSessionManager {
             errorMessage = RecordingError.speechEngineSetupFailed(error.localizedDescription).localizedDescription
             logger.error("Speech engine setup failed: \(error.localizedDescription, privacy: .public)")
             recordingState = .idle
-            return
+            return false
         }
 
         speechEngine = engine
@@ -405,7 +405,7 @@ final class RecordingSessionManager {
         if recordingState != .recording {
             diarizationManager = nil
             recordingState = .idle
-            return
+            return false
         }
 
         // Initialize diarization in background (models download while transcription runs)
@@ -450,6 +450,7 @@ final class RecordingSessionManager {
             startCheckpointing()
             logger.info("Recording started for meeting \(meetingID)")
         }
+        return isRecording
     }
 
     private func startMicrophoneRecording(engine: SpeechTranscriberEngine, diarizer: DiarizationManager) async {

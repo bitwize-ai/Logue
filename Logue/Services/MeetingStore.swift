@@ -418,17 +418,25 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         // The transcriber finalises when it is confident, not when a sentence ends, so a thought
         // arrives split across two lines. Joined here, as it arrives, the stored transcript is made
         // of sentences and everything downstream inherits that rather than working around it.
-        // Both capture sources feeding one analyzer means consecutive lines can be different
-        // people, and nothing in the segment says which — so merging is held off until only one
-        // source is live. Read from the recorder rather than the meeting's mode because the mode
-        // is what was intended and this is what is actually running: a system tap that failed to
-        // start, or a muted mic, leaves one source and the merge is safe again.
-        let recorder = RecordingSessionManager.shared
-        let twoSources = recorder.isCapturingSystemAudio && recorder.isMicActive
+        // The system tap is the multi-speaker source: it carries every remote participant, so
+        // two consecutive lines from it can be two different people and nothing in the segment
+        // says which. Requiring the *mic* to be live as well had this backwards — a meeting with
+        // the mic muted is the case with the most speakers and the least protection, and it is
+        // the mode this branch exists for.
+        //
+        // Mic-only is left merging. One microphone in a room can still pick up two people, but
+        // that is what shipped before this branch and telling them apart needs the same
+        // per-buffer source tagging the shared analyzer does not carry; disabling it here would
+        // turn every split sentence back into two lines for a risk this PR did not introduce.
+        //
+        // Read from the recorder rather than the meeting's mode: the mode is what was intended,
+        // this is what is actually running, and a system tap that failed to start should not
+        // cost the merge.
+        let mayCarryTwoSpeakers = RecordingSessionManager.shared.isCapturingSystemAudio
 
         if let last = meetings[index].segments.last,
            TranscriptSentenceMerge.shouldMerge(
-               previous: last, next: segment, mayCarryTwoSpeakers: twoSources
+               previous: last, next: segment, mayCarryTwoSpeakers: mayCarryTwoSpeakers
            )
         {
             meetings[index].segments[meetings[index].segments.count - 1] =

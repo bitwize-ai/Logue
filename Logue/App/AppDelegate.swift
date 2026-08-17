@@ -741,11 +741,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         store.selectedMeetingID = meeting.id
 
-        Task {
-            await RecordingSessionManager.shared.startRecording(for: meeting)
-            rebuildMenuBarMenu()
+        Task { [weak self] in
+            let started = await RecordingSessionManager.shared.startRecording(for: meeting)
+            self?.rebuildMenuBarMenu()
+            // Shown only if a session began. Presented unconditionally, a start refused while an
+            // interrupted recording is being rebuilt left an island for a session that does not
+            // exist, with no way to tell from the one that does.
+            guard started else { return }
+            self?.commandCenterController?.showRecordingPanel(meetingID: meeting.id)
         }
-
-        commandCenterController?.showRecordingPanel(meetingID: meeting.id)
     }
 }
