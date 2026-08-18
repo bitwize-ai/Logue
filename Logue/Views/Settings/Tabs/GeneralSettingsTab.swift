@@ -256,6 +256,7 @@ struct GeneralSettingsTab: View {
                 documentStore.clearAllData()
                 meetingStore.clearAllData()
                 spaceStore.clearAllData()
+                TaskStore.shared.clearAllData()
                 hasClearedSeedData = true
             }
             Button("Cancel", role: .cancel) {}

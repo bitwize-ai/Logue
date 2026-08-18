@@ -9,17 +9,30 @@ struct MeetingSpeakersPanelView: View {
     @State private var editingSpeaker: String?
     @State private var newName = ""
 
+    /// Whether pressing "Start Meeting" would actually start one.
+    ///
+    /// `isRecovering` is in here because neither of the other two flags is set while an
+    /// interrupted session is being rebuilt — so the button rendered enabled, `startRecording`
+    /// refused, and nothing told the user why.
+    private var canStartMeeting: Bool {
+        meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording
+            && !recorder.isRecovering
+    }
+
     var body: some View {
         Group {
-            if recorder.isDiarizing {
+            // Scoped to this meeting: the loading branch is taken ahead of the speakers this
+            // meeting already has, so a global flag blanks a finished meeting's speaker list for
+            // the length of another meeting's pass.
+            if recorder.isDiarizing(for: meeting.id) {
                 diarizationLoadingView
             } else if speakerStats.isEmpty {
                 EmptyStateView(
                     icon: "person.2",
                     title: "No speakers detected",
                     description: "Speaker labels are assigned during transcription based on audio patterns.",
-                    actionLabel: meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording ? "Start Meeting" : nil,
-                    action: meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording ? {
+                    actionLabel: canStartMeeting ? "Start Meeting" : nil,
+                    action: canStartMeeting ? {
                         Task { await recorder.startRecording(for: meeting) }
                     } : nil
                 )
@@ -29,6 +42,7 @@ struct MeetingSpeakersPanelView: View {
                         ForEach(speakerStats, id: \.name) { stat in
                             SpeakerRow(
                                 stat: stat,
+                                color: meeting.speakerColorsByName[stat.name],
                                 isEditing: editingSpeaker == stat.name,
                                 newName: $newName,
                                 onStartEdit: {
@@ -124,6 +138,8 @@ struct MeetingSpeakersPanelView: View {
 
 private struct SpeakerRow: View {
     let stat: MeetingSpeakersPanelView.SpeakerStat
+    /// The colour this speaker is drawn in throughout the transcript.
+    var color: Color?
     let isEditing: Bool
     @Binding var newName: String
     let onStartEdit: () -> Void
@@ -135,9 +151,15 @@ private struct SpeakerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: "person.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.tint)
+                Text(SpeakerShortLabel.forSpeaker(stat.name))
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(color ?? .secondary)
+                    .frame(width: 26, alignment: .center)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill((color ?? Color.secondary).opacity(0.14))
+                    )
+                    .accessibilityHidden(true)
 
                 if isEditing {
                     TextField("Speaker name", text: $newName, onCommit: onCommitEdit)
@@ -188,7 +210,7 @@ private struct SpeakerRow: View {
 
             // Progress bar
             ProgressView(value: stat.percentage, total: 100)
-                .tint(AppThemeConstants.accent)
+                .tint(color ?? AppThemeConstants.accent)
 
             HStack(spacing: 12) {
                 Label("\(stat.segmentCount) segments", systemImage: "text.bubble")

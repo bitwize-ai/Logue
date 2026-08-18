@@ -2,8 +2,10 @@ import SwiftUI
 
 /// Full-width content view that lists meetings, used when
 /// "All Meetings" is selected in the sidebar.
-struct MeetingListContentView: View {
+struct MeetingListContentView<TrailingPanel: View>: View {
     let spaceID: UUID?
+    /// An optional right panel, rendered inside this view so it starts below the header.
+    let trailingPanel: () -> TrailingPanel
     @Environment(MeetingStore.self) private var store
     @Environment(SpaceStore.self) private var spaceStore
     @Environment(\.colorScheme) private var colorScheme
@@ -113,12 +115,21 @@ struct MeetingListContentView: View {
                 Divider()
             }
 
-            if filteredMeetings.isEmpty, !hasUpcomingEvents {
-                emptyState
-            } else if viewMode == .grid {
-                meetingGrid
-            } else {
-                meetingList
+            // The panel sits below this view's own header, so its top edge meets the header's
+            // divider rather than running up alongside the tag bar.
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    if filteredMeetings.isEmpty, !hasUpcomingEvents {
+                        emptyState
+                    } else if viewMode == .grid {
+                        meetingGrid
+                    } else {
+                        meetingList
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                trailingPanel()
             }
         }
         .background(AppThemeConstants.contentBackground)
@@ -499,5 +510,15 @@ struct MeetingListContentView: View {
         store.updateMeeting(meeting)
         store.pendingAutoRecord = meeting.id
         store.selectedMeetingID = meeting.id
+    }
+}
+
+// MARK: - No-panel convenience
+
+extension MeetingListContentView where TrailingPanel == EmptyView {
+    /// The surfaces that have no right panel — every space, and any caller that only wants
+    /// the list.
+    init(spaceID: UUID?) {
+        self.init(spaceID: spaceID) { EmptyView() }
     }
 }

@@ -9,12 +9,12 @@ struct CategorySidebarView: View {
     @Environment(SpaceStore.self) private var spaceStore
     @Environment(DocumentStore.self) private var documentStore
     @Environment(MeetingStore.self) private var meetingStore
-    @Environment(TemplateStore.self) private var templateStore
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var colorScheme
 
     /// `@State` rather than `@ObservedObject`: `DocumentStorage` is `@Observable`.
     @State private var documentStorage = DocumentStorage.shared
+    @State private var taskStore = TaskStore.shared
 
     @State private var isAddingSpace = false
     @State private var newSpaceName = ""
@@ -100,40 +100,25 @@ struct CategorySidebarView: View {
 
                         Label {
                             HStack {
-                                Text("Action Items")
+                                Text("Tasks")
                                 Spacer()
-                                let pendingCount = pendingActionItemCount
-                                if pendingCount > 0 {
-                                    Text("\(pendingCount)")
+                                let openCount = taskStore.openTasks.count
+                                if openCount > 0 {
+                                    Text("\(openCount)")
                                         .font(.caption2)
                                         .foregroundStyle(
-                                            hasOverdueItems
+                                            hasOverdueTasks
                                                 ? AnyShapeStyle(AppThemeConstants.error)
                                                 : AnyShapeStyle(HierarchicalShapeStyle.tertiary)
                                         )
                                 }
                             }
                         } icon: {
-                            Image(systemName: "checklist")
+                            Image(systemName: "checkmark.circle")
                         }
-                        .tag(SidebarItem.actionItems)
-                        .accessibilityLabel(actionItemsAccessibilityLabel)
-                        .accessibilityHint("View all action items across meetings")
-
-                        Label {
-                            HStack {
-                                Text("Templates")
-                                Spacer()
-                                Text("\(templateStore.templates.count)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        } icon: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                        .tag(SidebarItem.templates)
-                        .accessibilityLabel("Templates, \(templateStore.templates.count) items")
-                        .accessibilityHint("Browse document templates")
+                        .tag(SidebarItem.tasks)
+                        .accessibilityLabel("Tasks, \(taskStore.openTasks.count) open")
+                        .accessibilityHint("View and capture your own tasks")
                     }
 
                     // Phase H: AI Detector moved into the document Verify
@@ -265,40 +250,16 @@ struct CategorySidebarView: View {
         return "Check the Logue folder for changes made outside Logue — last check: \(summary.lowercased())"
     }
 
-    // MARK: - Action Item Counts
+    // MARK: - Task Counts
 
-    private var pendingActionItemCount: Int {
-        meetingStore.activeMeetings
-            .filter { !$0.isArchived }
-            .reduce(0) { $0 + $1.actionItems.filter { !$0.isCompleted }.count }
-    }
-
-    private var hasOverdueItems: Bool {
-        let now = Date()
-        for meeting in meetingStore.activeMeetings where !meeting.isArchived {
-            for item in meeting.actionItems where !item.isCompleted {
-                if let due = item.dueDate, due < now {
-                    return true
-                }
-            }
-        }
-        return false
+    /// Whether any open task is past its due date, so the count reads as urgent.
+    private var hasOverdueTasks: Bool {
+        taskStore.openTasks.contains { $0.isOverdue }
     }
 
     private var pinnedAccessibilityLabel: String {
         let count = documentStore.pinnedDocuments.count + meetingStore.activeMeetings.filter(\.isPinned).count
         return count > 0 ? "Pinned, \(count) items" : "Pinned"
-    }
-
-    private var actionItemsAccessibilityLabel: String {
-        var label = "Action Items"
-        if pendingActionItemCount > 0 {
-            label += ", \(pendingActionItemCount) pending"
-        }
-        if hasOverdueItems {
-            label += ", some overdue"
-        }
-        return label
     }
 
     // MARK: - Spaces Helpers

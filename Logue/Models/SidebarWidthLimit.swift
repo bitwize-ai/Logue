@@ -32,6 +32,18 @@ struct SidebarWidthLimit: Equatable, Sendable {
         minContentWidth: AppConstants.Editor.minContentPaneWidth
     )
 
+    /// A library surface's panel: action items, templates.
+    ///
+    /// Deliberately not `inspector`. That limit reserves the editor's 720pt reading measure
+    /// for the pane beside it, which is right when the pane is a document and wrong when it
+    /// is a list of meetings — on a normal window it capped the panel barely above its own
+    /// default width. A list stays perfectly usable at 400, so the panel may take the rest.
+    static let libraryPanel = SidebarWidthLimit(
+        minimum: 260,
+        ceiling: 1800,
+        minContentWidth: 400
+    )
+
     /// How wide the sidebar may be dragged inside a container this wide.
     ///
     /// A container width of zero means it has not been measured yet, so only the ceiling

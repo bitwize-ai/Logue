@@ -12,6 +12,10 @@ struct MeetingNote: Identifiable, Codable {
     var summary: String?
     var smartMinutes: SmartMinutes?
     var recordingMode: RecordingMode
+
+    /// Set when this meeting was rebuilt from a checkpoint after an unexpected quit, so the UI can
+    /// say the last few seconds may be missing.
+    var wasRecovered = false
     var isPinned: Bool
     var isArchived: Bool
     var tags: [String]
@@ -101,7 +105,7 @@ struct MeetingNote: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, createdAt, modifiedAt, duration, segments, actionItems
-        case summary, smartMinutes, recordingMode
+        case summary, smartMinutes, recordingMode, wasRecovered
         case isPinned = "isFavorited"
         case isArchived, tags, template
         case bookmarks, transcriptionLanguage, topicKeywords
@@ -124,6 +128,8 @@ struct MeetingNote: Identifiable, Codable {
         summary = try container.decodeIfPresent(String.self, forKey: .summary)
         smartMinutes = try container.decodeIfPresent(SmartMinutes.self, forKey: .smartMinutes)
         recordingMode = try container.decode(RecordingMode.self, forKey: .recordingMode)
+        // decodeIfPresent: absent in every meeting written before recovery existed.
+        wasRecovered = try container.decodeIfPresent(Bool.self, forKey: .wasRecovered) ?? false
         isPinned = try container.decode(Bool.self, forKey: .isPinned)
         isArchived = try container.decode(Bool.self, forKey: .isArchived)
         tags = try container.decode([String].self, forKey: .tags)

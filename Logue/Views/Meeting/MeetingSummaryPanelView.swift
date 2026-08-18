@@ -30,7 +30,12 @@ struct MeetingSummaryPanelView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if recorder.postRecordingPipeline.isGeneratingAISummary || recorder.isDiarizing {
+                    // Both operands scoped to this meeting. Either one left global puts a
+                    // spinner over saved Smart Minutes while another meeting is being processed
+                    // — and this branch is taken ahead of the content that already exists.
+                    if recorder.postRecordingPipeline.isGenerating(for: meeting.id)
+                        || recorder.isDiarizing(for: meeting.id)
+                    {
                         aiSummaryLoadingView
                     } else if let smartMinutes = meeting.smartMinutes {
                         smartMinutesView(smartMinutes)
@@ -118,12 +123,16 @@ struct MeetingSummaryPanelView: View {
             ProgressView()
                 .scaleEffect(0.9)
 
+            // Which of the two is running has to be asked about *this* meeting as well, or a
+            // summary being generated here is labelled as another meeting's speaker pass.
+            let isIdentifyingSpeakers = recorder.isDiarizing(for: meeting.id)
+
             VStack(spacing: 4) {
-                Text(recorder.isDiarizing ? "Identifying speakers..." : "Generating summary...")
+                Text(isIdentifyingSpeakers ? "Identifying speakers..." : "Generating summary...")
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.primary)
 
-                Text(recorder.isDiarizing
+                Text(isIdentifyingSpeakers
                     ? "Analyzing audio to identify different speakers"
                     : "Using on-device AI to create Smart Minutes")
                     .font(.caption)

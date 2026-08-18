@@ -29,23 +29,31 @@ enum DocumentFilename {
     /// read back the winner and passed, the mode flipped, and the loser's markdown was gone with no
     /// Trash copy.
     static func filename(for document: WritingDocument, avoiding taken: Set<String> = []) -> String {
+        filename(forTitle: document.title, id: document.id, avoiding: taken)
+    }
+
+    /// The same rule, for anything that has a title and an identifier but is not a document.
+    ///
+    /// Extracted so tasks reuse the path-safety boundary rather than growing a second,
+    /// subtly different one — this is the code that stops a title from escaping the folder.
+    static func filename(forTitle title: String, id: UUID, avoiding taken: Set<String> = []) -> String {
         let folded = Set(taken.map { $0.lowercased() })
         func isFree(_ name: String) -> Bool {
             !folded.contains(name.lowercased())
         }
 
-        let stem = safeStem(from: document.title)
+        let stem = safeStem(from: title)
         let candidate = "\(stem).\(fileExtension)"
         guard !isFree(candidate) else { return candidate }
 
-        // Disambiguate with a prefix of the document identifier: stable for a given
-        // document, so a collision does not produce a different name on every save.
-        let shortID = document.id.uuidString.prefix(8)
+        // Disambiguate with a prefix of the identifier: stable for a given record, so a
+        // collision does not produce a different name on every save.
+        let shortID = id.uuidString.prefix(8)
         let disambiguated = "\(stem) (\(shortID)).\(fileExtension)"
         guard !isFree(disambiguated) else { return disambiguated }
 
         // Fall back to the full identifier, which cannot collide.
-        return "\(stem) (\(document.id.uuidString)).\(fileExtension)"
+        return "\(stem) (\(id.uuidString)).\(fileExtension)"
     }
 
     // MARK: - Private

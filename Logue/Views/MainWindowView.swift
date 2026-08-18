@@ -11,8 +11,10 @@ enum SidebarItem: Hashable {
     case recent
     case allDocuments
     case allMeetings
-    case actionItems
-    case templates
+    case tasks
+    // Action Items and Templates used to live here. They are now panels of All Meetings and
+    // All Documents — see `LibraryPanel` — because each is a lens on a library rather than a
+    // sibling of it. `SidebarSelectionMigration` maps the old persisted values.
     case space(UUID)
     case document(UUID)
     case meeting(UUID)
@@ -66,6 +68,21 @@ struct MainWindowView: View {
 
     @State private var showCommandPalette = false
     @State private var showQuickOpen = false
+
+    // Extension-visible: +LibraryPanels
+    /// The library panels, collapsed unless the last session ended inside one.
+    ///
+    /// Both read the same stored value at init rather than one deriving from the other,
+    /// because `@State` initialisers cannot see each other.
+    @State var meetingsPanelCollapsed = Self.loadRestoredPanel() != .actionItems
+    // Extension-visible: +LibraryPanels
+    @State var documentsPanelCollapsed = Self.loadRestoredPanel() != .templates
+    /// Panel widths, kept here so closing and reopening a panel returns it to the width the
+    /// user dragged it to.
+    @State private var meetingsPanelWidth = LibraryPanelContainer<EmptyView>.defaultWidth
+    @State private var documentsPanelWidth = LibraryPanelContainer<EmptyView>.defaultWidth
+    // Extension-visible: +LibraryPanels
+    @State var taskStore = TaskStore.shared
 
     /// Which panes are shown, driven by ⌘1 / ⌘2 / ⌘3 and persisted across launches.
     ///
@@ -193,8 +210,7 @@ struct MainWindowView: View {
                     case .recent: "recent"
                     case .allDocuments: "documents"
                     case .allMeetings: "meetings"
-                    case .actionItems: "action_items"
-                    case .templates: "templates"
+                    case .tasks: "tasks"
                     case .space: "space"
                     case .document: "document"
                     case .meeting: "meeting"
@@ -361,13 +377,31 @@ struct MainWindowView: View {
         case .recent:
             RecentContentPane()
         case .allDocuments:
-            DocumentListContentView(spaceID: nil)
+            DocumentListContentView(spaceID: nil) {
+                LibraryPanelContainer(
+                    isCollapsed: $documentsPanelCollapsed,
+                    width: $documentsPanelWidth
+                ) {
+                    TemplateListPanel()
+                }
+            }
+            .libraryPanelToggle(isCollapsed: $documentsPanelCollapsed, panel: .templates)
         case .allMeetings:
-            MeetingListContentView(spaceID: nil)
-        case .actionItems:
-            ActionItemDashboardView()
-        case .templates:
-            TemplateGalleryView()
+            MeetingListContentView(spaceID: nil) {
+                LibraryPanelContainer(
+                    isCollapsed: $meetingsPanelCollapsed,
+                    width: $meetingsPanelWidth
+                ) {
+                    ActionItemInboxPanel()
+                }
+            }
+            .libraryPanelToggle(
+                isCollapsed: $meetingsPanelCollapsed,
+                panel: .actionItems,
+                badgeCount: actionItemInboxCount
+            )
+        case .tasks:
+            TaskListView()
         case let .space(id):
             SpaceContentPane(spaceID: id, sidebarSelection: $sidebarSelection)
         case .trash:
@@ -485,8 +519,7 @@ struct MainWindowView: View {
         case .recent: return "Recent"
         case .allDocuments: return "All Documents"
         case .allMeetings: return "All Meetings"
-        case .actionItems: return "Action Items"
-        case .templates: return "Templates"
+        case .tasks: return "Tasks"
         case let .space(id): return spaceStore.space(for: id)?.name ?? "Space"
         case .trash: return "Trash"
         case .document, .meeting: return "Back"
@@ -514,14 +547,23 @@ struct MainWindowView: View {
             ("Recent", "clock", .recent),
             ("All Documents", "doc.text", .allDocuments),
             ("All Meetings", "mic", .allMeetings),
-            ("Action Items", "checklist", .actionItems),
-            ("Templates", "doc.on.doc", .templates),
+            ("Tasks", "checkmark.circle", .tasks),
             ("Trash", "trash", .trash),
         ]
-        return entries.map { title, icon, destination in
+        let surfaces = entries.map { title, icon, destination in
             CommandItem(title, icon: icon, category: .navigation) {
                 goBack()
                 sidebarSelection = destination
+            }
+        }
+        // The two that became panels keep their entries. With no sidebar row left, the
+        // palette is how they are found — dropping them here would make the features
+        // reachable only by knowing which surface hides them.
+        return surfaces + LibraryPanel.allCases.map { panel in
+            CommandItem(panel.title, icon: panel.symbolName, category: .navigation) {
+                goBack()
+                sidebarSelection = panel.host
+                open(panel)
             }
         }
     }
@@ -576,33 +618,5 @@ struct MainWindowView: View {
                     meetingStore.selectedMeetingID = meeting.id
                 }
             }
-    }
-
-    // MARK: - Sidebar selection persistence
-
-    /// UserDefaults key for the last-stable sidebar surface. Document and
-    /// meeting selections are restored separately via the per-store
-    /// `selectedDocumentID` / `selectedMeetingID` so we only persist coarse
-    /// surfaces here.
-    private static let lastSidebarKey = "MainWindow.lastSidebarSelection"
-
-    /// Loads the last-stable sidebar surface, or `nil` on a fresh install.
-    /// `MainWindowView` falls back to `.home` when this returns `nil`.
-    ///
-    /// The mapping itself lives in `SidebarItemPersistence` so the migration off the
-    /// retired `overview` / `agentChat` spellings can be tested without `UserDefaults`.
-    static func loadLastSidebarSelection() -> SidebarItem? {
-        guard let raw = UserDefaults.standard.string(forKey: lastSidebarKey) else { return nil }
-        return SidebarItemPersistence.item(forStored: raw)
-    }
-
-    /// Persists only "stable" sidebar surfaces. Per-document and per-meeting
-    /// selections are intentionally not persisted — those are restored via
-    /// the store's `selectedDocumentID` / `selectedMeetingID`, and a
-    /// deleted-document landing screen is worse than landing on Home.
-    static func persistSidebarSelection(_ item: SidebarItem?) {
-        if let raw = SidebarItemPersistence.stored(for: item) {
-            UserDefaults.standard.setValue(raw, forKey: lastSidebarKey)
-        }
     }
 }

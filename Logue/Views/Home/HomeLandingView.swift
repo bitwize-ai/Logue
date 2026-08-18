@@ -87,6 +87,11 @@ struct HomeLandingView: View {
     /// `selectedMeetingID`, which `MainWindowView` turns into a jump to the meeting
     /// workspace — so the recording is watched there. Home used to carry its own banner
     /// for this, which could never appear because the jump always won.
+    ///
+    /// The outcome is deliberately discarded. `OverviewView` had to inspect it, because its
+    /// banner flag was set up front and a refused start left a "Recording…" banner whose Stop
+    /// button was dead. There is no banner here: a refused start lands the user in the meeting
+    /// workspace, whose toolbar reports the actual state and names what is holding it up.
     private func startVoiceNote() {
         let note = meetingStore.createVoiceNote()
         Task { await recorder.startRecording(for: note) }

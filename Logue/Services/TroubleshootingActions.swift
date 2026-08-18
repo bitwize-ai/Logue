@@ -89,6 +89,7 @@ enum TroubleshootingActions {
         DocumentStore.shared.clearAllData()
         MeetingStore.shared.clearAllData()
         SpaceStore.shared.clearAllData()
+        TaskStore.shared.clearAllData()
 
         let modelsDir = AppConstants.ModelStorage.rootDirectory
         do {

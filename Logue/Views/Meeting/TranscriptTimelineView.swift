@@ -3,8 +3,9 @@ import SwiftUI
 
 // MARK: - Speaker Block Model
 
-/// Groups consecutive transcript segments from the same speaker into a visual block.
-private struct SpeakerBlock: Identifiable {
+// Extension-visible: used by SpeakerBlockView in TranscriptSpeakerBlockView.swift
+/// A stretch of transcript shown as one block. Cut by time alone, so it may hold several speakers.
+struct SpeakerBlock: Identifiable {
     let id: UUID // first segment's ID
     let speakerLabel: String?
     let startTime: TimeInterval
@@ -27,7 +28,6 @@ struct TranscriptTimelineView: View {
     var onRemoveBookmark: ((UUID) -> Void)?
     var onChangeBookmarkType: ((UUID, String, BookmarkColor) -> Void)?
     var onEditSegment: ((UUID, String) -> Void)?
-    var onReassignSpeaker: ((UUID, String?) -> Void)?
     var onRenameSpeaker: ((String, String) -> Void)?
     var onSeekToTime: ((TimeInterval) -> Void)?
     var activeSegmentID: UUID?
@@ -40,6 +40,19 @@ struct TranscriptTimelineView: View {
     @State private var cachedBlocks: [SpeakerBlock] = []
     /// Tracks (segments.count, searchText) to know when to recompute cachedBlocks.
     @State private var blockCacheKey: String = ""
+
+    /// Cheap signature of the transcript's text, so a change that leaves the segment count alone
+    /// still redraws. Hashes each id with its text — see below for why the length is not enough.
+    private var segmentTextHash: Int {
+        var hasher = Hasher()
+        for segment in segments {
+            hasher.combine(segment.id)
+            // The text itself, not its length: realignment exists to swap a word for a better
+            // one of similar length, and a length-only hash calls that no change at all.
+            hasher.combine(segment.text)
+        }
+        return hasher.finalize()
+    }
 
     /// Hash of all speaker labels — changes when segments are reassigned to different speakers.
     private var speakerLabelHash: Int {
@@ -64,13 +77,14 @@ struct TranscriptTimelineView: View {
         var blockStart: TimeInterval = 0
 
         for segment in filteredSegments {
-            // Merge nil→nil (pre-diarization streaming). All other transitions start a new block.
-            let speakerChanged = segment.speakerLabel != currentSpeaker
-                && !(segment.speakerLabel == nil && currentSpeaker == nil)
+            // Blocks are decided by time alone. Splitting on the speaker as well meant the whole
+            // transcript was re-cut the moment diarization finished — a different number of blocks,
+            // content merged and split, and the reader's place lost. Who is speaking is now shown in
+            // the gutter instead, so identifying speakers adds labels without moving anything.
             let timeGap = !currentSegments.isEmpty
                 && (segment.startTime - (currentSegments.last?.endTime ?? 0)) > 15
 
-            if speakerChanged || timeGap {
+            if timeGap {
                 if !currentSegments.isEmpty {
                     blocks.append(SpeakerBlock(
                         id: currentSegments[0].id,
@@ -136,7 +150,7 @@ struct TranscriptTimelineView: View {
                 ZStack(alignment: .bottom) {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 10) {
+                            LazyVStack(alignment: .leading, spacing: 14) {
                                 ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
                                     let isLastBlock = index == blocks.count - 1
                                     SpeakerBlockView(
@@ -148,10 +162,10 @@ struct TranscriptTimelineView: View {
                                         onRemoveBookmark: onRemoveBookmark,
                                         onChangeBookmarkType: onChangeBookmarkType,
                                         onEditSegment: onEditSegment,
-                                        onReassignSpeaker: onReassignSpeaker,
                                         onRenameSpeaker: onRenameSpeaker,
                                         onSeekToTime: onSeekToTime,
-                                        activeSegmentID: activeSegmentID
+                                        activeSegmentID: activeSegmentID,
+                                        speakerColors: speakerColors
                                     )
                                 }
 
@@ -244,13 +258,23 @@ struct TranscriptTimelineView: View {
         .background(AppThemeConstants.contentBackground)
         .onAppear { recomputeBlocksIfNeeded() }
         .onChange(of: segments.count) { recomputeBlocksIfNeeded() }
+        // Text changing without the count changing is the ordinary case during recording, not an
+        // edge one: a continuation folded into the line before it by `TranscriptSentenceMerge`
+        // leaves the count alone, and realignment swaps words for better ones. Without this the
+        // key that discriminates on text was never re-evaluated, so the transcript stopped
+        // updating mid-recording — the defect this view's cache key was widened for.
+        .onChange(of: segmentTextHash) { recomputeBlocksIfNeeded() }
         .onChange(of: searchText) { recomputeBlocksIfNeeded() }
         .onChange(of: speakerColors) { forceRecomputeBlocks() }
         .onChange(of: speakerLabelHash) { forceRecomputeBlocks() }
     }
 
     private func recomputeBlocksIfNeeded() {
-        let key = "\(segments.count)|\(searchText)|\(speakerLabelHash)"
+        // Includes a signature of the text, not just the count. Merging a continuation into the
+        // line before it leaves the count unchanged, and realignment rewrites text without touching
+        // the count at all — both were invisible to a key built from counts alone, so the transcript
+        // stopped updating mid-recording.
+        let key = "\(segments.count)|\(searchText)|\(speakerLabelHash)|\(segmentTextHash)"
         guard key != blockCacheKey else { return }
         blockCacheKey = key
         cachedBlocks = computeSpeakerBlocks()
@@ -348,243 +372,12 @@ struct TranscriptTimelineView: View {
 
 // MARK: - Speaker Block View
 
-/// Renders a group of consecutive segments from the same speaker as a card.
-private struct SpeakerBlockView: View {
-    let block: SpeakerBlock
-    var blockBookmarks: [Bookmark] = []
-    var searchText: String = ""
-    var volatileText: String = ""
-    var onAddBookmark: ((TimeInterval, String, BookmarkColor) -> Void)?
-    var onRemoveBookmark: ((UUID) -> Void)?
-    var onChangeBookmarkType: ((UUID, String, BookmarkColor) -> Void)?
-    var onEditSegment: ((UUID, String) -> Void)?
-    var onReassignSpeaker: ((UUID, String?) -> Void)?
-    var onRenameSpeaker: ((String, String) -> Void)?
-    var onSeekToTime: ((TimeInterval) -> Void)?
-    var activeSegmentID: UUID?
-    @State private var isHovered = false
-    @State private var isDropTargeted = false
-    @State private var showBookmarkPopover = false
-    @State private var showBookmarkAdded = false
-    @State private var isEditingSpeakerName = false
-    @State private var speakerNameDraft = ""
-    @FocusState private var isSpeakerNameFocused: Bool
-
-    /// Accent color for the left border — speaker color or a default.
-    private var accentColor: Color {
-        block.speakerColor ?? AppThemeConstants.mutedText
-    }
-
-    /// True when one of this block's segments is the currently playing line.
-    private var containsActiveSegment: Bool {
-        guard let activeID = activeSegmentID else { return false }
-        return block.segments.contains { $0.id == activeID }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Header: speaker name + timestamp + bookmark chips + add button
-            HStack(spacing: 6) {
-                if let speaker = block.speakerLabel {
-                    if isEditingSpeakerName {
-                        TextField("Speaker name", text: $speakerNameDraft)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(accentColor)
-                            .frame(maxWidth: 160)
-                            .focused($isSpeakerNameFocused)
-                            .onSubmit { commitSpeakerRename(oldName: speaker) }
-                            .onExitCommand { isEditingSpeakerName = false }
-                            .onAppear {
-                                Task {
-                                    try? await Task.sleep(for: AppConstants.Delays.focusActivation)
-                                    isSpeakerNameFocused = true
-                                    try? await Task.sleep(for: AppConstants.Delays.focusActivation)
-                                    NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
-                                }
-                            }
-                            .onChange(of: isSpeakerNameFocused) { _, focused in
-                                if !focused {
-                                    commitSpeakerRename(oldName: speaker)
-                                }
-                            }
-
-                        Button("Done") { commitSpeakerRename(oldName: speaker) }
-                            .font(.caption)
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-
-                        Button("Cancel") { isEditingSpeakerName = false }
-                            .font(.caption)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(highlightedText(speaker, query: searchText, baseFont: .callout.weight(.semibold)))
-                            .foregroundColor(accentColor)
-                            .onTapGesture(count: 2) {
-                                if onRenameSpeaker != nil {
-                                    speakerNameDraft = speaker
-                                    isEditingSpeakerName = true
-                                }
-                            }
-                            .help(onRenameSpeaker != nil ? "Double-click to rename speaker" : "")
-                            .contextMenu {
-                                if onRenameSpeaker != nil {
-                                    Button {
-                                        speakerNameDraft = speaker
-                                        isEditingSpeakerName = true
-                                    } label: {
-                                        Label("Rename Speaker", systemImage: "pencil")
-                                    }
-                                }
-                            }
-                    }
-                }
-
-                Text(block.formattedStartTime)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-
-                // Inline bookmark chips
-                ForEach(blockBookmarks) { bookmark in
-                    BookmarkChip(bookmark: bookmark, onChangeType: onChangeBookmarkType, onRemove: onRemoveBookmark)
-                }
-
-                Spacer()
-
-                // Add bookmark button (visible on hover)
-                if onAddBookmark != nil {
-                    Button {
-                        showBookmarkPopover = true
-                    } label: {
-                        Image(systemName: showBookmarkAdded ? "bookmark.fill" : "bookmark")
-                            .font(.callout)
-                            .foregroundColor(showBookmarkAdded ? AppThemeConstants.actionBadgeColor : Color.secondary.opacity(0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add bookmark")
-                    .help("Add bookmark at this point")
-                    .opacity(isHovered || showBookmarkAdded || !blockBookmarks.isEmpty ? 1 : 0)
-                    .popover(isPresented: $showBookmarkPopover, arrowEdge: .trailing) {
-                        bookmarkTypePicker
-                    }
-                }
-            }
-
-            // Segment text — only first/last lines are draggable (boundary lines)
-            VStack(alignment: .leading, spacing: 5) {
-                let segmentCount = block.segments.count
-                ForEach(Array(block.segments.enumerated()), id: \.element.id) { index, segment in
-                    let isBoundary = index == 0 || index == segmentCount - 1
-                    SegmentTextRow(
-                        segment: segment,
-                        searchText: searchText,
-                        onEditSegment: onEditSegment,
-                        onSeekToTime: onSeekToTime,
-                        isActive: activeSegmentID == segment.id,
-                        isDraggable: isBoundary
-                    )
-                    .draggable(isBoundary ? segment.id.uuidString : "")
-                    .id(segment.id)
-                }
-
-                // Volatile text — in-progress transcription appended to last block
-                if !volatileText.isEmpty {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(AppThemeConstants.error)
-                            .frame(width: 5, height: 5)
-                            .opacity(0.8)
-                        Text(volatileText)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .id("volatile-text")
-                    .transition(.opacity)
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
-                .fill(isDropTargeted
-                    ? accentColor.opacity(AppThemeConstants.opacityLight)
-                    : containsActiveSegment
-                    ? accentColor.opacity(0.09)
-                    : Color.primary.opacity(isHovered ? AppThemeConstants.opacityLight : AppThemeConstants.opacitySubtle))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppThemeConstants.radiusMedium)
-                .stroke(
-                    accentColor.opacity(isDropTargeted ? 0.5 : containsActiveSegment ? 0.45 : 0),
-                    lineWidth: containsActiveSegment ? 1.5 : 2
-                )
-        )
-        .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(
-                topLeadingRadius: AppThemeConstants.radiusMedium,
-                bottomLeadingRadius: AppThemeConstants.radiusMedium,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0
-            )
-            // Left border brightens and widens while this block is playing
-            .fill(accentColor.opacity(containsActiveSegment ? 0.75 : AppThemeConstants.opacityMuted))
-            .frame(width: containsActiveSegment ? 4 : 3)
-            .animation(.easeInOut(duration: 0.25), value: containsActiveSegment)
-        }
-        .animation(.easeInOut(duration: 0.25), value: containsActiveSegment)
-        .onHover { isHovered = $0 }
-        .dropDestination(for: String.self) { items, _ in
-            guard let uuidString = items.first,
-                  let segmentID = UUID(uuidString: uuidString),
-                  onReassignSpeaker != nil
-            else { return false }
-            // Only accept if dropping onto a different speaker
-            let alreadyInBlock = block.segments.contains { $0.id == segmentID }
-            guard !alreadyInBlock else { return false }
-            onReassignSpeaker?(segmentID, block.speakerLabel)
-            return true
-        } isTargeted: { targeted in
-            isDropTargeted = targeted
-        }
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
-        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
-    }
-
-    // MARK: - Speaker Rename
-
-    private func commitSpeakerRename(oldName: String) {
-        let trimmed = speakerNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty, trimmed != oldName {
-            onRenameSpeaker?(oldName, trimmed)
-        }
-        isEditingSpeakerName = false
-    }
-
-    // MARK: - Bookmark Picker
-
-    private var bookmarkTypePicker: some View {
-        BlockBookmarkPicker(
-            onAdd: { label, color in
-                onAddBookmark?(block.startTime, label, color)
-                showBookmarkPopover = false
-                showBookmarkAdded = true
-                Task {
-                    try? await Task.sleep(for: AppConstants.Delays.bookmarkConfirm)
-                    showBookmarkAdded = false
-                }
-            },
-            onDismiss: { showBookmarkPopover = false }
-        )
-    }
-}
+// Renders a group of consecutive segments from the same speaker as a card.
 
 // MARK: - Shared Highlight Utility
 
 /// Creates an AttributedString with search query matches highlighted.
-private func highlightedText(_ text: String, query: String, baseFont: Font = .body) -> AttributedString {
+func highlightedText(_ text: String, query: String, baseFont: Font = .body) -> AttributedString {
     var attributed = AttributedString(text)
     attributed.font = baseFont
     guard !query.isEmpty else { return attributed }
@@ -601,8 +394,9 @@ private func highlightedText(_ text: String, query: String, baseFont: Font = .bo
 
 // MARK: - Segment Text Row (within a block)
 
+// Extension-visible: used by SpeakerBlockView in TranscriptSpeakerBlockView.swift
 /// Renders a single segment's text within a speaker block. Supports double-click editing.
-private struct SegmentTextRow: View {
+struct SegmentTextRow: View {
     let segment: TranscriptSegment
     var searchText: String = ""
     var onEditSegment: ((UUID, String) -> Void)?

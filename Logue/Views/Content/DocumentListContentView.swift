@@ -2,8 +2,10 @@ import SwiftUI
 
 /// Full-width content view that lists documents, used when
 /// "All Documents" is selected in the sidebar.
-struct DocumentListContentView: View {
+struct DocumentListContentView<TrailingPanel: View>: View {
     let spaceID: UUID?
+    /// An optional right panel, rendered inside this view so it starts below the header.
+    let trailingPanel: () -> TrailingPanel
     @Environment(DocumentStore.self) private var store
     @Environment(SpaceStore.self) private var spaceStore
     @Environment(\.colorScheme) private var colorScheme
@@ -100,14 +102,23 @@ struct DocumentListContentView: View {
                 Divider()
             }
 
-            if !store.isLoaded {
-                ContentLoadingView()
-            } else if documents.isEmpty {
-                emptyState
-            } else if viewMode == .grid {
-                documentGrid
-            } else {
-                documentList
+            // The panel sits below this view's own header, so its top edge meets the
+            // header's divider rather than running up alongside the tag bar.
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    if !store.isLoaded {
+                        ContentLoadingView()
+                    } else if documents.isEmpty {
+                        emptyState
+                    } else if viewMode == .grid {
+                        documentGrid
+                    } else {
+                        documentList
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                trailingPanel()
             }
         }
         .background(AppThemeConstants.contentBackground)
@@ -494,5 +505,15 @@ struct DocumentListContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - No-panel convenience
+
+extension DocumentListContentView where TrailingPanel == EmptyView {
+    /// The surfaces that have no right panel — every space, and any caller that only wants
+    /// the list.
+    init(spaceID: UUID?) {
+        self.init(spaceID: spaceID) { EmptyView() }
     }
 }
