@@ -10,6 +10,21 @@ struct AgentChatView: View {
     @State private var coordinator = AgentCoordinator.shared
     @State private var conversationStore = AgentConversationStore.shared
     @State private var inputText = ""
+    /// Incremented to pull focus into the input after a card fills it.
+    @State private var focusRequest = 0
+
+    // Injected by `MainWindowView`. Read from the environment rather than reaching for
+    // the shared singletons again, so this view observes the same instances the rest of
+    // the window does.
+    @Environment(MeetingStore.self) private var meetingStore
+    @Environment(DocumentStore.self) private var documentStore
+    @Environment(InsightsStatsProvider.self) private var insights
+    @Environment(ModelManager.self) private var modelManager
+    @Environment(SpaceStore.self) private var spaceStore
+
+    /// Reveals a space created from Home's first-run card. `AgentChatView` cannot set the
+    /// sidebar selection itself, so `MainWindowView` supplies the one line that can.
+    var onOpenSpace: (UUID) -> Void = { _ in }
     /// Drag-and-drop attachments staged for the next send. Cleared after each send.
     @State private var inputAttachments: [TempAttachment] = []
     /// When true, the next send routes through `DeepResearchCoordinator` instead
@@ -70,7 +85,7 @@ struct AgentChatView: View {
                 if hasMessages, let conversation = activeConversation {
                     hasMessagesLayout(conversation: conversation)
                 } else {
-                    emptyLayout
+                    landingLayout
                 }
             }
             .frame(maxWidth: .infinity)
@@ -81,7 +96,11 @@ struct AgentChatView: View {
                 CanvasPaneView()
                     .frame(minWidth: 380, idealWidth: 480, maxWidth: .infinity)
                     .animation(Motion.spring, value: canvas.snapshots.count)
-            } else if showSourcesPanel {
+            } else if showSourcesPanel, hasSourcesToShow {
+                // Both conditions, not just the toggle. `showSourcesPanel` is the user's
+                // preference; `hasSourcesToShow` is whether there is anything to draw — the
+                // agent's sources or a staged attachment. With neither, a panel would open
+                // onto nothing, which is a dead half of the window.
                 Divider()
                 SourcesPanelView(
                     conversationID: AgentConversationStore.shared.selectedConversationID,
@@ -89,7 +108,10 @@ struct AgentChatView: View {
                 )
             }
         }
-        .navigationTitle(activeConversation?.title ?? "Ask Logue")
+        // The landing state is Home, whatever the auto-created conversation happens to
+        // be called — titling an empty screen "New Conversation" names a thread the user
+        // has not started yet. The conversation's own title takes over once it has one.
+        .navigationTitle(hasMessages ? (activeConversation?.title ?? "Home") : "Home")
         .navigationSubtitle(topBarSubtitle)
         .toolbar { chatToolbar }
         .toastOverlay()
@@ -113,7 +135,7 @@ struct AgentChatView: View {
         }
         .onAppear {
             ensureActiveConversation()
-            showSourcesPanel = hasAnswerSources
+            showSourcesPanel = hasAgentSources
         }
         .onChange(of: activeConversation?.messages.last?.content) { _, content in
             // Phase C: open Canvas automatically for long code or
@@ -133,7 +155,7 @@ struct AgentChatView: View {
             // Switching conversations (or starting a new one) hides the panel.
             withAnimation(Motion.spring) { showSourcesPanel = false }
         }
-        .onChange(of: hasAnswerSources) { _, has in
+        .onChange(of: hasAgentSources) { _, has in
             // Auto-open the panel as soon as the agent emits sourced output;
             // never auto-close mid-conversation since the user may have
             // closed it intentionally — only the conversation-id change does.
@@ -143,44 +165,108 @@ struct AgentChatView: View {
         }
     }
 
-    /// Does the active conversation contain any answer-derived sources?
-    /// Drives the right-pane auto-open behavior. Considers web tool calls and
-    /// meeting/document references — the same surfaces SourcesPanelView renders.
-    private var hasAnswerSources: Bool {
-        guard let conversation = activeConversation else { return false }
-        for msg in conversation.messages {
-            for call in msg.toolCalls {
-                let name = call.toolName.lowercased()
-                if name.contains("web") || name.contains("search") || name.contains("fetch")
-                    || name.contains("meeting") || name.contains("document")
-                {
-                    return true
-                }
-            }
-        }
-        return false
+    /// Is there anything for the sources panel to draw?
+    ///
+    /// Drives whether the toolbar button exists, so it asks `SourcesPanelContent` — the same
+    /// rules the panel renders from. A tool-name heuristic here instead would hide the button
+    /// for conversations whose sources came from a tool it did not think to name.
+    private var hasSourcesToShow: Bool {
+        SourcesPanelContent.hasContent(
+            messages: activeConversation?.messages ?? [],
+            attachmentCount: inputAttachments.count
+        )
+    }
+
+    /// Has the *agent* sourced an answer? The auto-open's question, which is not the panel's.
+    ///
+    /// Deliberately blind to staged attachments: dropping a file onto the prompt bar is not the
+    /// agent producing sources, and counting it threw the panel open over Home's landing.
+    ///
+    /// Asked on every body pass, which during streaming is every token, so it goes through
+    /// `hasCitedURL` — which stops at the first match instead of collecting every URL in the
+    /// conversation to compare a count with zero. `onChange(of:)` takes its value as an
+    /// ordinary parameter, not an autoclosure, so there is no once-per-change evaluation to
+    /// rely on here.
+    private var hasAgentSources: Bool {
+        SourcesPanelContent.hasAnswerSources(in: activeConversation?.messages ?? [])
     }
 
     // MARK: - Layouts
 
-    /// Pre-conversation layout: welcome hero + centered input bar, vertically
-    /// centered as one unit. Matches ChatGPT's pre-first-message screen.
-    private var emptyLayout: some View {
-        VStack(spacing: 24) {
-            Spacer(minLength: 24)
+    /// Pre-conversation layout: greeting and chips, the prompt bar, then the dashboard
+    /// cards. The prompt bar is pinned between the two rather than living inside the
+    /// card scroll view — see `HomeLandingView` for why that matters to the geometry
+    /// match that slides it to the bottom on first send.
+    private var landingLayout: some View {
+        VStack(spacing: 0) {
+            // Held back until every store has reported. During load the stores are empty,
+            // so a user with a full library would be greeted with first-run chips and a
+            // context bar reading zero — and then watch all of it swap. The cards are
+            // gated on the same value inside `HomeLandingView`.
+            if storesAreLoaded {
+                HomeLandingHeader(chips: suggestionChips, onPrefill: prefill)
+            }
 
-            AgentChatEmptyState(compact: true)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+            if modelManager.activeModelID == nil {
+                Label("Set up a model to ask Logue", systemImage: "exclamationmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(AppThemeConstants.warning)
+                    .padding(.horizontal, AppThemeConstants.paddingXXLarge)
+                    .padding(.top, AppThemeConstants.paddingMedium)
+            }
 
             inputBar
                 .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
+                .homeContentColumn()
+                .padding(.vertical, AppThemeConstants.paddingLarge)
 
-            Spacer(minLength: 24)
+            HomeLandingView(
+                isLoaded: storesAreLoaded,
+                isEmpty: workspaceIsEmpty,
+                onPrefill: prefill,
+                onOpenSpace: onOpenSpace
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Puts a sentence in the input without sending it. A card that asks the question
+    /// for the user still leaves them the last word on it.
+    private func prefill(_ text: String) {
+        inputText = text
+        focusRequest += 1
+    }
+
+    /// Every store Home summarises. Greeting a returning user as a new one because their
+    /// library was still being read is the loudest possible wrong answer this screen can
+    /// give, so nothing derived from store contents renders until all three report.
+    private var storesAreLoaded: Bool {
+        documentStore.isLoaded && meetingStore.isLoaded && spaceStore.isLoaded
+    }
+
+    /// One definition, used by both the header and the cards. Two definitions is how a
+    /// workspace with spaces but no documents gets first-run chips above a set of cards
+    /// that have all self-hidden.
+    private var workspaceIsEmpty: Bool {
+        documentStore.activeDocuments.isEmpty
+            && meetingStore.activeMeetings.isEmpty
+            && spaceStore.topLevelSpaces.isEmpty
+    }
+
+    /// Derived fresh each render from the stores — no inference, no caching. The rules
+    /// live in `HomeSuggestions` so they can be tested without a view.
+    private var suggestionChips: [HomeSuggestions.Chip] {
+        let unsummarized = meetingStore.activeMeetings
+            .filter { ($0.summary ?? "").isEmpty && !$0.isArchived }
+            .max { $0.createdAt < $1.createdAt }
+        return HomeSuggestions.chips(
+            for: HomeSuggestions.Inputs(
+                unsummarizedMeetingTitle: unsummarized?.title,
+                overdueCount: insights.actionItemStats.overdue,
+                meetingsToday: meetingStore.todaysMeetings.count,
+                hasAnyContent: !workspaceIsEmpty
+            )
+        )
     }
 
     /// Post-first-message layout: scrolling message list + bottom-anchored input
@@ -215,20 +301,19 @@ struct AgentChatView: View {
 
         inputBar
             .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24)
+            .homeContentColumn()
             .padding(.bottom, 12)
     }
 
     // MARK: - Input Bar (shared between layouts)
 
-    /// The single source of truth for the input bar view. Both `emptyLayout` and
+    /// The single source of truth for the input bar view. Both `landingLayout` and
     /// `hasMessagesLayout` render this through `matchedGeometryEffect` so the
-    /// transition between center and bottom positions interpolates smoothly.
+    /// transition between the landing position and the bottom interpolates smoothly.
     private var inputBar: some View {
         InputBarView(
             inputText: $inputText,
+            focusRequest: focusRequest,
             attachments: $inputAttachments,
             isProcessing: coordinator.isProcessing || deepResearchCoordinator.isRunning,
             isBusy: isBusy,
@@ -294,13 +379,20 @@ struct AgentChatView: View {
             }
             .help("New conversation")
 
-            Button {
-                showSourcesPanel.toggle()
-            } label: {
-                Image(systemName: showSourcesPanel ? "sidebar.right" : "sidebar.squares.right")
-                    .foregroundStyle(showSourcesPanel ? Color.accentColor : Color.primary)
+            // Offered once there is anything to draw — the agent's sources, or a file the user
+            // has staged in the prompt bar. A toggle that is always present on Home advertises
+            // a panel with nothing in it, and pressing it is a dead end rather than a feature.
+            // Note this is the panel's question, not the auto-open's: `hasAgentSources` is the
+            // narrower one, and the two are deliberately not the same.
+            if hasSourcesToShow {
+                Button {
+                    showSourcesPanel.toggle()
+                } label: {
+                    Image(systemName: showSourcesPanel ? "sidebar.right" : "sidebar.squares.right")
+                        .foregroundStyle(showSourcesPanel ? Color.accentColor : Color.primary)
+                }
+                .help(showSourcesPanel ? "Hide sources panel" : "Show sources panel")
             }
-            .help(showSourcesPanel ? "Hide sources panel" : "Show sources panel")
         }
     }
 

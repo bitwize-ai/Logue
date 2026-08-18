@@ -94,7 +94,7 @@ extension MainWindowView {
         case .document: .allDocuments
         case .meeting: .allMeetings
         case let .some(other): other
-        case nil: .overview
+        case nil: .home
         }
     }
 }

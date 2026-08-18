@@ -62,7 +62,6 @@ struct SeedDataBannerView: View {
                 RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge)
                     .strokeBorder(AppThemeConstants.brandPrimary.opacity(AppThemeConstants.opacityMedium), lineWidth: 1)
             )
-            .padding(.horizontal, 24)
             .transition(.opacity.combined(with: .move(edge: .top)))
             .confirmationDialog(
                 "Clear all example data?",

@@ -149,7 +149,7 @@ struct MenuBarCompanionView: View {
             Image(systemName: "sparkles").foregroundStyle(Color.accentColor)
             Text("Ask Logue")
                 .font(.callout.weight(.semibold))
-            TrustChip(variant: .compact, label: UICopy.Trust.local)
+            TrustChip(label: UICopy.Trust.local)
             Spacer()
             Text("⌥Space to toggle")
                 .font(.caption2)

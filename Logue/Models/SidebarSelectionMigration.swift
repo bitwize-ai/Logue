@@ -38,10 +38,14 @@ enum LibraryPanel: String, Sendable, Equatable, CaseIterable {
 
 /// What a persisted sidebar value means today.
 ///
-/// Action Items and Templates used to be sidebar destinations and are now panels inside
-/// All Meetings and All Documents. Anyone whose app last sat on one of them has that string
-/// on disk, so it has to resolve to somewhere real — a launch into an unrecognised value is
-/// a launch into whatever the fallback happens to be, which is not where they were.
+/// Four sidebar destinations have been retired, in two separate moves, and every one of them
+/// is a string sitting on an existing install's disk:
+///
+/// - `actionItems` and `templates` became panels inside All Meetings and All Documents.
+/// - `overview` and `agentChat` merged into a single `home` surface.
+///
+/// All four have to resolve to somewhere real. A launch on an unrecognised value is a launch
+/// into whatever the fallback happens to be, which is not where the user left off.
 ///
 /// Pure, so the mapping is tested directly rather than through a window.
 enum SidebarSelectionMigration {
@@ -61,6 +65,12 @@ enum SidebarSelectionMigration {
         default: break
         }
 
+        // The two that merged. `overview` was the dashboard and `agentChat` the chat; they
+        // are one surface now, so both land on it rather than on the fallback.
+        if raw == "overview" || raw == "agentChat" {
+            return Restored(item: .home, panel: nil)
+        }
+
         guard let item = stableItem(from: raw) else { return nil }
         return Restored(item: item, panel: nil)
     }
@@ -69,11 +79,10 @@ enum SidebarSelectionMigration {
     ///
     /// Per-document and per-meeting selections are deliberately not stored — those are
     /// restored from the stores' own `selectedDocumentID` / `selectedMeetingID`, and landing
-    /// on a deleted item is worse than landing in chat.
+    /// on a deleted item is worse than landing on Home.
     static func persistedValue(for item: SidebarItem) -> String? {
         switch item {
-        case .agentChat: "agentChat"
-        case .overview: "overview"
+        case .home: "home"
         case .pinned: "pinned"
         case .recent: "recent"
         case .allDocuments: "allDocuments"
@@ -86,8 +95,7 @@ enum SidebarSelectionMigration {
 
     private static func stableItem(from raw: String) -> SidebarItem? {
         switch raw {
-        case "agentChat": .agentChat
-        case "overview": .overview
+        case "home": .home
         case "pinned": .pinned
         case "recent": .recent
         case "allDocuments": .allDocuments

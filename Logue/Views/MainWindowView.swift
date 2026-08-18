@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Sidebar selection in the 2-column layout.
 enum SidebarItem: Hashable {
-    case overview
-    case agentChat
+    /// The merged landing surface: prompt bar, dashboard cards, and the chat thread
+    /// once one starts. Replaces the separate `overview` and `agentChat` items.
+    case home
     case pinned
     case recent
     case allDocuments
@@ -47,11 +48,11 @@ struct MainWindowView: View {
     @State private var templateStore = TemplateStore.shared
 
     // Extension-visible: +Navigation
-    /// Default landing surface is Ask Logue (Phase A IA shift). Persists the
-    /// last-selected non-document surface so a user who navigated to a meeting
-    /// detail and quit returns to the meeting on relaunch — but a fresh
-    /// install or one without a stored value lands on chat, not Overview.
-    @State var sidebarSelection: SidebarItem? = Self.loadLastSidebarSelection() ?? .agentChat
+    /// Default landing surface is Home — the merged prompt-and-dashboard screen.
+    /// Persists the last-selected non-document surface so a user who navigated to a
+    /// meeting detail and quit returns to the meeting on relaunch; a fresh install,
+    /// or one without a stored value, lands on Home.
+    @State var sidebarSelection: SidebarItem? = Self.loadLastSidebarSelection() ?? .home
     // Extension-visible: +Navigation
     /// When true, the content area shows the editor/workspace instead of the list.
     @State var isEditing = false
@@ -145,19 +146,20 @@ struct MainWindowView: View {
         .environment(templateStore)
         .environment(modelManager)
         .environment(insightsProvider)
-        // Phase A: chat-first shortcut handlers.
-        // ⌘L creates a new chat and surfaces Ask Logue. The agent chat view
-        // observes the same notification to clear input + scroll state.
+        // Chat-first shortcut handlers.
+        // ⌘L creates a new chat and surfaces Home. Because a conversation with no
+        // messages *is* the landing state, this doubles as "go Home" — which is the
+        // right meaning for it now that the two surfaces are one.
         .onReceive(NotificationCenter.default.publisher(for: .chatNewConversation)) { _ in
             let conv = AgentConversationStore.shared.createConversation()
             AgentConversationStore.shared.selectedConversationID = conv.id
-            sidebarSelection = .agentChat
+            sidebarSelection = .home
             isEditing = false
         }
-        // ⌘⇧L surfaces Ask Logue and focuses the input — does NOT create a
-        // new conversation, so users can append a message to the active one.
+        // ⌘⇧L surfaces Home and focuses the input — does NOT create a new
+        // conversation, so users can append a message to the active one.
         .onReceive(NotificationCenter.default.publisher(for: .chatFocusInput)) { _ in
-            sidebarSelection = .agentChat
+            sidebarSelection = .home
             isEditing = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .openQuickOpenPalette)) { _ in
@@ -203,8 +205,7 @@ struct MainWindowView: View {
                 }
                 if let newValue {
                     let tabName = switch newValue {
-                    case .overview: "overview"
-                    case .agentChat: "agent_chat"
+                    case .home: "home"
                     case .pinned: "favorites"
                     case .recent: "recent"
                     case .allDocuments: "documents"
@@ -369,10 +370,8 @@ struct MainWindowView: View {
     @ViewBuilder
     private var listContentView: some View {
         switch sidebarSelection {
-        case .overview, nil:
-            OverviewView(sidebarSelection: $sidebarSelection)
-        case .agentChat:
-            AgentChatView()
+        case .home, nil:
+            AgentChatView(onOpenSpace: { sidebarSelection = .space($0) })
         case .pinned:
             PinnedContentPane()
         case .recent:
@@ -472,7 +471,7 @@ struct MainWindowView: View {
     private var breadcrumbSegments: [BreadcrumbSegment] {
         var segments: [BreadcrumbSegment] = []
 
-        let source = editingSourceSelection ?? .overview
+        let source = editingSourceSelection ?? .home
 
         // 1. Get the item's space and show the full hierarchy from root
         let itemSpaceID: UUID? = {
@@ -513,10 +512,9 @@ struct MainWindowView: View {
     }
 
     private var breadcrumbSourceLabel: String {
-        let source = editingSourceSelection ?? .overview
+        let source = editingSourceSelection ?? .home
         switch source {
-        case .overview: return "Home"
-        case .agentChat: return "Ask Logue"
+        case .home: return "Home"
         case .pinned: return "Pinned"
         case .recent: return "Recent"
         case .allDocuments: return "All Documents"
@@ -544,7 +542,7 @@ struct MainWindowView: View {
 
     private func navigationCommands() -> [CommandItem] {
         let entries: [(String, String, SidebarItem)] = [
-            ("Home", "house", .overview),
+            ("Home", "house", .home),
             ("Pinned", "pin", .pinned),
             ("Recent", "clock", .recent),
             ("All Documents", "doc.text", .allDocuments),

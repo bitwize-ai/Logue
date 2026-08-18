@@ -1,35 +1,26 @@
 import SwiftUI
 
-/// Privacy-first trust signal. Two variants:
-/// - `.compact` — a small chip for the chat header (next to the model name).
-/// - `.banner` — a full-width line for under the input or in Settings.
+/// Privacy-first trust signal: a small chip for the chat header, next to the model name.
 ///
 /// Always says some variation of "your data stays on this Mac." This is
 /// Logue's #1 brand cue and should appear wherever the user is making a
 /// decision (typing a message, picking a model, opening Settings).
+///
+/// There was a full-width banner form for a line under the input. Home's landing replaced the
+/// hero that used it, and the window subtitle says the same thing from `UICopy.Trust.bannerFull`,
+/// so it went with its last caller — and the single-case enum that selected between them went
+/// too, rather than being left as a choice the type no longer offers.
 struct TrustChip: View {
-    enum Variant {
-        case compact
-        case banner
-    }
-
-    let variant: Variant
     let label: String
     let detail: String?
 
-    init(variant: Variant = .compact, label: String = "Local", detail: String? = nil) {
-        self.variant = variant
+    init(label: String = "Local", detail: String? = nil) {
         self.label = label
         self.detail = detail
     }
 
     var body: some View {
-        switch variant {
-        case .compact:
-            compactChip
-        case .banner:
-            banner
-        }
+        compactChip
     }
 
     private var compactChip: some View {
@@ -53,25 +44,9 @@ struct TrustChip: View {
         .help(detail ?? "Everything happens on your Mac. No data leaves this device.")
         .accessibilityLabel("On-device — \(detail ?? "no data leaves this Mac")")
     }
-
-    private var banner: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "lock.shield.fill")
-                .foregroundStyle(.green)
-                .font(.system(size: 11, weight: .medium))
-            Text(detail ?? "Local model · Offline-capable · No data leaves this Mac")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-    }
 }
 
 #Preview {
-    VStack(spacing: 12) {
-        TrustChip(variant: .compact, label: "Local")
-        TrustChip(variant: .banner)
-    }
-    .padding()
+    TrustChip(label: "Local")
+        .padding()
 }

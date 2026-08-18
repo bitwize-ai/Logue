@@ -9,8 +9,7 @@ struct SidebarSelectionMigrationTests {
     @Test("A stable surface restores to itself and opens no panel")
     func stableSurfacesRestoreUnchanged() {
         let cases: [(String, SidebarItem)] = [
-            ("agentChat", .agentChat),
-            ("overview", .overview),
+            ("home", .home),
             ("pinned", .pinned),
             ("recent", .recent),
             ("allDocuments", .allDocuments),
@@ -23,6 +22,27 @@ struct SidebarSelectionMigrationTests {
             #expect(restored?.item == expected)
             #expect(restored?.panel == nil)
         }
+    }
+
+    // MARK: - Surfaces that merged
+
+    /// The other retirement, from the branch that merged Home. Both spellings are already on
+    /// disk, and a user upgrading from either one must land on the surface that replaced it
+    /// rather than on the fallback.
+    @Test("Both retired Home spellings restore to the merged surface")
+    func retiredHomeSpellingsMigrate() {
+        for raw in ["overview", "agentChat"] {
+            let restored = SidebarSelectionMigration.restored(from: raw)
+            #expect(restored?.item == .home, "\(raw) should land on Home")
+            #expect(restored?.panel == nil, "\(raw) opens no panel")
+        }
+    }
+
+    /// Only the current spelling is written back, so the retired ones die out on first launch.
+    @Test("Home persists under its new spelling only")
+    func homePersistsUnderTheNewSpelling() {
+        #expect(SidebarSelectionMigration.persistedValue(for: .home) == "home")
+        #expect(SidebarSelectionMigration.restored(from: "home")?.item == .home)
     }
 
     // MARK: - Surfaces that moved into panels
@@ -55,7 +75,7 @@ struct SidebarSelectionMigrationTests {
     @Test("Every surface that persists a value can be restored from it")
     func persistedValuesAllRestore() {
         let items: [SidebarItem] = [
-            .agentChat, .overview, .pinned, .recent,
+            .home, .pinned, .recent,
             .allDocuments, .allMeetings, .tasks, .trash,
         ]
         for item in items {

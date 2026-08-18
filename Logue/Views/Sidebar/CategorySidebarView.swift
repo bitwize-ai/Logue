@@ -38,14 +38,9 @@ struct CategorySidebarView: View {
                     // role + AXValue text (which lands from the Label's visible content) instead.
                     Section {
                         Label("Home", systemImage: "house")
-                            .tag(SidebarItem.overview)
+                            .tag(SidebarItem.home)
                             .accessibilityLabel("Home")
-                            .accessibilityHint("Shows home dashboard")
-
-                        Label("Ask Logue", systemImage: "sparkles")
-                            .tag(SidebarItem.agentChat)
-                            .accessibilityLabel("Ask Logue")
-                            .accessibilityHint("Opens Logue AI assistant")
+                            .accessibilityHint("Ask Logue, and see what needs you today")
                     }
 
                     // Pinned & Recent

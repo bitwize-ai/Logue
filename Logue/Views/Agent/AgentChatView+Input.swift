@@ -16,6 +16,14 @@ extension AgentChatView {
     /// `matchedGeometryEffect` for empty-state ↔ bottom-anchored animation.
     struct InputBarView: View {
         @Binding var inputText: String
+        /// Bumped by the parent to pull focus into the field — a Home card filling the
+        /// prompt should leave the caret ready to edit it. A counter rather than a
+        /// boolean: a flag has to be reset, and the reset races the next request.
+        ///
+        /// Read-only on purpose. A binding would let this view bump the counter itself,
+        /// which writes the parent's state and re-enters this same handler — exactly the
+        /// re-entrancy the counter exists to rule out.
+        let focusRequest: Int
         @Binding var attachments: [TempAttachment]
         /// Per-send flags use @AppStorage instead of @Binding<Bool> because
         /// SwiftUI's Menu silently drops Button.action closures on macOS — the
@@ -133,6 +141,9 @@ extension AgentChatView {
             ) { providers in
                 handleDrop(providers: providers)
                 return true
+            }
+            .onChange(of: focusRequest) { _, _ in
+                requestFocus = true
             }
             .onAppear {
                 // Focus the input on appear
