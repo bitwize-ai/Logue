@@ -32,6 +32,11 @@ enum AppConstants {
         static let documentSortOrder = "documentSortOrder"
         static let meetingSortOrder = "meetingSortOrder"
         static let actionItemSortOrder = "actionItemSortOrder"
+        static let actionItemInboxMode = "actionItemInboxMode"
+        /// How the Tasks list is sorted, remembered between launches.
+        static let taskSortOrder = "taskSortOrder"
+        /// Which filter the Tasks list opens on.
+        static let taskFilterMode = "taskFilterMode"
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
@@ -67,6 +72,9 @@ enum AppConstants {
         /// Comma-separated list of tool names the user has disabled in Settings.
         /// The registry strips these on every rebuild.
         static let disabledAgentTools = "agent.disabledTools"
+        /// The marker of the tasks folder this app last used. Remembered so a folder
+        /// minted while the real one was missing can be told from a copy of it.
+        static let lastTaskFolderMarker = "lastTaskFolderMarker"
         /// Whether the agent's `<thinking>` reasoning blocks are shown in the
         /// rendered response. Default OFF — most users don't want them.
         static let showReasoningBlocks = "agent.showReasoningBlocks"

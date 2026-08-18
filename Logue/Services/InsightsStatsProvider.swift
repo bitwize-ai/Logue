@@ -118,7 +118,11 @@ final class InsightsStatsProvider {
     // MARK: Action Items
 
     var actionItemStats: ActionItemStats {
-        let allItems = activeMeetings.flatMap(\.actionItems)
+        // Dismissed items are excluded: they were never work, and leaving them in the
+        // denominator makes the completion rate fall every time the user triages honestly.
+        // Promoted items stay counted — they are still action items; their completion just
+        // lives on the Tasks surface.
+        let allItems = activeMeetings.flatMap(\.actionItems).filter { !$0.isDismissed }
         let total = allItems.count
         let completed = allItems.filter(\.isCompleted).count
         let pending = total - completed

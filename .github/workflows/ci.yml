@@ -123,33 +123,14 @@ jobs:
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
 
-      # Named suites rather than the whole target: LogueTests/LLMIntegration runs real
-      # inference against a local MLX model, which no hosted runner has. These are pure
-      # decision tables and cost seconds. A guard nothing runs is not a guard — list a
-      # suite here when you add one that needs no model.
-      - name: Test (suites that need no model)
-        run: |
-          xcodebuild test \
-            -project Logue.xcodeproj \
-            -scheme Logue \
-            -destination 'platform=macOS,arch=arm64' \
-            -skipMacroValidation \
-            -skipPackagePluginValidation \
-            -only-testing:LogueTests/WhatsNewGateTests \
-            -only-testing:LogueTests/AppVersionTests \
-            -only-testing:LogueTests/BatchTranscriptFilterTests \
-            -only-testing:LogueTests/DetachedBufferTests \
-            -only-testing:LogueTests/DeviceLossPolicyTests \
-            -only-testing:LogueTests/HighlightAnchorTests \
-            -only-testing:LogueTests/PreRollBufferTests \
-            -only-testing:LogueTests/RecordingCheckpointTests \
-            -only-testing:LogueTests/RecordingRecoveryTests \
-            -only-testing:LogueTests/RecordingResilienceReviewTests \
-            -only-testing:LogueTests/SpeakerShortLabelTests \
-            -only-testing:LogueTests/SystemAudioArmingTests \
-            -only-testing:LogueTests/TimelineAudioConversionTests \
-            -only-testing:LogueTests/TranscriptGutterTests \
-            -only-testing:LogueTests/TranscriptRealignmentTests \
-            -only-testing:LogueTests/TranscriptSentenceMergeTests \
-            -only-testing:LogueTests/TranscriptionGateTests \
-            CODE_SIGNING_ALLOWED=NO
+      # Everything except the suites that need a model, named by exclusion rather than by
+      # listing what to run. The allow-list this replaces had to be remembered: a suite not
+      # added to it never executed, which is how eleven suites covering task storage and
+      # space folders — including the ones written for defects found in review — sat green
+      # by never having run. `scripts/test-no-llm.sh` already holds the skip list, and it is
+      # the same list a developer runs locally, so the two cannot drift.
+      #
+      # LogueTests/LLMIntegration drives a real on-device MLX model, which no hosted runner
+      # has; those 16 suites are what the script skips.
+      - name: Test (everything that needs no model)
+        run: ./scripts/test-no-llm.sh

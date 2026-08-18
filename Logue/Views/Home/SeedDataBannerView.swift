@@ -84,6 +84,7 @@ struct SeedDataBannerView: View {
             documentStore.clearAllData()
             meetingStore.clearAllData()
             spaceStore.clearAllData()
+            TaskStore.shared.clearAllData()
             hasClearedSeedData = true
         }
     }

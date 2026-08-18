@@ -561,55 +561,23 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         saveMeeting(id: meetingID)
     }
 
-    // MARK: - Action Item Due Date & Reminders
-
-    func setActionItemDueDate(_ dueDate: Date?, itemID: UUID, in meetingID: UUID) {
+    /// Marks an extracted action item as something the user chose not to act on.
+    ///
+    /// A dismissal cancels any reminder — leaving a notification armed for an item the user
+    /// just rejected is the one way this can nag them about a decision they already made.
+    func setActionItemDismissed(_ dismissed: Bool, itemID: UUID, in meetingID: UUID) {
         guard let mIdx = meetingIndex(for: meetingID),
               let itemIndex = meetings[mIdx].actionItems.firstIndex(where: { $0.id == itemID })
         else { return }
-        meetings[mIdx].actionItems[itemIndex].dueDate = dueDate
+        meetings[mIdx].actionItems[itemIndex].isDismissed = dismissed
         meetings[mIdx].modifiedAt = Date()
-        saveMeeting(id: meetingID)
-    }
 
-    func setActionItemReminder(itemID: UUID, in meetingID: UUID, reminderDate: Date) {
-        guard let mIdx = meetingIndex(for: meetingID),
-              let itemIndex = meetings[mIdx].actionItems.firstIndex(where: { $0.id == itemID })
-        else { return }
-
-        let item = meetings[mIdx].actionItems[itemIndex]
-        let meetingTitle = meetings[mIdx].title
-
-        // Cancel existing reminder if any
-        if let existingNotifID = item.notificationID {
-            ReminderManager.shared.cancelReminder(notificationID: existingNotifID)
-        }
-
-        // Schedule new reminder
-        let notifID = ReminderManager.shared.scheduleReminder(
-            for: item,
-            at: reminderDate,
-            meetingTitle: meetingTitle
-        )
-
-        meetings[mIdx].actionItems[itemIndex].reminderDate = reminderDate
-        meetings[mIdx].actionItems[itemIndex].notificationID = notifID
-        meetings[mIdx].modifiedAt = Date()
-        saveMeeting(id: meetingID)
-    }
-
-    func cancelActionItemReminder(itemID: UUID, in meetingID: UUID) {
-        guard let mIdx = meetingIndex(for: meetingID),
-              let itemIndex = meetings[mIdx].actionItems.firstIndex(where: { $0.id == itemID })
-        else { return }
-
-        if let notifID = meetings[mIdx].actionItems[itemIndex].notificationID {
+        if dismissed, let notifID = meetings[mIdx].actionItems[itemIndex].notificationID {
             ReminderManager.shared.cancelReminder(notificationID: notifID)
+            meetings[mIdx].actionItems[itemIndex].reminderDate = nil
+            meetings[mIdx].actionItems[itemIndex].notificationID = nil
         }
 
-        meetings[mIdx].actionItems[itemIndex].reminderDate = nil
-        meetings[mIdx].actionItems[itemIndex].notificationID = nil
-        meetings[mIdx].modifiedAt = Date()
         saveMeeting(id: meetingID)
     }
 }
@@ -621,6 +589,7 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
 // MeetingStore+Diarization.swift  — Speaker diarization data and transcript label assignment
 // MeetingStore+Metadata.swift     — Bookmarks, tags
 // MeetingStore+Persistence.swift  — File I/O: save, load, delete, bulk operations, digest cache
+// MeetingStore+Reminders.swift    — Action-item due dates and their scheduled notifications
 // MeetingStore+Search.swift       — Full-text search, snippet extraction, topic keywords, related meetings
 // MeetingStore+SeedData.swift     — Sample meeting data for first launch
 // MeetingStore+WelcomeMeeting.swift — Welcome/onboarding meeting seed
