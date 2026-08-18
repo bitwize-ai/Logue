@@ -26,6 +26,11 @@ final class AudioRecorder {
     private let timerLock = OSAllocatedUnfairLock<Timer?>(initialState: nil)
     private var startTime: Date?
     private var audioFile: AVAudioFile?
+
+    /// Where to write this session's audio so it survives a crash. Set by the caller before
+    /// `startRecording()`; nil means the temporary directory, which is right for capture that has
+    /// no meeting to be recovered into.
+    var inProgressDirectory: URL?
     /// Stored observer token for config change notifications (block-based API requires token removal).
     private var configChangeObserver: NSObjectProtocol?
     private(set) var tempFileURL: URL?
@@ -69,6 +74,17 @@ final class AudioRecorder {
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+
+        // Voice processing (`setVoiceProcessingEnabled`) was enabled here for its echo
+        // cancellation, and it silenced the microphone outright: the timeline logged
+        // "microphone contributed 10s at RMS 0.00000" for every window of every session while the
+        // level meter — which shows max(system, mic) — went on moving off the system tap. It is a
+        // duplex unit and wants a running output chain this engine does not have.
+        //
+        // Left off until it can be demonstrated to capture audio. The echo it was meant to cancel
+        // is the lesser problem: a meeting transcribed twice is recoverable, a meeting recorded as
+        // silence is not.
+
         let inputFormat = inputNode.outputFormat(forBus: 0)
         recordingFormat = inputFormat
 
@@ -76,7 +92,12 @@ final class AudioRecorder {
         // so audio segments before and after the toggle are preserved in one file.
         // Create a new file only when starting fresh.
         if audioFile == nil {
-            let fileURL = FileManager.default.temporaryDirectory
+            // A session recording into a meeting writes somewhere durable, so that a crash leaves
+            // audio behind rather than a file the system was told to discard. Everything else — the
+            // cross-app capture paths, which have no meeting to recover into — keeps the temporary
+            // directory and the delete-on-reboot protection that goes with it.
+            let directory = inProgressDirectory ?? FileManager.default.temporaryDirectory
+            let fileURL = directory
                 .appending(component: UUID().uuidString)
                 .appendingPathExtension("wav")
             tempFileURL = fileURL
@@ -87,8 +108,14 @@ final class AudioRecorder {
             } catch {
                 logger.error("Failed to create audio recording file: \(error.localizedDescription, privacy: .public)")
             }
-            // Sec-1: Set file protection to delete on next reboot if app crashes
-            try? (fileURL as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
+            if inProgressDirectory == nil {
+                // Sec-1: Set file protection to delete on next reboot if app crashes
+                do {
+                    try (fileURL as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
+                } catch {
+                    logger.error("Could not set file protection: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         }
 
         installTap(on: inputNode, format: inputFormat)
@@ -151,8 +178,15 @@ final class AudioRecorder {
                 os_log(.error, "Audio file write failed: %{public}@", error.localizedDescription)
             }
 
-            // Stream the raw buffer on (dynamic — picks up callback changes made after start).
-            callbackHolder.callback?(buffer)
+            // Stream the audio on (dynamic — picks up callback changes made after start).
+            //
+            // Copied first. This buffer belongs to the engine and is valid only inside this
+            // callback; the consumer reads it later, on another actor, and by then the engine has
+            // reused the memory. The file written just above stays perfectly audible while
+            // everything downstream sees silence — an empty transcript over a good recording.
+            if let detached = buffer.detachedCopy() {
+                callbackHolder.callback?(detached)
+            }
         }
     }
 

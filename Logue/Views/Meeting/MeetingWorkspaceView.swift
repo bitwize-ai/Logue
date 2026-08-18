@@ -23,10 +23,6 @@ struct MeetingWorkspaceView: View {
     @State private var scrollToSegmentID: UUID?
     @State private var audioPlaybackService = AudioPlaybackService()
     @State private var chatMessages: [MeetingChatMessage] = []
-    @State private var showOnlineMeetingPrompt = false
-    @State private var detectedAppName: String?
-    @AppStorage("hasSeenMicSpeakerTip") private var hasSeenMicSpeakerTip = false
-    @State private var showMicSpeakerTip = false
 
     // Bookmark state (moved from MeetingRecordingBar)
     @State private var showBookmarkPopover = false
@@ -55,38 +51,39 @@ struct MeetingWorkspaceView: View {
                     )
                 }
 
-                // Mic speaker tip — shown once when recording in-person without system audio
-                if showMicSpeakerTip, recorder.isRecording, !recorder.isCapturingSystemAudio {
+                // The tip that used to sit here explained the System Audio button to users who could
+                // not find it. The tap arms itself now, so there is nothing left to explain.
+
+                // What is left is capture telling the user something it did on its own — a headset
+                // that dropped, a fallback it took. Non-blocking and self-clearing: recording is
+                // still running, and there is nothing to decide.
+                if meeting.wasRecovered {
                     HStack(spacing: 8) {
-                        Image(systemName: "speaker.wave.2")
+                        Image(systemName: "arrow.clockwise.circle")
                             .foregroundStyle(.secondary)
-                        Text(
-                            "Your mic may pick up audio from speakers. Use headphones or enable **System Audio** for cleaner online meeting capture."
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        Text("Recovered after an unexpected quit — the last few seconds may be missing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Spacer()
-                        Button {
-                            Task { await recorder.enableSystemAudio() }
-                        } label: {
-                            Text("Enable System Audio")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        Button {
-                            withAnimation { showMicSpeakerTip = false }
-                            hasSeenMicSpeakerTip = true
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(AppThemeConstants.categoryBlue.opacity(0.08))
+                }
+
+                if let notice = recorder.captureNotice, recorder.isRecording {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Text(notice)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(AppThemeConstants.categoryYellow.opacity(0.08))
+                    .transition(.opacity)
                 }
 
                 // Main content area
@@ -114,13 +111,6 @@ struct MeetingWorkspaceView: View {
                         },
                         onEditSegment: { segmentID, newText in
                             store.updateSegmentText(meetingID: meeting.id, segmentID: segmentID, text: newText)
-                        },
-                        onReassignSpeaker: { segmentID, newSpeakerLabel in
-                            store.reassignSegmentSpeaker(
-                                meetingID: meeting.id,
-                                segmentID: segmentID,
-                                newSpeakerLabel: newSpeakerLabel
-                            )
                         },
                         onRenameSpeaker: { oldName, newName in
                             renameSpeaker(in: meeting, from: oldName, to: newName)
@@ -168,23 +158,22 @@ struct MeetingWorkspaceView: View {
                 }
             }
             .task(id: meeting.id) {
+                await takeAutoRecordRequest(for: meeting)
+            }
+            // Retried whenever the recorder frees up — a rebuild finishing, or the previous
+            // session finishing being written. The `.task` above re-runs on a change of meeting,
+            // not on the recorder becoming free, so a queued capture sat unclaimed.
+            .onChange(of: recorder.recordingState) { _, state in
+                guard state == .idle else { return }
+                Task { await takeAutoRecordRequest(for: meeting) }
+            }
+            // A request belongs to the meeting that is open. Leaving before the recorder frees
+            // up strands it otherwise: this view is the only thing that can take it, so it
+            // survived for the life of the process and started recording the next time that
+            // meeting was merely opened to read.
+            .onDisappear {
                 if store.pendingAutoRecord == meeting.id {
                     store.pendingAutoRecord = nil
-                    if !recorder.isRecording {
-                        await recorder.startRecording(for: meeting)
-                    }
-                }
-            }
-            .onChange(of: recorder.isRecording) { _, isRecording in
-                if isRecording, !hasSeenMicSpeakerTip, !recorder.isCapturingSystemAudio {
-                    withAnimation { showMicSpeakerTip = true }
-                } else if !isRecording {
-                    showMicSpeakerTip = false
-                }
-            }
-            .onChange(of: recorder.isCapturingSystemAudio) { _, capturing in
-                if capturing {
-                    withAnimation { showMicSpeakerTip = false }
                 }
             }
             .onAppear {
@@ -261,61 +250,29 @@ extension MeetingWorkspaceView {
                 RecordingStatusView(
                     elapsedTime: recorder.elapsedTime,
                     audioLevel: recorder.audioLevel,
-                    isMicActive: recorder.isMicActive,
                     isCapturingSystemAudio: recorder.isCapturingSystemAudio
                 )
             }
         }
     }
 
+    /// The single capture control: mute.
+    ///
+    /// There is no system-audio button. The tap arms itself when something starts playing, and the
+    /// recording status capsule says so — offering a switch for it would be offering to undo a
+    /// decision the app is making correctly on its own.
     @ToolbarContentBuilder
     func audioToggleToolbarItems() -> some ToolbarContent {
-        // Mic toggle (during recording)
         ToolbarItem(placement: .primaryAction) {
             if recorder.isRecording {
                 Button {
-                    Task { @MainActor in
-                        if recorder.isMicActive {
-                            recorder.disableMic()
-                        } else {
-                            await recorder.enableMic()
-                        }
-                    }
+                    recorder.setMicMuted(recorder.isMicActive)
                 } label: {
-                    Image(systemName: recorder.isMicActive ? "mic.fill" : "mic.slash")
+                    Image(systemName: recorder.isMicActive ? "mic.fill" : "mic.slash.fill")
                         .font(.caption)
                         .foregroundStyle(recorder.isMicActive ? .primary : .secondary)
                 }
-                .help(recorder.isMicActive ? "Disable microphone" : "Enable microphone")
-            }
-        }
-
-        // System audio toggle (during recording)
-        ToolbarItem(placement: .primaryAction) {
-            if recorder.isRecording {
-                Button {
-                    Task { @MainActor in
-                        if recorder.isCapturingSystemAudio {
-                            recorder.disableSystemAudio()
-                        } else {
-                            await recorder.enableSystemAudio()
-                        }
-                    }
-                } label: {
-                    Image(systemName: "display")
-                        .font(.caption)
-                        .foregroundStyle(recorder.isCapturingSystemAudio ? .primary : .tertiary)
-                        .overlay {
-                            if !recorder.isCapturingSystemAudio {
-                                Image(systemName: "line.diagonal")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                }
-                .help(recorder.isCapturingSystemAudio
-                    ? "Disable system audio"
-                    : "Enable system audio (recommended when speakers are playing)")
+                .help(recorder.isMicActive ? "Mute microphone" : "Unmute microphone")
             }
         }
     }
@@ -335,13 +292,37 @@ extension MeetingWorkspaceView {
         }
     }
 
+    /// Starts the recording this meeting was opened to start, if it still wants one.
+    ///
+    /// The request is only cleared once it has actually been taken — by this call starting a
+    /// session, or by one already running. A refused start leaves it in place for the retry
+    /// above, because consuming it meant automatic capture silently did nothing whenever it
+    /// landed while an interrupted recording was being rebuilt.
+    func takeAutoRecordRequest(for meeting: MeetingNote) async {
+        guard store.pendingAutoRecord == meeting.id else { return }
+        if recorder.isRecording {
+            store.pendingAutoRecord = nil
+            return
+        }
+        // The outcome says whether the obstacle clears on its own; only then is the request
+        // worth keeping for the retry. Deriving that here from `isRecovering` missed the window
+        // where the previous session was still being written, and treated a denied microphone
+        // as temporary — leaving a request armed to fire the next time the meeting was opened.
+        let outcome = await recorder.startRecording(for: meeting)
+        if !outcome.clearsOnItsOwn {
+            store.pendingAutoRecord = nil
+        }
+    }
+
     @ViewBuilder
     func startStopButton(for meeting: MeetingNote) -> some View {
-        if recorder.isStartingRecording {
+        if recorder.isRecovering {
+            recordProgressButton(label: "Finishing an interrupted recording…")
+        } else if recorder.isStartingRecording {
             recordProgressButton(label: "Starting…")
         } else if recorder.isStopping {
             recordProgressButton(label: "Stopping…")
-        } else if recorder.isDiarizing {
+        } else if recorder.isDiarizing(for: meeting.id) {
             recordProgressButton(
                 label: recorder.diarizationStage.isEmpty ? "Identifying speakers…" : recorder.diarizationStage
             )
@@ -390,22 +371,6 @@ extension MeetingWorkspaceView {
         .keyboardShortcut("r", modifiers: .command)
         .accessibilityLabel("Start recording")
         .help("Start Recording (⌘R)")
-        .alert("Online Meeting Detected", isPresented: $showOnlineMeetingPrompt) {
-            Button("Capture System Audio") {
-                var updated = meeting
-                updated.recordingMode = .onlineMeeting
-                store.updateMeeting(updated)
-                toggleRecording(for: updated)
-            }
-            Button("Mic Only", role: .cancel) {
-                var updated = meeting
-                updated.recordingMode = .inPerson
-                store.updateMeeting(updated)
-                toggleRecording(for: updated)
-            }
-        } message: {
-            Text("\(detectedAppName ?? "A conferencing app") is running. Capture system audio to transcribe remote speakers?")
-        }
     }
 
     func quickBookmarkButton(for meeting: MeetingNote) -> some View {
@@ -870,27 +835,25 @@ extension MeetingWorkspaceView {
         }
     }
 
-    /// Smart recording start: detects conferencing apps and prompts before choosing mode.
+    /// Starts recording. There is nothing to ask: the microphone always runs, and the system-audio
+    /// tap arms itself when something actually starts playing rather than when a conferencing app
+    /// merely happens to be open — which it often is, hours after the call ended.
     private func startSmartRecording(for meeting: MeetingNote) {
-        if let detected = ConferencingAppDetector.detect() {
-            detectedAppName = detected.name
-            showOnlineMeetingPrompt = true
-        } else {
-            var updated = meeting
-            updated.recordingMode = .inPerson
-            store.updateMeeting(updated)
-            toggleRecording(for: updated)
-        }
+        toggleRecording(for: meeting)
     }
 }
 
 // MARK: - Recording Status View (toolbar inline)
 
 /// Compact recording status shown in the macOS toolbar during active recording.
+///
+/// Says what is being captured; it does not offer to change it. The microphone has no indicator
+/// here because the mute button sitting beside this capsule already shows its state and is the one
+/// control for it — two mic glyphs an inch apart was what made automatic capture still look like a
+/// pair of toggles.
 struct RecordingStatusView: View {
     let elapsedTime: TimeInterval
     let audioLevel: Float
-    var isMicActive: Bool = false
     var isCapturingSystemAudio: Bool = false
 
     var body: some View {
@@ -907,17 +870,11 @@ struct RecordingStatusView: View {
             AudioLevelMeter(level: audioLevel)
                 .frame(width: 64, height: 14)
 
-            HStack(spacing: 4) {
-                if isMicActive {
-                    Image(systemName: "mic.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if isCapturingSystemAudio {
-                    Image(systemName: "display")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            if isCapturingSystemAudio {
+                Image(systemName: "display")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Also capturing system audio")
             }
         }
         .padding(.horizontal, 12)

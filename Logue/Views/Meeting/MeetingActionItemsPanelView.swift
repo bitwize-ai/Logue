@@ -19,6 +19,16 @@ struct MeetingActionItemsPanelView: View {
         recorder.isRecording && recorder.currentMeetingID == meeting.id
     }
 
+    /// Whether pressing "Start Meeting" would actually start one.
+    ///
+    /// `isRecovering` is in here because neither of the other two flags is set while an
+    /// interrupted session is being rebuilt — so the button rendered enabled, `startRecording`
+    /// refused, and nothing told the user why.
+    private var canStartMeeting: Bool {
+        meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording
+            && !recorder.isRecovering
+    }
+
     var body: some View {
         Group {
             if isExtracting, meeting.actionItems.isEmpty {
@@ -45,10 +55,10 @@ struct MeetingActionItemsPanelView: View {
                                 ? "Tap to extract action items from the existing summary."
                                 : "Action items will be extracted when you generate a summary.")),
                     actionLabel: meeting.segments.isEmpty
-                        ? (!recorder.isRecording && !recorder.isStartingRecording ? "Start Meeting" : nil)
+                        ? (canStartMeeting ? "Start Meeting" : nil)
                         : (extractionMessage != nil ? "Try Again" : (hasSummary ? "Extract Action Items" : "Generate Summary")),
                     action: meeting.segments.isEmpty
-                        ? (!recorder.isRecording && !recorder.isStartingRecording ? {
+                        ? (canStartMeeting ? {
                             Task { await recorder.startRecording(for: meeting) }
                         } : nil)
                         : (isExtracting ? nil : {
@@ -154,7 +164,7 @@ struct MeetingActionItemsPanelView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(isExtracting || recorder.postRecordingPipeline.isGeneratingAISummary)
+                    .disabled(isExtracting || recorder.postRecordingPipeline.isGenerating(for: meeting.id))
                     .help("Re-extract action items with latest transcript")
                 }
             }
