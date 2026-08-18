@@ -266,6 +266,7 @@
 		5CA3F8E612944FDC80FE2A00 /* OverviewRecentActivityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9DB88569857E33E72CCFAE /* OverviewRecentActivityCard.swift */; };
 		5CBFF3B40F91960EC8178989 /* CommandCenterComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ABC89CED798F0088E00B682 /* CommandCenterComposeView.swift */; };
 		5CEA326BB1396B276764A6EB /* WhatsNewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C3F8ADFF573D2924827697 /* WhatsNewView.swift */; };
+		5F91A42038BFDFE88AF5D2FF /* MeetingStore+Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1C5465515D27E6AB7556636 /* MeetingStore+Reminders.swift */; };
 		5FCA28149B189B61283A387C /* DocumentIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB768463E40E11BC5922145 /* DocumentIcon.swift */; };
 		5FD238DAAD32BA6575CDCF30 /* HighlightMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 430B153889068B3CB200455A /* HighlightMark.swift */; };
 		5FE5B603740CF6AB60C95616 /* ScheduledTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2201F239D5E1F87D9AA99B /* ScheduledTask.swift */; };
@@ -1186,6 +1187,7 @@
 		C0950CE3E7C5624276CD85B1 /* ContentNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentNavigator.swift; sourceTree = "<group>"; };
 		C0CBBB8CE2F9462205BF47F4 /* PromptRegistry+Memory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PromptRegistry+Memory.swift"; sourceTree = "<group>"; };
 		C1422ADE4317F2B8650E23D7 /* FilterChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterChip.swift; sourceTree = "<group>"; };
+		C1C5465515D27E6AB7556636 /* MeetingStore+Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetingStore+Reminders.swift"; sourceTree = "<group>"; };
 		C202BEE397CD4A9873F94ED3 /* whatsnew-asklogue-2-answer.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-asklogue-2-answer.png"; sourceTree = "<group>"; };
 		C262104A21E62547CE677D5B /* EditorLayoutMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorLayoutMode.swift; sourceTree = "<group>"; };
 		C2A85CBFCD11CDF2FB693F73 /* InlineDiagramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineDiagramView.swift; sourceTree = "<group>"; };
@@ -1764,6 +1766,7 @@
 				E7FD01A02C6FB9C64A0238CF /* MeetingStore+Diarization.swift */,
 				3D36503D92C1D2637BBC06BF /* MeetingStore+Metadata.swift */,
 				68D54A7FA1A1D4039E6E3B90 /* MeetingStore+Persistence.swift */,
+				C1C5465515D27E6AB7556636 /* MeetingStore+Reminders.swift */,
 				81156E078CE31A1267D150EE /* MeetingStore+Search.swift */,
 				132C503C3139368F66A16B8C /* MeetingStore+SeedData.swift */,
 				709692D702A29C9D5A0C4C9D /* MeetingStore+Transcript.swift */,
@@ -2997,6 +3000,7 @@
 				6E33CC2D3A37790D824199A3 /* MeetingStore+Diarization.swift in Sources */,
 				CDA2BBE893DF12C9FC4A103C /* MeetingStore+Metadata.swift in Sources */,
 				A4DC27FCF3FB55E71EB66A21 /* MeetingStore+Persistence.swift in Sources */,
+				5F91A42038BFDFE88AF5D2FF /* MeetingStore+Reminders.swift in Sources */,
 				CE08246128090E026CD9895A /* MeetingStore+Search.swift in Sources */,
 				D1931EA2257F5AD1385F138A /* MeetingStore+SeedData.swift in Sources */,
 				CF7EF95C9DA5C2830CE64C33 /* MeetingStore+Transcript.swift in Sources */,
