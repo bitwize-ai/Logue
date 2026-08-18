@@ -383,6 +383,53 @@ enum AppConstants {
         static let relaunchTerminationInterval: TimeInterval = 0.5
         /// Brief delay before hiding selection toolbar (checks if selection cleared)
         static let selectionToolbarHideInterval: TimeInterval = 0.08
+
+        // -- Automatic capture --
+
+        /// How long something must keep playing before it arms the system-audio tap.
+        ///
+        /// A notification chime and a video call both make the default output device report that
+        /// it is running; only one of them is a meeting. A second of continuous playback separates
+        /// them without making the tap noticeably late to a call that has already started.
+        static let systemAudioArmingDebounce: TimeInterval = 1.0
+
+        /// How often the arming monitor re-reads playback state.
+        ///
+        /// A backstop for the Core Audio property listener, which only fires on transitions and so
+        /// says nothing about audio that was already playing when recording started.
+        static let systemAudioArmingPoll: Duration = .milliseconds(500)
+
+        /// How long recovery waits for the meeting library to load before giving up.
+        ///
+        /// Reading an unloaded library makes every meeting look deleted, and recovery deletes the
+        /// recordings of meetings that no longer exist — so this must resolve before it runs.
+        static let meetingStoreLoadTimeout: Duration = .seconds(30)
+
+        /// How often that wait re-checks.
+        static let meetingStoreLoadPoll: Duration = .milliseconds(100)
+
+        /// How often a recording in progress writes down where it has got to.
+        ///
+        /// What a crash costs is bounded by this. The write is a small JSON file, so the interval is
+        /// set by how much of a meeting it is acceptable to lose rather than by what it costs.
+        static let recordingCheckpointInterval: Duration = .seconds(30)
+
+        /// How often a missing capture device is re-checked while its grace period runs.
+        ///
+        /// The device-list listener fires when a device appears or disappears. Nothing fires to say
+        /// one has *stayed* missing, which is the thing the grace period is waiting to find out.
+        static let deviceLossPoll: Duration = .milliseconds(500)
+    }
+
+    enum Transcription {
+        /// How much audio ahead of detected speech is kept and released when the gate opens.
+        ///
+        /// Voice activity is recognised slightly after a word has begun, so releasing only from the
+        /// moment of recognition clips the first consonant off every utterance.
+        static let gatePreRoll: TimeInterval = 0.3
+
+        /// How long the gate stays open past the end of speech, so trailing consonants survive.
+        static let gateTail: TimeInterval = 0.4
     }
 
     enum Support {

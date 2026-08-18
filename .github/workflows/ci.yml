@@ -137,4 +137,19 @@ jobs:
             -skipPackagePluginValidation \
             -only-testing:LogueTests/WhatsNewGateTests \
             -only-testing:LogueTests/AppVersionTests \
+            -only-testing:LogueTests/BatchTranscriptFilterTests \
+            -only-testing:LogueTests/DetachedBufferTests \
+            -only-testing:LogueTests/DeviceLossPolicyTests \
+            -only-testing:LogueTests/HighlightAnchorTests \
+            -only-testing:LogueTests/PreRollBufferTests \
+            -only-testing:LogueTests/RecordingCheckpointTests \
+            -only-testing:LogueTests/RecordingRecoveryTests \
+            -only-testing:LogueTests/RecordingResilienceReviewTests \
+            -only-testing:LogueTests/SpeakerShortLabelTests \
+            -only-testing:LogueTests/SystemAudioArmingTests \
+            -only-testing:LogueTests/TimelineAudioConversionTests \
+            -only-testing:LogueTests/TranscriptGutterTests \
+            -only-testing:LogueTests/TranscriptRealignmentTests \
+            -only-testing:LogueTests/TranscriptSentenceMergeTests \
+            -only-testing:LogueTests/TranscriptionGateTests \
             CODE_SIGNING_ALLOWED=NO

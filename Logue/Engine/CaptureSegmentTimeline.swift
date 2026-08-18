@@ -13,13 +13,21 @@ import Foundation
 struct CaptureSegmentTimeline {
     /// One uninterrupted activation: `duration` seconds starting `fileStart` into the source's file,
     /// belonging at `sessionStart` on the meeting's timeline.
-    struct Placement: Equatable {
+    struct Placement: Equatable, Codable {
         let fileStart: TimeInterval
         let duration: TimeInterval
         let sessionStart: TimeInterval
     }
 
     private(set) var placements: [Placement] = []
+
+    init() {}
+
+    /// Rebuilds a timeline from placements recovered from a checkpoint. There is no open activation:
+    /// whatever was recording when the app stopped was closed as the checkpoint was written.
+    init(placements: [Placement]) {
+        self.placements = placements
+    }
 
     /// The activation currently recording, if the source is live.
     private var open: (sessionStart: TimeInterval, fileStart: TimeInterval)?

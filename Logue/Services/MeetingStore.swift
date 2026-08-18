@@ -414,7 +414,46 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
     /// when recording stops.
     func appendSegment(_ segment: TranscriptSegment, to meetingID: UUID, persistImmediately: Bool = true) {
         guard let index = meetingIndex(for: meetingID) else { return }
-        meetings[index].segments.append(segment)
+
+        // The transcriber finalises when it is confident, not when a sentence ends, so a thought
+        // arrives split across two lines. Joined here, as it arrives, the stored transcript is made
+        // of sentences and everything downstream inherits that rather than working around it.
+        // The system tap is the multi-speaker source: it carries every remote participant, so
+        // two consecutive lines from it can be two different people and nothing in the segment
+        // says which. Requiring the *mic* to be live as well had this backwards — a meeting with
+        // the mic muted is the case with the most speakers and the least protection, and it is
+        // the mode this branch exists for.
+        //
+        // Mic-only is left merging, and that is a judgement rather than a safe default: merging
+        // does not exist on main — `appendSegment` there is a plain append — so one microphone
+        // welding two people in a room into one line is a risk this branch introduces, not one
+        // it inherits. It is left on because the split-sentence join is the feature, and telling
+        // two in-room speakers apart before diarization needs per-buffer source tagging the
+        // shared analyzer does not carry. If that trade is not wanted, the place to make merging
+        // safe is after diarization has labelled the segments, where `speakerLabel` finally
+        // discriminates — not here.
+        //
+        // Read from the recorder rather than the meeting's mode: the mode is what was intended,
+        // this is what is actually running, and a system tap that failed to start should not
+        // cost the merge.
+        let mayCarryTwoSpeakers = RecordingSessionManager.shared.isCapturingSystemAudio
+        // Where this session starts on the meeting's timeline, so a line from an earlier session
+        // is never extended by this one.
+        let sessionStart = RecordingSessionManager.shared.timeOffset
+
+        if let last = meetings[index].segments.last,
+           TranscriptSentenceMerge.shouldMerge(
+               previous: last,
+               next: segment,
+               mayCarryTwoSpeakers: mayCarryTwoSpeakers,
+               sessionStart: sessionStart
+           )
+        {
+            meetings[index].segments[meetings[index].segments.count - 1] =
+                TranscriptSentenceMerge.merged(last, with: segment)
+        } else {
+            meetings[index].segments.append(segment)
+        }
         meetings[index].modifiedAt = Date()
         if persistImmediately {
             saveMeeting(id: meetingID)
