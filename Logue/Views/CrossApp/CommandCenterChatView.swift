@@ -32,7 +32,12 @@ struct CommandCenterChatView: View {
     @State private var conversationID: UUID?
     @State private var store = AgentConversationStore.shared
     @State private var coordinator = AgentCoordinator.shared
-    @State private var inputText: String = ""
+    // Extension-visible: +Composer
+    @State var inputText: String = ""
+    // Extension-visible: +Composer
+    /// Files staged for the next send. The island could not accept any until the intake was
+    /// lifted out of the main window's input bar — see `AttachmentIntake`.
+    @State var attachments: [TempAttachment] = []
     // Extension-visible: +Bubbles
     @State var copiedMessageID: UUID?
     // Extension-visible: +Bubbles
@@ -40,9 +45,11 @@ struct CommandCenterChatView: View {
     // Extension-visible: +Bubbles
     @State var speakingMessageID: UUID?
     @State private var synthesizer = AVSpeechSynthesizer()
-    @FocusState private var isInputFocused: Bool
+    // Extension-visible: +Composer
+    @FocusState var isInputFocused: Bool
 
-    private var voiceManager: VoicePushToTalkManager {
+    // Extension-visible: +Composer
+    var voiceManager: VoicePushToTalkManager {
         .shared
     }
 
@@ -76,8 +83,9 @@ struct CommandCenterChatView: View {
         }
     }
 
+    // Extension-visible: +Composer
     /// Whether the island's own thread is busy — never the main window's.
-    private var isGenerating: Bool {
+    var isGenerating: Bool {
         guard let conversationID else { return false }
         return coordinator.isProcessing(in: conversationID)
     }
@@ -254,94 +262,16 @@ struct CommandCenterChatView: View {
         )
     }
 
-    // MARK: - Prompt Pill
-
-    private var promptPill: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // App logo
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 28, height: 28)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-            // Input field
-            TextField("What can I help you with?", text: $inputText, axis: .vertical)
-                .font(.body)
-                .foregroundStyle(.white)
-                .textFieldStyle(.plain)
-                .focused($isInputFocused)
-                .lineLimit(1 ... 4)
-                .onKeyPress(.return, phases: .down) { _ in
-                    if NSEvent.modifierFlags.contains(.shift) {
-                        inputText += "\n"
-                        return .handled
-                    } else if canSend {
-                        sendMessage()
-                        return .handled
-                    }
-                    return .handled
-                }
-
-            // Mic button
-            Button {
-                voiceManager.toggle()
-            } label: {
-                Image(systemName: voiceManager.isRecording ? "mic.fill" : "mic")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(voiceManager.isRecording ? AppThemeConstants.error : .white.opacity(0.4))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .help(voiceManager.isRecording ? "Stop voice input" : "Voice input")
-
-            // Send / Stop
-            if isGenerating {
-                Button(action: stopStreaming) {
-                    Image(systemName: "stop.fill")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(AppThemeConstants.error))
-                }
-                .buttonStyle(.plain)
-            } else {
-                Button(action: sendMessage) {
-                    Image(systemName: "arrow.up")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(canSend ? .white : .white.opacity(0.25))
-                        .frame(width: 32, height: 32)
-                        .background(
-                            Circle().fill(canSend ? AppThemeConstants.brandPrimary : Color.white.opacity(0.08))
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend || LLMEngineStatus.shared.isBusy)
-                .keyboardShortcut(.return, modifiers: .command)
-            }
-        }
-        .padding(.leading, 14)
-        .padding(.trailing, 10)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 0.92)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
-    }
-
     // MARK: - Logic
 
-    private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isGenerating
+    // Extension-visible: +Composer
+    var canSend: Bool {
+        (!inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+            && !isGenerating
     }
 
-    private func sendMessage() {
+    // Extension-visible: +Composer
+    func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // The same routing decision the main window makes. The island has no Deep Research
@@ -350,13 +280,16 @@ struct CommandCenterChatView: View {
         let route = AskRouter.route(
             for: AskRouter.Request(
                 text: text,
+                hasAttachments: !attachments.isEmpty,
                 imageIntentFires: PromptIntentClassifier.shared.shouldPresentImagePlayground(for: text)
             )
         )
         guard let route, !isGenerating else { return }
 
         let conversationID = ensureConversation()
+        let staged = attachments
         inputText = ""
+        attachments = []
 
         // Re-focus input after state update
         Task {
@@ -368,11 +301,11 @@ struct CommandCenterChatView: View {
         case .agentLoop, .deepResearch:
             // Deep Research is unreachable from here — no chip lights it — and if it ever
             // becomes reachable it belongs on the same coordinator, not a second pipeline.
-            coordinator.send(message: text, conversationID: conversationID)
+            coordinator.send(message: text, conversationID: conversationID, attachments: staged)
         case let .imagePlayground(concept):
             // ImagePlayground presents a sheet, which a floating pill cannot host. Answer it
             // as a normal turn rather than silently dropping the send.
-            coordinator.send(message: concept, conversationID: conversationID)
+            coordinator.send(message: concept, conversationID: conversationID, attachments: staged)
         }
     }
 
@@ -482,7 +415,8 @@ struct CommandCenterChatView: View {
         return conversation.id
     }
 
-    private func stopStreaming() {
+    // Extension-visible: +Composer
+    func stopStreaming() {
         coordinator.cancel()
         isInputFocused = true
     }
