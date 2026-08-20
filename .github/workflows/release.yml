@@ -76,7 +76,19 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version: $VERSION"
+
+          # Decided once, here, so the GitHub Release flag and the appcast step cannot
+          # disagree about what a pre-release is. A version carrying a `-rc` or `-beta`
+          # suffix is a build for testing: it gets a GitHub Release so it can be
+          # downloaded, and it must NOT reach `appcast.xml`, which is the file every
+          # installed copy polls for updates.
+          if [[ "$VERSION" == *-rc* || "$VERSION" == *-beta* ]]; then
+            PRERELEASE=true
+          else
+            PRERELEASE=false
+          fi
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION (prerelease: $PRERELEASE)"
 
       # ── Select latest Xcode ───────────────────────────────
       # The default Xcode on the hosted image is too old for the macOS 26 SDK
@@ -501,7 +513,7 @@ jobs:
           name: "Logue ${{ steps.version.outputs.version }}"
           body_path: /tmp/release_body.md
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -509,7 +521,12 @@ jobs:
       # The appcast MUST be regenerated on top of the base branch's current appcast,
       # not the tag's stale copy. Otherwise the 2nd+ release drops earlier entries and
       # `git checkout origin/main` aborts on the dirty working-tree appcast.xml.
+      # Skipped for pre-releases. `SUFeedURL` points at `appcast.xml` on `main`, so an
+      # entry landing there is offered to every installed copy — which is exactly what a
+      # build cut for testing must not do. Gating the step, rather than relying on someone
+      # remembering not to merge the PR it opens, is what makes that true.
       - name: Update appcast and open PR
+        if: steps.version.outputs.prerelease != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
