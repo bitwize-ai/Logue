@@ -160,4 +160,43 @@ struct AgentRunStateTests {
         #expect(state.isProcessing(for: island))
         #expect(state.streamingText(for: island).isEmpty)
     }
+
+    // MARK: - Streaming stops more than once per run
+
+    @Test("Ending streaming leaves the run processing")
+    func endStreamingKeepsTheRunAlive() {
+        // The graph stops streaming after every tool call and resumes; the run is still
+        // going. If this cleared `isProcessing`, `send`'s `guard !isProcessing` would let a
+        // second send start on top of the first, mid-run.
+        var state = AgentRunState()
+        let id = UUID()
+        state.begin(conversationID: id)
+        state.beginStreaming()
+        state.appendToken("partial")
+
+        state.endStreaming()
+
+        #expect(state.isStreaming == false)
+        #expect(state.isProcessing, "the run has not finished")
+        #expect(state.owns(id))
+        // The tokens so far are what the caller is about to commit as a message.
+        #expect(state.streamingText == "partial")
+    }
+
+    @Test("A conversation that does not own the run still sees nothing mid-stream")
+    func foreignConversationSeesIdleWhileStreaming() {
+        var state = AgentRunState()
+        let mine = UUID()
+        let theirs = UUID()
+        state.begin(conversationID: mine)
+        state.beginStreaming()
+        state.appendToken("hello")
+
+        #expect(state.isStreaming(for: theirs) == false)
+        #expect(state.streamingText(for: theirs).isEmpty)
+        #expect(state.isProcessing(for: theirs) == false)
+        // …while the owner sees all of it.
+        #expect(state.isStreaming(for: mine))
+        #expect(state.streamingText(for: mine) == "hello")
+    }
 }

@@ -72,6 +72,19 @@ struct AgentRunState {
         lastError = nil
     }
 
+    /// Stops streaming without ending the run.
+    ///
+    /// Separate from `finish()` because the graph stops streaming several times inside one
+    /// run — after each tool call, and on a recoverable error — and the run is still
+    /// processing. Collapsing the two would clear `isProcessing` mid-run and let a second
+    /// send start on top of the first.
+    ///
+    /// `streamingText` is deliberately left alone: the tokens streamed so far are what the
+    /// caller is about to commit as a message.
+    mutating func endStreaming() {
+        isStreaming = false
+    }
+
     /// Ends the run. Keeps `conversationID` and `lastError` so the owning surface
     /// can still show a banner for a run that has finished.
     mutating func finish() {
