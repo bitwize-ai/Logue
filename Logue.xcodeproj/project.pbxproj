@@ -558,6 +558,7 @@
 		D4313CFD59233148DB1EC901 /* auto-render.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 0EA5B49BE121245C05499EDD /* auto-render.min.js */; };
 		D437C8E11749010F9DFC3841 /* ActionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEFD48C860C189F76D82545 /* ActionItem.swift */; };
 		D480184376B6F26A9755133A /* LLMTestHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92E9FCC3C656E8D24AC7A610 /* LLMTestHarness.swift */; };
+		D4F02EEC14190534307CF45D /* whatsnew-chrome-extension.png in Resources */ = {isa = PBXBuildFile; fileRef = BCB33CA2F7C185927E16825F /* whatsnew-chrome-extension.png */; };
 		D53F3ED4FBA679045C66DC42 /* ScheduledTaskManager+WeeklyReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46D6419EB91D515BAD26FEF7 /* ScheduledTaskManager+WeeklyReview.swift */; };
 		D55EAAAC48FDDF79BD2F8879 /* MeetingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6BFFF957D5FFFEB3DD160BF /* MeetingListView.swift */; };
 		D5975A82DEA279851186013D /* DiagnosticsReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860DFF869B9C6C39BE468431 /* DiagnosticsReportTests.swift */; };
@@ -1199,6 +1200,7 @@
 		BBB25376AFA88E0F16400AA7 /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
 		BC3EFA44843BD00EA0496220 /* SidebarWidthLimit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWidthLimit.swift; sourceTree = "<group>"; };
 		BC51048570778AAA190A1A3C /* BatchTranscriptFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchTranscriptFilter.swift; sourceTree = "<group>"; };
+		BCB33CA2F7C185927E16825F /* whatsnew-chrome-extension.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-chrome-extension.png"; sourceTree = "<group>"; };
 		BCC95C3045D2301DCC960849 /* AIContentScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIContentScorer.swift; sourceTree = "<group>"; };
 		BDA92F8718851010A4B75DD2 /* TaskFolderLocatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskFolderLocatorTests.swift; sourceTree = "<group>"; };
 		BE170B6B814BD80DC8505A4C /* PrivacySettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsTab.swift; sourceTree = "<group>"; };
@@ -2239,6 +2241,7 @@
 				360EAA6CD755F73FDF0ECACD /* PrivacyInfo.xcprivacy */,
 				195180E0B2FDECE6AEDF4951 /* whatsnew-asklogue-1-where.png */,
 				C202BEE397CD4A9873F94ED3 /* whatsnew-asklogue-2-answer.png */,
+				BCB33CA2F7C185927E16825F /* whatsnew-chrome-extension.png */,
 				9C6A8A41EE02367332FFCEEE /* whatsnew-privacy.png */,
 				3E3BFD10323B282DEB7E0A9A /* whatsnew-smart-minutes.png */,
 				2F96EFB3E59089D8815C6CE5 /* whatsnew-spaces.png */,
@@ -2626,6 +2629,7 @@
 				D39165CB191A11B257035D9C /* mermaid.min.js in Resources */,
 				E167BA97A0E66ECC51AD5F32 /* whatsnew-asklogue-1-where.png in Resources */,
 				267F0E496FB43734A36CB69A /* whatsnew-asklogue-2-answer.png in Resources */,
+				D4F02EEC14190534307CF45D /* whatsnew-chrome-extension.png in Resources */,
 				CF82951A70FC5F643DD8F1CD /* whatsnew-privacy.png in Resources */,
 				D7E7CAD17A835B2781817B9F /* whatsnew-smart-minutes.png in Resources */,
 				9512802062CD244F124DCE5D /* whatsnew-spaces.png in Resources */,

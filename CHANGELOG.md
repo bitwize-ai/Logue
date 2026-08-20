@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recordings that survive the worst.** Unplug a headset mid-call, mute for ten minutes, or
   quit the app outright — the recording keeps its place on the meeting's timeline and the
   transcript is rebuilt when Logue reopens, instead of ending where the trouble started.
-- **A Logue extension for Chrome.** Brings Logue's chat and writing tools into any tab,
-  answered by the model on this Mac. Install it from the Chrome Web Store; What's New links to
+- **A Logue extension for Chrome.** Puts the same chat and writing tools in any tab — ask
+  about the page you are on, answered by the model on this Mac rather than someone's server. Install it from the Chrome Web Store; What's New links to
   it, and Help → Get the Chrome Extension keeps the link afterwards.
 
 ### Changed

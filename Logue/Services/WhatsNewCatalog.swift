@@ -164,11 +164,12 @@ enum WhatsNewCatalog {
             symbol: "puzzlepiece.extension.fill",
             title: "Bring the browser in too",
             detail: """
-            The Logue extension for Chrome captures what happens in the tab — the call \
-            you joined from the browser, the page you are reading — and hands it to the \
-            same on-device transcription and notes. Install it, take it for a spin, and \
-            tell us how it goes: a review helps other people find it.
+            The Logue extension puts the same chat and writing tools in any tab — ask \
+            about the page you are on, and the answer comes from the model on this Mac \
+            rather than from someone's server. Install it, take it for a spin, and tell \
+            us how it goes: a review helps other people find it.
             """,
+            screenshot: "whatsnew-chrome-extension",
             link: WhatsNewLink(label: UICopy.WhatsNew.chromeExtensionLink, url: chromeStore)
         )
 
