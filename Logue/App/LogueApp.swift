@@ -138,6 +138,9 @@ struct LogueApp: App {
 
                 Button("Documentation") { HelpMenuActions.openDocumentation() }
                 Button("Keyboard Shortcuts") { HelpMenuActions.openKeyboardShortcuts() }
+                Button(UICopy.WhatsNew.chromeExtensionMenuItem) {
+                    HelpMenuActions.openChromeExtension()
+                }
 
                 Divider()
 

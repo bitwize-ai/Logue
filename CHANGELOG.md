@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One place to start.** Home and Ask Logue were two screens doing one job; they are now a
+  single landing surface — your day, what to pick back up, and a prompt bar that becomes the
+  conversation without navigating away.
+- **Tasks, and a way to triage them.** Action items Logue finds in a meeting land in a real
+  list with due dates, priorities and tags. Typing "Send the deck tomorrow #launch !" files
+  itself, and the triage panel turns a meeting's loose ends into things you can work.
+- **Recordings that survive the worst.** Unplug a headset mid-call, mute for ten minutes, or
+  quit the app outright — the recording keeps its place on the meeting's timeline and the
+  transcript is rebuilt when Logue reopens, instead of ending where the trouble started.
+- **A Logue extension for Chrome.** Captures what happens in the tab — a call joined from the
+  browser, a page you are reading — and hands it to the same on-device transcription and
+  notes. Install it from the Chrome Web Store; it is listed in What's New with a link.
 - **What's New after an update.** Logue now says what a release changed, showing only the
   versions you have not already seen — several at once if you skipped some. Because nothing
   has ever been announced in-app, this first one covers everything shipped so far. A fresh
