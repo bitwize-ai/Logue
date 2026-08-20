@@ -177,37 +177,10 @@ struct SourcesPanelView: View {
         return store.conversations.first { $0.id == conversationID }
     }
 
+    /// See `SourcesPanelContent` — the rules live there so the toolbar button that reveals
+    /// this panel can ask the same question rather than approximate it.
     private var citedURLs: [URL] {
-        guard let conversation else { return [] }
-        var urls: [URL] = []
-        var seen = Set<String>()
-        let urlPattern = try? NSRegularExpression(
-            pattern: #"https?://[^\s\)\]\"'<>]+"#,
-            options: []
-        )
-        for msg in conversation.messages {
-            // Look at tool results for web tools — these are the canonical citations.
-            if let result = msg.toolResult {
-                let text = result.output
-                guard let regex = urlPattern else { continue }
-                let range = NSRange(text.startIndex..., in: text)
-                regex.enumerateMatches(in: text, range: range) { match, _, _ in
-                    guard let hit = match,
-                          let hitRange = Range(hit.range, in: text)
-                    else { return }
-                    let raw = String(text[hitRange])
-                    let cleaned = raw.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:)"))
-                    guard let url = URL(string: cleaned),
-                          let host = url.host,
-                          !host.isEmpty,
-                          !seen.contains(url.absoluteString)
-                    else { return }
-                    seen.insert(url.absoluteString)
-                    urls.append(url)
-                }
-            }
-        }
-        return Array(urls.prefix(10))
+        SourcesPanelContent.citedURLs(in: conversation?.messages ?? [])
     }
 
     private struct ReferencedItem {
@@ -218,28 +191,25 @@ struct SourcesPanelView: View {
 
     private var referencedItems: [ReferencedItem] {
         guard let conversation else { return [] }
-        var items: [ReferencedItem] = []
-        var seen = Set<String>()
-        for msg in conversation.messages {
-            for call in msg.toolCalls {
-                let name = call.toolName
-                guard name.contains("meeting") || name.contains("document") else { continue }
-                let raw = call.arguments
-                let key = "\(name):\(raw)"
-                guard !seen.contains(key), !raw.isEmpty else { continue }
-                seen.insert(key)
-                items.append(ReferencedItem(
-                    id: key,
-                    icon: name.contains("meeting") ? "person.2.fill" : "doc.text",
-                    label: prettyLabel(toolName: name, arguments: raw)
-                ))
-            }
+        let keys = SourcesPanelContent.referenceKeys(in: conversation.messages)
+        return keys.compactMap { key in
+            // The key is "<toolName>:<arguments>"; the name cannot itself contain a colon.
+            guard let separator = key.firstIndex(of: ":") else { return nil }
+            let name = String(key[key.startIndex ..< separator])
+            let raw = String(key[key.index(after: separator)...])
+            return ReferencedItem(
+                id: key,
+                icon: name.contains("meeting") ? "person.2.fill" : "doc.text",
+                label: prettyLabel(toolName: name, arguments: raw)
+            )
         }
-        return Array(items.prefix(8))
     }
 
     private var isEmpty: Bool {
-        attachments.isEmpty && citedURLs.isEmpty && referencedItems.isEmpty
+        !SourcesPanelContent.hasContent(
+            messages: conversation?.messages ?? [],
+            attachmentCount: attachments.count
+        )
     }
 
     private func prettyLabel(toolName: String, arguments: String) -> String {

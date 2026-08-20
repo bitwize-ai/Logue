@@ -1,0 +1,156 @@
+import SwiftUI
+
+/// One task in the list.
+struct TaskRowView: View {
+    let task: TaskItem
+    let meetingTitle: String?
+    var isSelected: Bool = false
+    let onToggle: () -> Void
+    let onOpenSource: () -> Void
+    var onSelect: () -> Void = {}
+    var onRename: (String) -> Void = { _ in }
+
+    @State private var isHovered = false
+    @State private var isRenaming = false
+    @State private var titleDraft = ""
+    @FocusState private var isTitleFocused: Bool
+
+    private var isDone: Bool {
+        task.status == .done
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Button(action: onToggle) {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isDone ? Color.accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isDone ? "Mark as not done" : "Mark as done")
+
+            VStack(alignment: .leading, spacing: 4) {
+                title
+
+                if !task.notes.isEmpty {
+                    // The one place a promoted task's assignee is visible; without it the
+                    // notes body is searchable text nobody can read.
+                    Text(task.notes)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                if !badges.isEmpty || meetingTitle != nil {
+                    detailRow
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: AppThemeConstants.radiusSmall))
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .onTapGesture(perform: onSelect)
+    }
+
+    private var rowBackground: Color {
+        if isSelected {
+            return AppThemeConstants.accent.opacity(AppThemeConstants.activeOpacity)
+        }
+        return isHovered ? AppThemeConstants.surfaceBackground : Color.clear
+    }
+
+    // MARK: - Title
+
+    @ViewBuilder
+    private var title: some View {
+        if isRenaming {
+            TextField("Title", text: $titleDraft)
+                .textFieldStyle(.plain)
+                .focused($isTitleFocused)
+                .onSubmit(commitRename)
+                // Committing on focus loss too, so clicking away saves rather than silently
+                // discarding what was typed.
+                .onChange(of: isTitleFocused) { _, focused in
+                    if !focused {
+                        commitRename()
+                    }
+                }
+                .onExitCommand { isRenaming = false }
+        } else {
+            Text(task.title)
+                .strikethrough(isDone)
+                .foregroundStyle(isDone ? .secondary : .primary)
+                .onTapGesture(count: 2, perform: beginRename)
+                .help("Double-click to rename")
+        }
+    }
+
+    private func beginRename() {
+        titleDraft = task.title
+        isRenaming = true
+        isTitleFocused = true
+    }
+
+    private func commitRename() {
+        guard isRenaming else { return }
+        isRenaming = false
+        let trimmed = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        // An unchanged title still costs a write and an `updatedAt` stamp, which reorders
+        // anything sorted by recency — so a rename that renamed nothing does nothing.
+        guard !trimmed.isEmpty, trimmed != task.title else { return }
+        onRename(trimmed)
+    }
+
+    // MARK: - Detail row
+
+    private var detailRow: some View {
+        HStack(spacing: 6) {
+            ForEach(badges, id: \.label) { badge in
+                Label(badge.label, systemImage: badge.symbol)
+                    .foregroundStyle(badge.tint)
+            }
+            if let meetingTitle {
+                Button(action: onOpenSource) {
+                    Label(meetingTitle, systemImage: "waveform")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Open the meeting this came from")
+            }
+        }
+        .font(.caption)
+    }
+
+    private struct Badge {
+        let label: String
+        let symbol: String
+        let tint: Color
+    }
+
+    private var badges: [Badge] {
+        var result: [Badge] = []
+        if let due = task.dueDate {
+            result.append(Badge(
+                label: due.formatted(date: .abbreviated, time: .omitted),
+                symbol: "calendar",
+                tint: task.isOverdue ? AppThemeConstants.error : .secondary
+            ))
+        }
+        if task.priority != .medium {
+            result.append(Badge(
+                label: task.priority.displayName,
+                symbol: task.priority.symbolName,
+                tint: task.priority == .high ? AppThemeConstants.warning : .secondary
+            ))
+        }
+        if let recurrence = task.recurrence {
+            result.append(Badge(label: recurrence.displayName, symbol: "repeat", tint: .secondary))
+        }
+        for tag in task.tags {
+            result.append(Badge(label: tag, symbol: "number", tint: .secondary))
+        }
+        return result
+    }
+}

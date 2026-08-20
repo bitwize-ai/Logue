@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// Meeting setup view for the Command Center — recording mode, template, and language pickers
-/// before starting a recording.
+/// Meeting setup view for the Command Center — template and language pickers before starting a
+/// recording.
+///
+/// There is no audio-source picker. Which sources a session uses is decided while it runs, from
+/// what is actually being captured.
 struct CommandCenterNewMeetingView: View {
-    @Binding var selectedRecordingMode: RecordingMode
     @Binding var selectedTemplate: MeetingTemplate
     @Binding var selectedLanguage: TranscriptionLanguage
 
@@ -19,7 +21,6 @@ struct CommandCenterNewMeetingView: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
-                    recordingModeSection
                     templateSection
                     languageSection
                     startButton
@@ -59,68 +60,6 @@ struct CommandCenterNewMeetingView: View {
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 10)
-    }
-
-    // MARK: - Recording Mode (Auto-Detect)
-
-    @State private var detectedApp: ConferencingAppDetector.DetectedApp?
-
-    private var recordingModeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Audio Source")
-                .font(AppThemeConstants.islandLabel)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 10) {
-                Image(systemName: selectedRecordingMode == .onlineMeeting ? "display" : "mic.fill")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(AppThemeConstants.brandPrimary)
-                    .frame(width: 28)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    if let app = detectedApp, selectedRecordingMode == .onlineMeeting {
-                        Text("\(app.name) detected — system audio enabled")
-                            .font(AppThemeConstants.islandBody)
-                    } else if selectedRecordingMode == .onlineMeeting {
-                        Text("System audio enabled")
-                            .font(AppThemeConstants.islandBody)
-                    } else {
-                        Text("Microphone recording")
-                            .font(AppThemeConstants.islandBody)
-                    }
-                }
-
-                Spacer()
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        if selectedRecordingMode == .onlineMeeting {
-                            selectedRecordingMode = .inPerson
-                        } else {
-                            selectedRecordingMode = .onlineMeeting
-                        }
-                    }
-                } label: {
-                    Text(selectedRecordingMode == .onlineMeeting ? "Mic only" : "System audio")
-                        .font(AppThemeConstants.islandCaption)
-                        .foregroundStyle(AppThemeConstants.brandPrimary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge, style: .continuous)
-                    .fill(Color.primary.opacity(AppThemeConstants.opacitySubtle))
-            )
-        }
-        .onAppear {
-            detectedApp = ConferencingAppDetector.detect()
-            if detectedApp != nil {
-                selectedRecordingMode = .onlineMeeting
-            } else {
-                selectedRecordingMode = .inPerson
-            }
-        }
     }
 
     // MARK: - Template

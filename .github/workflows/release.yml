@@ -52,9 +52,10 @@ env:
 jobs:
   build-and-release:
     name: Build, Sign, Notarize, Release
-    # GitHub-hosted runner (matches CI). Swap to a self-hosted runner if your
-    # required Xcode/SDK isn't available on the hosted image.
-    runs-on: macos-15
+    # GitHub-hosted runner. The third of the three pins — see the Lint Check job in
+    # ci.yml for why they are pinned and why to 26. Swap to a self-hosted runner if
+    # your required Xcode/SDK isn't available on the hosted image.
+    runs-on: macos-26
     timeout-minutes: 90
 
     steps:
@@ -75,7 +76,19 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version: $VERSION"
+
+          # Decided once, here, so the GitHub Release flag and the appcast step cannot
+          # disagree about what a pre-release is. A version carrying a `-rc` or `-beta`
+          # suffix is a build for testing: it gets a GitHub Release so it can be
+          # downloaded, and it must NOT reach `appcast.xml`, which is the file every
+          # installed copy polls for updates.
+          if [[ "$VERSION" == *-rc* || "$VERSION" == *-beta* ]]; then
+            PRERELEASE=true
+          else
+            PRERELEASE=false
+          fi
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION (prerelease: $PRERELEASE)"
 
       # ── Select latest Xcode ───────────────────────────────
       # The default Xcode on the hosted image is too old for the macOS 26 SDK
@@ -446,6 +459,49 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
 
+      # ── Release notes from CHANGELOG (feeds both the Release body and Sparkle) ──
+      # Written to /tmp because the appcast step below checks out another branch.
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          python3 scripts/extract_release_notes.py --version "$VERSION" --format html > /tmp/release_notes.html
+          python3 scripts/extract_release_notes.py --version "$VERSION" --format markdown > /tmp/release_notes.md
+
+          # The script exits 0 with a stderr warning when it finds no section, because
+          # a changelog slip should not fail a build that is already signed and
+          # notarised. But the decision to publish anyway is this job's to make, and
+          # the answer is no: with empty notes the Sparkle pane and the Release body
+          # both go out blank, every step stays green, and the warning is invisible
+          # inside a passing log — which is the regression this whole step exists to
+          # fix. Stop here, before anything is published.
+          if [[ ! -s /tmp/release_notes.html || ! -s /tmp/release_notes.md ]]; then
+            echo "::error::No release notes extracted for ${VERSION}. Add a '## [${VERSION}]' section to CHANGELOG.md (or move [Unreleased] into one) and re-run."
+            exit 1
+          fi
+
+          {
+            echo "## Logue ${VERSION}"
+            echo
+            cat /tmp/release_notes.md
+            echo
+            echo "**Build:** ${{ github.run_number }}"
+            echo "**Commit:** ${{ github.sha }}"
+            echo
+            cat <<EOF
+          ### Installation
+          1. Download \`${DMG_NAME}\`
+          2. Open the DMG and drag Logue to Applications
+          3. On first launch, right-click > Open if Gatekeeper prompts
+
+          ### Requirements
+          - macOS 26.0 (Tahoe) or later
+          - Apple Silicon Mac
+          EOF
+          } > /tmp/release_body.md
+
+          echo "--- release body ---"
+          cat /tmp/release_body.md
+
       # ── Create GitHub Release (BEFORE appcast — download URL must be live first) ──
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -455,22 +511,9 @@ jobs:
             ${{ env.DMG_PATH }}
             ${{ env.ZIP_PATH }}
           name: "Logue ${{ steps.version.outputs.version }}"
-          body: |
-            ## Logue ${{ steps.version.outputs.version }}
-
-            **Build:** ${{ github.run_number }}
-            **Commit:** ${{ github.sha }}
-
-            ### Installation
-            1. Download `${{ env.DMG_NAME }}`
-            2. Open the DMG and drag Logue to Applications
-            3. On first launch, right-click > Open if Gatekeeper prompts
-
-            ### Requirements
-            - macOS 26.0 (Tahoe) or later
-            - Apple Silicon Mac
+          body_path: /tmp/release_body.md
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -478,7 +521,12 @@ jobs:
       # The appcast MUST be regenerated on top of the base branch's current appcast,
       # not the tag's stale copy. Otherwise the 2nd+ release drops earlier entries and
       # `git checkout origin/main` aborts on the dirty working-tree appcast.xml.
+      # Skipped for pre-releases. `SUFeedURL` points at `appcast.xml` on `main`, so an
+      # entry landing there is offered to every installed copy — which is exactly what a
+      # build cut for testing must not do. Gating the step, rather than relying on someone
+      # remembering not to merge the PR it opens, is what makes that true.
       - name: Update appcast and open PR
+        if: steps.version.outputs.prerelease != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -502,12 +550,15 @@ jobs:
           git checkout -b "$BRANCH" "origin/$BASE_BRANCH"
 
           # Regenerate the entry on top of the base branch's appcast.
+          # --notes fills Sparkle's <description>: without it the update dialog offers
+          # an update with an empty "what's new" pane.
           python3 scripts/update_appcast.py \
             --version "$VERSION" \
             --build "${{ github.run_number }}" \
             --signature "$ED_SIGNATURE" \
             --length "$FILE_LENGTH" \
-            --min-os "26.0"
+            --min-os "26.0" \
+            --notes "$(cat /tmp/release_notes.html)"
 
           git add appcast.xml
           git commit -m "chore: update appcast for v${VERSION}"

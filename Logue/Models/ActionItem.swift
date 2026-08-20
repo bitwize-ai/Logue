@@ -7,6 +7,11 @@ struct ActionItem: Identifiable, Codable, Sendable {
     var assignee: String?
     var dueDescription: String?
     var isCompleted: Bool
+    /// The user saw this and decided it is not something to act on.
+    ///
+    /// Separate from `isCompleted` because "I did it" and "this was never a task" are
+    /// different claims, and recording the second as the first makes the meeting record lie.
+    var isDismissed: Bool
     let createdAt: Date
     var dueDate: Date?
     var reminderDate: Date?
@@ -18,6 +23,7 @@ struct ActionItem: Identifiable, Codable, Sendable {
         assignee: String? = nil,
         dueDescription: String? = nil,
         isCompleted: Bool = false,
+        isDismissed: Bool = false,
         createdAt: Date = .now,
         dueDate: Date? = nil,
         reminderDate: Date? = nil,
@@ -28,6 +34,7 @@ struct ActionItem: Identifiable, Codable, Sendable {
         self.assignee = assignee
         self.dueDescription = dueDescription
         self.isCompleted = isCompleted
+        self.isDismissed = isDismissed
         self.createdAt = createdAt
         self.dueDate = dueDate
         self.reminderDate = reminderDate
@@ -37,7 +44,7 @@ struct ActionItem: Identifiable, Codable, Sendable {
     // MARK: - Codable (backwards-compatible)
 
     enum CodingKeys: String, CodingKey {
-        case id, title, assignee, dueDescription, isCompleted, createdAt
+        case id, title, assignee, dueDescription, isCompleted, isDismissed, createdAt
         case dueDate, reminderDate, notificationID
     }
 
@@ -48,6 +55,7 @@ struct ActionItem: Identifiable, Codable, Sendable {
         assignee = try container.decodeIfPresent(String.self, forKey: .assignee)
         dueDescription = try container.decodeIfPresent(String.self, forKey: .dueDescription)
         isCompleted = try container.decode(Bool.self, forKey: .isCompleted)
+        isDismissed = try container.decodeIfPresent(Bool.self, forKey: .isDismissed) ?? false
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         dueDate = try container.decodeIfPresent(Date.self, forKey: .dueDate)
         reminderDate = try container.decodeIfPresent(Date.self, forKey: .reminderDate)

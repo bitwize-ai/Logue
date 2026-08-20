@@ -116,6 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         setupCrossAppServices()
         setupMenuBarItem()
+
+        // Only starts if the user has opted in. See `BrowserBridgeSettings` for why the default
+        // is off.
+        BrowserBridgeServer.shared.applySetting()
         startRecordingStatePoller()
         setupWindowLifecycleObservers()
 
@@ -295,6 +299,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_: Notification) {
+        // The socket closes with the app. The extension reports "Logue is not running", which is
+        // exactly what has happened.
+        BrowserBridgeServer.shared.stop()
+
         for observer in deepLinkObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -733,11 +741,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         store.selectedMeetingID = meeting.id
 
-        Task {
-            await RecordingSessionManager.shared.startRecording(for: meeting)
-            rebuildMenuBarMenu()
+        Task { [weak self] in
+            let started = await RecordingSessionManager.shared.startRecording(for: meeting).started
+            self?.rebuildMenuBarMenu()
+            // Shown only if a session began. Presented unconditionally, a start refused while an
+            // interrupted recording is being rebuilt left an island for a session that does not
+            // exist, with no way to tell from the one that does.
+            guard started else { return }
+            self?.commandCenterController?.showRecordingPanel(meetingID: meeting.id)
         }
-
-        commandCenterController?.showRecordingPanel(meetingID: meeting.id)
     }
 }

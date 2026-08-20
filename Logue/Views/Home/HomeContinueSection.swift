@@ -1,29 +1,75 @@
 import SwiftUI
 
-/// "Continue Where You Left Off" — horizontal scroll of recently modified items with Space breadcrumbs.
+/// "Continue Where You Left Off" — recently modified items with Space breadcrumbs, laid
+/// out as a wrapping grid rather than a horizontal carousel.
+///
+/// A carousel hides most of its contents behind a scroll gesture nobody performs; two
+/// rows that wrap show everything at once. The row cap is what keeps this a glance and
+/// not a list — the sections below it have to stay reachable without scrolling past a
+/// wall of cards.
 struct HomeContinueSection: View {
     @Environment(DocumentStore.self) private var documentStore
     @Environment(MeetingStore.self) private var meetingStore
     @Environment(SpaceStore.self) private var spaceStore
 
+    /// Receives a finished prompt when the user taps a card's ✦. Nil hides the affordance.
+    var onAsk: ((String) -> Void)?
+
+    /// Measured rather than assumed, because the column count — and therefore how many
+    /// cards fit in two rows — depends on how wide the window actually is. Seeded with
+    /// the content column so the first frame is already close.
+    @State private var availableWidth: CGFloat = AppThemeConstants.contentColumnWidth
+
     var body: some View {
-        let items = recentItems
+        // The arithmetic lives in `HomeContinueGrid` so the row cap can be tested.
+        let columns = HomeContinueGrid.columnCount(forWidth: availableWidth)
+        let items = Array(recentItems.prefix(HomeContinueGrid.maximumItems(forWidth: availableWidth)))
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 CardSectionHeader(icon: "arrow.uturn.forward", title: "Continue Where You Left Off")
-                    .padding(.horizontal, 24)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 14) {
-                        ForEach(items) { item in
-                            continueCard(item)
-                                .frame(width: 220)
-                                .accessibilityLabel(item.title)
-                        }
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: HomeContinueGrid.spacing),
+                        count: columns
+                    ),
+                    spacing: HomeContinueGrid.spacing
+                ) {
+                    ForEach(items) { item in
+                        continueCard(item)
+                            .accessibilityLabel(item.title)
+                            .overlay(alignment: .topTrailing) {
+                                if let onAsk {
+                                    HomeAskAffordance(
+                                        accessibilityLabel: "Ask Logue about \(item.title)"
+                                    ) {
+                                        onAsk(prompt(for: item))
+                                    }
+                                    .padding(AppThemeConstants.paddingXSmall)
+                                }
+                            }
                     }
-                    .padding(.horizontal, 24)
+                }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.width
+                } action: { width in
+                    availableWidth = width
                 }
             }
+        }
+    }
+
+    /// A meeting that has not been summarized yet is asking to be summarized; one that
+    /// has been is asking what was decided. Same card, different question.
+    private func prompt(for item: RecentActivityItem) -> String {
+        switch item {
+        case let .meeting(note):
+            HomeAskPrompts.meeting(
+                title: note.title,
+                isSummarized: !(note.summary ?? "").isEmpty
+            )
+        case let .document(doc):
+            HomeAskPrompts.document(title: doc.title)
         }
     }
 
@@ -90,7 +136,7 @@ struct HomeContinueSection: View {
                 }
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         } contextMenu: {
             EmptyView()
         }
@@ -108,7 +154,9 @@ struct HomeContinueSection: View {
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(5)
             .map { .document($0) }
-        return Array((meetings + docs).sorted { $0.date > $1.date }.prefix(5))
+        // Enough to fill both rows at the widest layout; the grid trims further at
+        // narrower widths. This is the ceiling, not the count.
+        return Array((meetings + docs).sorted { $0.date > $1.date }.prefix(HomeContinueGrid.fetchLimit))
     }
 
     private func previewText(for item: RecentActivityItem) -> String {

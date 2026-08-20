@@ -5,6 +5,18 @@ import os.log
 /// Implements all Troubleshooting menu actions.
 @MainActor
 enum TroubleshootingActions {
+    /// The only UserDefaults keys that survive "Reset Application Data".
+    ///
+    /// Each one answers "has this user seen X before?" rather than holding data. A reset
+    /// is destructive enough already; following it with the onboarding wizard, the sample
+    /// data and a replay of every release note would read as the app having forgotten
+    /// them entirely.
+    static let preservedDefaultsKeys: Set<String> = [
+        AppConstants.UserDefaultsKeys.hasCompletedOnboarding,
+        AppConstants.UserDefaultsKeys.hasClearedSeedData,
+        AppConstants.UserDefaultsKeys.lastSeenWhatsNewVersion,
+    ]
+
     // MARK: - Clear Cache and Quit
 
     static func clearCacheAndQuit() {
@@ -77,6 +89,7 @@ enum TroubleshootingActions {
         DocumentStore.shared.clearAllData()
         MeetingStore.shared.clearAllData()
         SpaceStore.shared.clearAllData()
+        TaskStore.shared.clearAllData()
 
         let modelsDir = AppConstants.ModelStorage.rootDirectory
         do {
@@ -85,13 +98,9 @@ enum TroubleshootingActions {
             os_log(.error, "Failed to remove models directory: %{public}@", error.localizedDescription)
         }
 
-        let preserve: Set<String> = [
-            AppConstants.UserDefaultsKeys.hasCompletedOnboarding,
-            AppConstants.UserDefaultsKeys.hasClearedSeedData,
-        ]
         let defaults = UserDefaults.standard
         defaults.dictionaryRepresentation().keys
-            .filter { !preserve.contains($0) }
+            .filter { !preservedDefaultsKeys.contains($0) }
             .forEach { defaults.removeObject(forKey: $0) }
 
         clearCache()

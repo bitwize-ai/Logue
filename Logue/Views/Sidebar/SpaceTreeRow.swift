@@ -346,7 +346,7 @@ struct SpaceTreeRow: View {
 
         Button(role: .destructive) {
             if selection == .space(space.id) {
-                selection = .overview
+                selection = .home
             }
             spaceStore.deleteSpace(id: space.id)
         } label: {

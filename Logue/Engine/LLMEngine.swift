@@ -63,6 +63,15 @@ actor LLMEngine { // swiftlint:disable:this type_body_length
     private var inferenceQueueDepth: Int = 0
     private static let maxInferenceQueueDepth = 4
 
+    /// Whether a model is loaded and inference would be attempted rather than refused.
+    ///
+    /// Read by the browser bridge, which has to tell the extension whether Logue can actually
+    /// answer before the user picks a tool — "connected but no model" is a different message from
+    /// "not running", and the extension shows both.
+    var isReady: Bool {
+        modelContainer != nil || apiClient != nil
+    }
+
     // MARK: - Shared Prompts
 
     /// Base Logue personality prompt, sourced from `PromptRegistry.System.base`.

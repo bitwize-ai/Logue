@@ -17,18 +17,9 @@ enum UICopy {
     // MARK: - Empty states
 
     enum Empty {
-        /// Chat home hero — what the user sees when starting a fresh
-        /// conversation.
-        static let chatTitle = "What can I help with today?"
-        static let chatSubtitle = "Ask about your meetings, write something new, or dig into a document."
-        static let chatChipWriteTitle = "Write"
-        static let chatChipWritePrompt = "Draft an email to my team about Q3 OKRs"
-        static let chatChipResearchTitle = "Research"
-        static let chatChipResearchPrompt = "What's new in Apple's MLX framework?"
-        static let chatChipSummarizeTitle = "Summarize"
-        static let chatChipSummarizePrompt = "Summarize my meetings from yesterday"
-        static let chatChipCodeTitle = "Code"
-        static let chatChipCodePrompt = "Show me a SwiftUI grid layout"
+        // The chat hero copy that used to live here went with `AgentChatEmptyState`. Home's
+        // landing greets by time of day and derives its chips from the workspace, so there
+        // is no fixed hero string left to name.
 
         static let dailyTipPrefix = "Try"
     }
@@ -171,5 +162,36 @@ enum UICopy {
         static let card3Title = "One-tap access, anywhere"
         static let card3Subtitle = "Press ⌥Space from any app to ask Logue. You can change this in Settings."
         static let card3Continue = "Let's go"
+    }
+
+    // MARK: - What's New / feature tour
+
+    enum WhatsNew {
+        /// Fresh install, after the onboarding wizard.
+        static let discoverTitle = "Discover Logue"
+        /// One or more releases the user has not seen yet.
+        static let updatedTitle = "What's New"
+
+        static let back = "Back"
+        static let next = "Continue"
+        static let skip = "Skip"
+        /// Leaving release notes part-read. Every deck needs a way out that is not
+        /// clicking through all of it.
+        static let close = "Close"
+        /// Last card of the first-run tour.
+        static let finishTour = "Start using Logue"
+        /// Last card of a release's notes.
+        static let finishNotes = "Done"
+
+        /// Badge on a notes card, so a user catching up across releases can tell
+        /// which version brought what.
+        static func versionBadge(_ version: String) -> String {
+            "New in \(version)"
+        }
+
+        /// Help menu. Named for the app because it sits among app-wide items.
+        static let menuItem = "What's New in Logue"
+        /// Settings → General, beside "Show welcome tour".
+        static let settingsButton = "What's New"
     }
 }

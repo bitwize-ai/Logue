@@ -25,7 +25,9 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
     /// The button is shown while the pointer is over the row, and stays shown while its own menu
     /// is up: macOS hands the event stream to the menu, so hover would otherwise read as "gone"
     /// and the button would vanish out from under the menu it just opened.
-    private var isRevealed: Bool { isHovering || isMenuOpen }
+    private var isRevealed: Bool {
+        isHovering || isMenuOpen
+    }
 
     func body(content: Content) -> some View {
         content
@@ -65,7 +67,9 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
                 revealed?.wrappedValue = false
             }
             .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-                if isHovering { isMenuOpen = true }
+                if isHovering {
+                    isMenuOpen = true
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
                 isMenuOpen = false
@@ -105,7 +109,6 @@ struct SidebarRowMenu<MenuContent: View>: ViewModifier {
             .fill(AppThemeConstants.accent.opacity(showsHighlight ? AppThemeConstants.hoverOpacity : 0))
             .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: showsHighlight)
     }
-
 }
 
 extension View {

@@ -4,14 +4,17 @@ import SwiftUI
 
 /// Sidebar selection in the 2-column layout.
 enum SidebarItem: Hashable {
-    case overview
-    case agentChat
+    /// The merged landing surface: prompt bar, dashboard cards, and the chat thread
+    /// once one starts. Replaces the separate `overview` and `agentChat` items.
+    case home
     case pinned
     case recent
     case allDocuments
     case allMeetings
-    case actionItems
-    case templates
+    case tasks
+    // Action Items and Templates used to live here. They are now panels of All Meetings and
+    // All Documents — see `LibraryPanel` — because each is a lens on a library rather than a
+    // sibling of it. `SidebarSelectionMigration` maps the old persisted values.
     case space(UUID)
     case document(UUID)
     case meeting(UUID)
@@ -45,11 +48,11 @@ struct MainWindowView: View {
     @State private var templateStore = TemplateStore.shared
 
     // Extension-visible: +Navigation
-    /// Default landing surface is Ask Logue (Phase A IA shift). Persists the
-    /// last-selected non-document surface so a user who navigated to a meeting
-    /// detail and quit returns to the meeting on relaunch — but a fresh
-    /// install or one without a stored value lands on chat, not Overview.
-    @State var sidebarSelection: SidebarItem? = Self.loadLastSidebarSelection() ?? .agentChat
+    /// Default landing surface is Home — the merged prompt-and-dashboard screen.
+    /// Persists the last-selected non-document surface so a user who navigated to a
+    /// meeting detail and quit returns to the meeting on relaunch; a fresh install,
+    /// or one without a stored value, lands on Home.
+    @State var sidebarSelection: SidebarItem? = Self.loadLastSidebarSelection() ?? .home
     // Extension-visible: +Navigation
     /// When true, the content area shows the editor/workspace instead of the list.
     @State var isEditing = false
@@ -65,6 +68,21 @@ struct MainWindowView: View {
 
     @State private var showCommandPalette = false
     @State private var showQuickOpen = false
+
+    // Extension-visible: +LibraryPanels
+    /// The library panels, collapsed unless the last session ended inside one.
+    ///
+    /// Both read the same stored value at init rather than one deriving from the other,
+    /// because `@State` initialisers cannot see each other.
+    @State var meetingsPanelCollapsed = Self.loadRestoredPanel() != .actionItems
+    // Extension-visible: +LibraryPanels
+    @State var documentsPanelCollapsed = Self.loadRestoredPanel() != .templates
+    /// Panel widths, kept here so closing and reopening a panel returns it to the width the
+    /// user dragged it to.
+    @State private var meetingsPanelWidth = LibraryPanelContainer<EmptyView>.defaultWidth
+    @State private var documentsPanelWidth = LibraryPanelContainer<EmptyView>.defaultWidth
+    // Extension-visible: +LibraryPanels
+    @State var taskStore = TaskStore.shared
 
     /// Which panes are shown, driven by ⌘1 / ⌘2 / ⌘3 and persisted across launches.
     ///
@@ -128,19 +146,20 @@ struct MainWindowView: View {
         .environment(templateStore)
         .environment(modelManager)
         .environment(insightsProvider)
-        // Phase A: chat-first shortcut handlers.
-        // ⌘L creates a new chat and surfaces Ask Logue. The agent chat view
-        // observes the same notification to clear input + scroll state.
+        // Chat-first shortcut handlers.
+        // ⌘L creates a new chat and surfaces Home. Because a conversation with no
+        // messages *is* the landing state, this doubles as "go Home" — which is the
+        // right meaning for it now that the two surfaces are one.
         .onReceive(NotificationCenter.default.publisher(for: .chatNewConversation)) { _ in
             let conv = AgentConversationStore.shared.createConversation()
             AgentConversationStore.shared.selectedConversationID = conv.id
-            sidebarSelection = .agentChat
+            sidebarSelection = .home
             isEditing = false
         }
-        // ⌘⇧L surfaces Ask Logue and focuses the input — does NOT create a
-        // new conversation, so users can append a message to the active one.
+        // ⌘⇧L surfaces Home and focuses the input — does NOT create a new
+        // conversation, so users can append a message to the active one.
         .onReceive(NotificationCenter.default.publisher(for: .chatFocusInput)) { _ in
-            sidebarSelection = .agentChat
+            sidebarSelection = .home
             isEditing = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .openQuickOpenPalette)) { _ in
@@ -186,14 +205,12 @@ struct MainWindowView: View {
                 }
                 if let newValue {
                     let tabName = switch newValue {
-                    case .overview: "overview"
-                    case .agentChat: "agent_chat"
+                    case .home: "home"
                     case .pinned: "favorites"
                     case .recent: "recent"
                     case .allDocuments: "documents"
                     case .allMeetings: "meetings"
-                    case .actionItems: "action_items"
-                    case .templates: "templates"
+                    case .tasks: "tasks"
                     case .space: "space"
                     case .document: "document"
                     case .meeting: "meeting"
@@ -353,22 +370,38 @@ struct MainWindowView: View {
     @ViewBuilder
     private var listContentView: some View {
         switch sidebarSelection {
-        case .overview, nil:
-            OverviewView(sidebarSelection: $sidebarSelection)
-        case .agentChat:
-            AgentChatView()
+        case .home, nil:
+            AgentChatView(onOpenSpace: { sidebarSelection = .space($0) })
         case .pinned:
             PinnedContentPane()
         case .recent:
             RecentContentPane()
         case .allDocuments:
-            DocumentListContentView(spaceID: nil)
+            DocumentListContentView(spaceID: nil) {
+                LibraryPanelContainer(
+                    isCollapsed: $documentsPanelCollapsed,
+                    width: $documentsPanelWidth
+                ) {
+                    TemplateListPanel()
+                }
+            }
+            .libraryPanelToggle(isCollapsed: $documentsPanelCollapsed, panel: .templates)
         case .allMeetings:
-            MeetingListContentView(spaceID: nil)
-        case .actionItems:
-            ActionItemDashboardView()
-        case .templates:
-            TemplateGalleryView()
+            MeetingListContentView(spaceID: nil) {
+                LibraryPanelContainer(
+                    isCollapsed: $meetingsPanelCollapsed,
+                    width: $meetingsPanelWidth
+                ) {
+                    ActionItemInboxPanel()
+                }
+            }
+            .libraryPanelToggle(
+                isCollapsed: $meetingsPanelCollapsed,
+                panel: .actionItems,
+                badgeCount: actionItemInboxCount
+            )
+        case .tasks:
+            TaskListView()
         case let .space(id):
             SpaceContentPane(spaceID: id, sidebarSelection: $sidebarSelection)
         case .trash:
@@ -438,7 +471,7 @@ struct MainWindowView: View {
     private var breadcrumbSegments: [BreadcrumbSegment] {
         var segments: [BreadcrumbSegment] = []
 
-        let source = editingSourceSelection ?? .overview
+        let source = editingSourceSelection ?? .home
 
         // 1. Get the item's space and show the full hierarchy from root
         let itemSpaceID: UUID? = {
@@ -479,16 +512,14 @@ struct MainWindowView: View {
     }
 
     private var breadcrumbSourceLabel: String {
-        let source = editingSourceSelection ?? .overview
+        let source = editingSourceSelection ?? .home
         switch source {
-        case .overview: return "Home"
-        case .agentChat: return "Ask Logue"
+        case .home: return "Home"
         case .pinned: return "Pinned"
         case .recent: return "Recent"
         case .allDocuments: return "All Documents"
         case .allMeetings: return "All Meetings"
-        case .actionItems: return "Action Items"
-        case .templates: return "Templates"
+        case .tasks: return "Tasks"
         case let .space(id): return spaceStore.space(for: id)?.name ?? "Space"
         case .trash: return "Trash"
         case .document, .meeting: return "Back"
@@ -511,19 +542,28 @@ struct MainWindowView: View {
 
     private func navigationCommands() -> [CommandItem] {
         let entries: [(String, String, SidebarItem)] = [
-            ("Home", "house", .overview),
+            ("Home", "house", .home),
             ("Pinned", "pin", .pinned),
             ("Recent", "clock", .recent),
             ("All Documents", "doc.text", .allDocuments),
             ("All Meetings", "mic", .allMeetings),
-            ("Action Items", "checklist", .actionItems),
-            ("Templates", "doc.on.doc", .templates),
+            ("Tasks", "checkmark.circle", .tasks),
             ("Trash", "trash", .trash),
         ]
-        return entries.map { title, icon, destination in
+        let surfaces = entries.map { title, icon, destination in
             CommandItem(title, icon: icon, category: .navigation) {
                 goBack()
                 sidebarSelection = destination
+            }
+        }
+        // The two that became panels keep their entries. With no sidebar row left, the
+        // palette is how they are found — dropping them here would make the features
+        // reachable only by knowing which surface hides them.
+        return surfaces + LibraryPanel.allCases.map { panel in
+            CommandItem(panel.title, icon: panel.symbolName, category: .navigation) {
+                goBack()
+                sidebarSelection = panel.host
+                open(panel)
             }
         }
     }
@@ -578,54 +618,5 @@ struct MainWindowView: View {
                     meetingStore.selectedMeetingID = meeting.id
                 }
             }
-    }
-
-    // MARK: - Sidebar selection persistence
-
-    /// UserDefaults key for the last-stable sidebar surface. Document and
-    /// meeting selections are restored separately via the per-store
-    /// `selectedDocumentID` / `selectedMeetingID` so we only persist coarse
-    /// surfaces here.
-    private static let lastSidebarKey = "MainWindow.lastSidebarSelection"
-
-    /// Loads the last-stable sidebar surface, or `nil` on a fresh install.
-    /// `MainWindowView` falls back to `.agentChat` when this returns `nil`.
-    static func loadLastSidebarSelection() -> SidebarItem? {
-        guard let raw = UserDefaults.standard.string(forKey: lastSidebarKey) else { return nil }
-        switch raw {
-        case "agentChat": return .agentChat
-        case "overview": return .overview
-        case "pinned": return .pinned
-        case "recent": return .recent
-        case "allDocuments": return .allDocuments
-        case "allMeetings": return .allMeetings
-        case "actionItems": return .actionItems
-        case "templates": return .templates
-        case "trash": return .trash
-        default: return nil
-        }
-    }
-
-    /// Persists only "stable" sidebar surfaces. Per-document and per-meeting
-    /// selections are intentionally not persisted — those are restored via
-    /// the store's `selectedDocumentID` / `selectedMeetingID`, and a
-    /// deleted-document landing screen is worse than landing in chat.
-    static func persistSidebarSelection(_ item: SidebarItem?) {
-        let raw: String? = switch item {
-        case .agentChat: "agentChat"
-        case .overview: "overview"
-        case .pinned: "pinned"
-        case .recent: "recent"
-        case .allDocuments: "allDocuments"
-        case .allMeetings: "allMeetings"
-        case .actionItems: "actionItems"
-        case .templates: "templates"
-        case .trash: "trash"
-        // Per-item selections aren't persisted — see doc comment.
-        case .space, .document, .meeting, .none: nil
-        }
-        if let raw {
-            UserDefaults.standard.setValue(raw, forKey: lastSidebarKey)
-        }
     }
 }

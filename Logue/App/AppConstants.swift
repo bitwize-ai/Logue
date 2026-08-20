@@ -23,9 +23,20 @@ enum AppConstants {
 
         static let hasClearedSeedData = "hasClearedSeedData"
 
+        /// Newest release whose notes the user has been shown, as a marketing version
+        /// string ("1.1.0"). Absent means either a fresh install or an install predating
+        /// this feature — `WhatsNewGate` tells those apart by whether onboarding is done,
+        /// and survives "Reset Application Data" so a reset does not replay the notes.
+        static let lastSeenWhatsNewVersion = "lastSeenWhatsNewVersion"
+
         static let documentSortOrder = "documentSortOrder"
         static let meetingSortOrder = "meetingSortOrder"
         static let actionItemSortOrder = "actionItemSortOrder"
+        static let actionItemInboxMode = "actionItemInboxMode"
+        /// How the Tasks list is sorted, remembered between launches.
+        static let taskSortOrder = "taskSortOrder"
+        /// Which filter the Tasks list opens on.
+        static let taskFilterMode = "taskFilterMode"
         static let autoSortCheckedItems = "autoSortCheckedItems"
         /// Editor zoom multiplier applied on top of the base editor font size.
         static let editorZoomScale = "editorZoomScale"
@@ -38,6 +49,9 @@ enum AppConstants {
         /// How documents are stored: `encrypted` (default) or `markdown`.
         static let documentStorageMode = "documentStorageMode"
         static let unwritableDocuments = "unwritableDocuments"
+
+        /// Opt-in: whether the loopback server for the browser extension is running.
+        static let browserBridgeEnabled = "browserBridgeEnabled"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"
         static let autoSaveSummaryToDocument = "autoSaveSummaryToDocument"
@@ -58,6 +72,9 @@ enum AppConstants {
         /// Comma-separated list of tool names the user has disabled in Settings.
         /// The registry strips these on every rebuild.
         static let disabledAgentTools = "agent.disabledTools"
+        /// The marker of the tasks folder this app last used. Remembered so a folder
+        /// minted while the real one was missing can be told from a copy of it.
+        static let lastTaskFolderMarker = "lastTaskFolderMarker"
         /// Whether the agent's `<thinking>` reasoning blocks are shown in the
         /// rendered response. Default OFF — most users don't want them.
         static let showReasoningBlocks = "agent.showReasoningBlocks"
@@ -216,6 +233,25 @@ enum AppConstants {
 
     // MARK: - Centralized Delays
 
+    /// The loopback bridge the Logue browser extension talks to.
+    enum BrowserBridge {
+        /// Ports tried in order. More than one because the first is a guess about what else is
+        /// on the machine — the extension scans the same list, so the two stay in step.
+        static let candidatePorts: [UInt16] = [52452, 52453, 52454]
+
+        /// Open connections allowed at once. A browser uses a handful; anything beyond this is a
+        /// runaway rather than a user.
+        static let maxConcurrentConnections = 16
+
+        /// Output cap for a chat answer. The default of 512 truncates conversational replies
+        /// mid-sentence.
+        static let chatMaxTokens = 2048
+
+        /// Room left for the system turn and the chat template's own scaffolding when working
+        /// out how much of a caller's conversation fits the context window.
+        static let systemPromptReservedTokens = 512
+    }
+
     enum Delays {
         /// Coalesces a burst of filesystem events from another editor saving, so one
         /// external save triggers one folder scan rather than several.
@@ -291,6 +327,23 @@ enum AppConstants {
         /// that the button does not linger once the pointer has genuinely moved on.
         static let rowHoverOut: Duration = .milliseconds(150)
 
+        /// Gap between dismissing one sheet and presenting the next, used when the
+        /// feature tour follows onboarding.
+        ///
+        /// AppKit refuses a sheet while the previous one is still animating out and
+        /// fails silently, so the tour simply never appeared without this wait.
+        static let sheetHandoff: Duration = .milliseconds(600)
+
+        /// How long each frame of a What's New card's image sequence holds before the
+        /// next one. Long enough to read a screenshot, short enough that a three-step
+        /// sequence completes before the reader has finished the caption and moved on.
+        static let whatsNewSequenceStep: Duration = .seconds(2.5)
+
+        /// How long one frame of that sequence takes to fade into the next. A
+        /// `TimeInterval` rather than a `Duration` because it feeds SwiftUI's
+        /// `.easeInOut(duration:)`, which does not take one.
+        static let whatsNewSequenceCrossfade: TimeInterval = 0.35
+
         /// -- Navigation --
         /// Brief yield to let sidebar expand before selecting a space
         static let sidebarNavigationYield: Duration = .milliseconds(150)
@@ -345,6 +398,53 @@ enum AppConstants {
         static let relaunchTerminationInterval: TimeInterval = 0.5
         /// Brief delay before hiding selection toolbar (checks if selection cleared)
         static let selectionToolbarHideInterval: TimeInterval = 0.08
+
+        // -- Automatic capture --
+
+        /// How long something must keep playing before it arms the system-audio tap.
+        ///
+        /// A notification chime and a video call both make the default output device report that
+        /// it is running; only one of them is a meeting. A second of continuous playback separates
+        /// them without making the tap noticeably late to a call that has already started.
+        static let systemAudioArmingDebounce: TimeInterval = 1.0
+
+        /// How often the arming monitor re-reads playback state.
+        ///
+        /// A backstop for the Core Audio property listener, which only fires on transitions and so
+        /// says nothing about audio that was already playing when recording started.
+        static let systemAudioArmingPoll: Duration = .milliseconds(500)
+
+        /// How long recovery waits for the meeting library to load before giving up.
+        ///
+        /// Reading an unloaded library makes every meeting look deleted, and recovery deletes the
+        /// recordings of meetings that no longer exist — so this must resolve before it runs.
+        static let meetingStoreLoadTimeout: Duration = .seconds(30)
+
+        /// How often that wait re-checks.
+        static let meetingStoreLoadPoll: Duration = .milliseconds(100)
+
+        /// How often a recording in progress writes down where it has got to.
+        ///
+        /// What a crash costs is bounded by this. The write is a small JSON file, so the interval is
+        /// set by how much of a meeting it is acceptable to lose rather than by what it costs.
+        static let recordingCheckpointInterval: Duration = .seconds(30)
+
+        /// How often a missing capture device is re-checked while its grace period runs.
+        ///
+        /// The device-list listener fires when a device appears or disappears. Nothing fires to say
+        /// one has *stayed* missing, which is the thing the grace period is waiting to find out.
+        static let deviceLossPoll: Duration = .milliseconds(500)
+    }
+
+    enum Transcription {
+        /// How much audio ahead of detected speech is kept and released when the gate opens.
+        ///
+        /// Voice activity is recognised slightly after a word has begun, so releasing only from the
+        /// moment of recognition clips the first consonant off every utterance.
+        static let gatePreRoll: TimeInterval = 0.3
+
+        /// How long the gate stays open past the end of speech, so trailing consonants survive.
+        static let gateTail: TimeInterval = 0.4
     }
 
     enum Support {

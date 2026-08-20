@@ -72,9 +72,17 @@ extension DiarizationManager {
             // holding hours of text would read as covering the session and would replace the whole
             // live transcript with one unplaceable blob. The live transcript is segmented and
             // correctly timed — keep it.
+            lastBatchWords = []
             logger.warning("Long-recording ASR returned no token timings — keeping the live transcript")
             return nil
         }
+
+        // Also fed to realignment, exactly as the in-memory route does. Without this a recording
+        // that outgrew the mixer would get speakers and no text improvement, and nothing would say
+        // that the two routes had diverged.
+        lastBatchWords = TranscriptRealignment.words(fromTokens: timings.map {
+            TranscriptRealignment.TimedWord(text: $0.token, startTime: $0.startTime, endTime: $0.endTime)
+        })
 
         let segments = segmentsFromTokenTimings(timings)
         logger.info("Long-recording ASR: \(segments.count) segments from \(timings.count) tokens")
@@ -134,16 +142,26 @@ extension DiarizationManager {
         guard let regions else { return segments }
 
         guard !regions.isEmpty else { return segments }
-        let filtered = segments.filter { segment in
-            regions.contains { $0.end > segment.startTime && $0.start < segment.endTime }
+
+        // The same rule the in-memory pass uses. This route is taken by every recovery and by every
+        // recording that outgrows the mixer, and its output goes straight into `replaceTranscript`
+        // — so a VAD that hears only the loud stretch of a quiet meeting would delete most of it.
+        let result = BatchTranscriptFilter.filter(
+            segments,
+            speechRegions: regions.map {
+                BatchTranscriptFilter.SpeechRegion(startTime: $0.start, endTime: $0.end)
+            }
+        )
+        if result.distrustedVAD {
+            logger.warning(
+                "Long-recording VAD wanted to remove most of the transcript — keeping all \(segments.count) segment(s)"
+            )
+        } else if result.removed > 0 {
+            logger.info(
+                "Long-recording VAD removed \(result.removed) silence segment(s), \(result.segments.count) kept"
+            )
         }
-        let removed = segments.count - filtered.count
-        if removed > 0 {
-            logger.info("Long-recording VAD removed \(removed) silence segment(s), \(filtered.count) kept")
-        }
-        // Guard against over-filtering: a VAD pass that rejects everything is wrong about the audio,
-        // not right about the transcript.
-        return filtered.isEmpty ? segments : filtered
+        return result.segments
     }
 
     // MARK: - Diarization

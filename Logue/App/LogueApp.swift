@@ -8,16 +8,19 @@ extension Notification.Name {
     static let openKeyboardShortcutsWindow = Notification.Name("openKeyboardShortcutsWindow")
     static let openResourceUsageWindow = Notification.Name("openResourceUsageWindow")
     static let openReportBugWindow = Notification.Name("openReportBugWindow")
+    /// Asked for by name from the Help menu, rather than offered after an update.
+    static let showWhatsNew = Notification.Name("showWhatsNew")
 
     /// `Cmd+P` — open quick-open. A menu item rather than only an in-window key handler,
     /// because a main-menu key equivalent fires whatever holds focus inside the window,
     /// including the editor's text view.
     static let openQuickOpenPalette = Notification.Name("openQuickOpenPalette")
 
-    /// Phase A: chat-first shortcuts.
-    /// `Cmd+L` — start a new chat (and switch sidebar to Ask Logue).
+    /// Chat-first shortcuts.
+    /// `Cmd+L` — start a new chat and surface Home. A conversation with no messages *is*
+    /// the landing state, so this doubles as "go Home".
     static let chatNewConversation = Notification.Name("chatNewConversation")
-    /// `Cmd+Shift+L` — switch to Ask Logue and focus the input field.
+    /// `Cmd+Shift+L` — surface Home and focus the input, leaving the thread intact.
     static let chatFocusInput = Notification.Name("chatFocusInput")
 }
 
@@ -129,6 +132,10 @@ struct LogueApp: App {
             }
 
             CommandGroup(replacing: .help) {
+                Button(UICopy.WhatsNew.menuItem) { HelpMenuActions.showWhatsNew() }
+
+                Divider()
+
                 Button("Documentation") { HelpMenuActions.openDocumentation() }
                 Button("Keyboard Shortcuts") { HelpMenuActions.openKeyboardShortcuts() }
 
@@ -166,10 +173,21 @@ struct LogueApp: App {
 
 // MARK: - Themed Root Views
 
+/// Identifies a pending What's New sheet.
+///
+/// The sheet is item-driven rather than boolean-driven because it carries which
+/// releases to show, and because two boolean `.sheet` modifiers on one view do not
+/// reliably both present.
+private struct WhatsNewSheetItem: Identifiable {
+    let id = UUID()
+    let mode: WhatsNewView.Mode
+}
+
 /// Wraps the main window, injects all environments, follows system appearance.
 private struct AppRootView: View {
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage(AppConstants.UserDefaultsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @Environment(\.openSettings) private var openSettings
+    @State private var whatsNew: WhatsNewSheetItem?
 
     var body: some View {
         MainWindowView()
@@ -181,6 +199,13 @@ private struct AppRootView: View {
                 SettingsNavigator.shared.pendingCheckForUpdates = true
                 openSettings()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .showWhatsNew)) { _ in
+                // The Help menu stays live while a sheet is up. Assigning here would swap
+                // a multi-release catch-up deck for a single-release one mid-read, and
+                // during onboarding AppKit would drop the sheet while leaving this set.
+                guard hasCompletedOnboarding, whatsNew == nil else { return }
+                whatsNew = WhatsNewSheetItem(mode: .askedForByName())
+            }
             .environment(ModelManager.shared)
             .environment(DocumentStore.shared)
             .environment(MeetingStore.shared)
@@ -188,20 +213,55 @@ private struct AppRootView: View {
             .environment(RecordingSessionManager.shared)
             .environment(TemplateStore.shared)
             .environment(CalendarManager.shared)
-            .sheet(isPresented: Binding(
-                get: { !hasCompletedOnboarding },
-                set: {
-                    if !$0 {
+            .task {
+                // After the store has loaded and after SandboxContainerMigrator has run in init():
+                // recovery reads files whose location that migration may just have changed.
+                await RecordingSessionManager.shared.recoverInterruptedSessions()
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { !hasCompletedOnboarding },
+                    set: {
+                        if !$0 {
+                            hasCompletedOnboarding = true
+                        }
+                    }
+                ),
+                // onDismiss is the only signal that the wizard's sheet is actually gone.
+                // The flag flips before the dismissal, so anything keyed to it is guessing.
+                onDismiss: { presentDiscoverTour() },
+                content: {
+                    OnboardingView {
                         hasCompletedOnboarding = true
                     }
+                    .environment(ModelManager.shared)
+                    .interactiveDismissDisabled()
                 }
-            )) {
-                OnboardingView {
-                    hasCompletedOnboarding = true
+            )
+            .task {
+                // The tour belongs to a fresh install and waits for the wizard; only
+                // release notes are owed to someone who has been here before.
+                guard hasCompletedOnboarding else { return }
+                if case let .whatsNew(releases) = WhatsNewGate.presentationForLaunch() {
+                    whatsNew = WhatsNewSheetItem(mode: .whatsNew(releases))
                 }
-                .environment(ModelManager.shared)
-                .interactiveDismissDisabled()
             }
+            .sheet(item: $whatsNew) { item in WhatsNewView(mode: item.mode) }
+    }
+
+    /// Shows the first-run tour once the onboarding sheet has actually gone.
+    ///
+    /// `@MainActor` because only `body` inherits it from `View`; without it the `Task`
+    /// would write the sheet's state off the main actor.
+    @MainActor
+    private func presentDiscoverTour() {
+        Task {
+            try? await Task.sleep(for: AppConstants.Delays.sheetHandoff)
+            // The Help menu is reachable during the wait, so this must not overwrite a
+            // sheet the user asked for themselves.
+            guard whatsNew == nil else { return }
+            whatsNew = WhatsNewSheetItem(mode: .discover)
+        }
     }
 }
 

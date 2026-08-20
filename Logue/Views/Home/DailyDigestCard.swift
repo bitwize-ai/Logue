@@ -51,7 +51,6 @@ struct DailyDigestCard: View {
                 RoundedRectangle(cornerRadius: AppThemeConstants.radiusLarge)
                     .stroke(AppThemeConstants.accent.opacity(AppThemeConstants.opacityMedium), lineWidth: 1)
             )
-            .padding(.horizontal, 24)
             .onDisappear { digestTask?.cancel() }
             .task(id: meetingIDs) {
                 guard await LLMEngine.shared.isModelLoaded,

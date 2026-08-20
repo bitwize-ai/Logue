@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **What's New after an update.** Logue now says what a release changed, showing only the
+  versions you have not already seen — several at once if you skipped some. Because nothing
+  has ever been announced in-app, this first one covers everything shipped so far. A fresh
+  install gets a short tour of what Logue does instead, after the setup wizard rather than
+  inside it. Both are reachable any time from Help → What's New and from Settings → General.
+
+### Changed
+
+- Update prompts now say what the update contains. Sparkle's release-notes pane had been
+  empty since 1.0.0 because the appcast carried no description; it and the GitHub Release
+  body are now both generated from this file at tag time.
+
 ## [1.0.1] - 2026-08-02
 
 The first release after open-sourcing. Three of the fixes below came from bugs
