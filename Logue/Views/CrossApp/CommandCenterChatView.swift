@@ -222,6 +222,21 @@ struct CommandCenterChatView: View {
                 }
             }
 
+            if !pendingApprovals.isEmpty, let conversationID {
+                VStack(spacing: 8) {
+                    ForEach(pendingApprovals) { call in
+                        ToolExecutionCard(
+                            toolCall: call,
+                            result: nil,
+                            conversationID: conversationID
+                        )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             if let error = currentError {
                 errorBanner(error)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -359,6 +374,27 @@ struct CommandCenterChatView: View {
             // as a normal turn rather than silently dropping the send.
             coordinator.send(message: concept, conversationID: conversationID)
         }
+    }
+
+    /// Tool calls from this thread that are waiting on the user.
+    ///
+    /// The island runs the full agent loop as of #61, which means it runs the approval gate
+    /// too — and the gate blocks the run until someone answers. With no prompt here, a
+    /// destructive tool asked for from the island showed nothing, sat for
+    /// `approvalTimeoutSeconds` (five minutes), and then failed. The run looked frozen and
+    /// there was no way to say yes.
+    ///
+    /// Only calls that need an answer are rendered. Completed tool calls stay filtered out of
+    /// the island — the main window shows those as history, and a pill floating over another
+    /// app has no room for a transcript of everything the agent did. What it must show is
+    /// what it is blocking on.
+    private var pendingApprovals: [AgentToolCall] {
+        guard let conversationID,
+              let conversation = store.conversations.first(where: { $0.id == conversationID })
+        else { return [] }
+        return conversation.messages
+            .flatMap(\.toolCalls)
+            .filter { $0.status == .needsConfirmation }
     }
 
     /// The error for this thread, if the last run left one.
