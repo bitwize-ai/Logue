@@ -2,21 +2,17 @@ import AVFoundation
 import SwiftUI
 import Textual
 
-/// Ephemeral chat message with mutable content for streaming support.
+/// One bubble in the island, mapped from the conversation's `AgentMessage`.
+///
+/// No longer ephemeral despite the name: it is a view model over stored messages, and `id`
+/// is the stored message's, so bubbles keep their identity across a re-render rather than
+/// being reissued every time the mapping runs.
 struct EphemeralChatMessage: Identifiable, Equatable {
     let id: UUID
     var content: String
     let isUser: Bool
     var isStreaming: Bool
     let timestamp: Date
-
-    init(content: String, isUser: Bool, isStreaming: Bool = false) {
-        id = UUID()
-        self.content = content
-        self.isUser = isUser
-        self.isStreaming = isStreaming
-        timestamp = Date()
-    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.content == rhs.content && lhs.isStreaming == rhs.isStreaming
@@ -29,10 +25,14 @@ struct CommandCenterChatView: View {
     let onDismiss: () -> Void
     let onContentChanged: (CommandCenterChatContent) -> Void
 
-    @State private var messages: [EphemeralChatMessage] = []
+    /// The island's own thread, created on first send and never selected.
+    ///
+    /// Created with `select: false`: this floats over another app, and selecting its thread
+    /// would navigate the main window sitting behind it away from whatever the user left open.
+    @State private var conversationID: UUID?
+    @State private var store = AgentConversationStore.shared
+    @State private var coordinator = AgentCoordinator.shared
     @State private var inputText: String = ""
-    @State private var isGenerating: Bool = false
-    @State private var streamTask: Task<Void, Never>?
     @State private var copiedMessageID: UUID?
     @State private var savedMessageID: UUID?
     @State private var speakingMessageID: UUID?
@@ -41,6 +41,42 @@ struct CommandCenterChatView: View {
 
     private var voiceManager: VoicePushToTalkManager {
         .shared
+    }
+
+    /// The island's thread, as the bubbles want it.
+    ///
+    /// Read from the store rather than held here. That is the whole point of the change: the
+    /// island used to keep its own array and throw it away on dismiss, so a question asked
+    /// here had no history, no tools and no memory. It is now the same conversation the rest
+    /// of Logue can see.
+    private var messages: [EphemeralChatMessage] {
+        guard let conversationID,
+              let conversation = store.conversations.first(where: { $0.id == conversationID })
+        else { return [] }
+
+        let live = coordinator.isStreaming(in: conversationID)
+        return conversation.messages.enumerated().compactMap { index, message in
+            switch message.role {
+            case .user, .assistant: break
+            // Tool and system turns are the agent's bookkeeping. The main window renders
+            // them as cards; the island is a pill over someone else's app and has no room.
+            default: return nil
+            }
+            let isLast = index == conversation.messages.count - 1
+            return EphemeralChatMessage(
+                id: message.id,
+                content: message.content,
+                isUser: message.role == .user,
+                isStreaming: live && isLast && message.role == .assistant,
+                timestamp: message.timestamp
+            )
+        }
+    }
+
+    /// Whether the island's own thread is busy — never the main window's.
+    private var isGenerating: Bool {
+        guard let conversationID else { return false }
+        return coordinator.isProcessing(in: conversationID)
     }
 
     private let pillWidth: CGFloat = 740
@@ -365,11 +401,20 @@ struct CommandCenterChatView: View {
 
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isGenerating else { return }
 
-        messages.append(EphemeralChatMessage(content: text, isUser: true))
+        // The same routing decision the main window makes. The island has no Deep Research
+        // chip and no attachments yet, so those inputs are false — but it asks the one
+        // router rather than carrying a second opinion that can drift from it.
+        let route = AskRouter.route(
+            for: AskRouter.Request(
+                text: text,
+                imageIntentFires: PromptIntentClassifier.shared.shouldPresentImagePlayground(for: text)
+            )
+        )
+        guard let route, !isGenerating else { return }
+
+        let conversationID = ensureConversation()
         inputText = ""
-        isGenerating = true
 
         // Re-focus input after state update
         Task {
@@ -377,55 +422,48 @@ struct CommandCenterChatView: View {
             isInputFocused = true
         }
 
-        let aiMessage = EphemeralChatMessage(content: "", isUser: false, isStreaming: true)
-        let aiID = aiMessage.id
-        messages.append(aiMessage)
-
-        streamTask = Task { @MainActor in
-            do {
-                let stream = await LLMEngine.shared.chatStream(prompt: text)
-                for try await chunk in stream {
-                    guard !Task.isCancelled else { break }
-                    if let idx = messages.firstIndex(where: { $0.id == aiID }) {
-                        messages[idx].content += chunk
-                    }
-                }
-                if let idx = messages.firstIndex(where: { $0.id == aiID }) {
-                    messages[idx].isStreaming = false
-                }
-                isGenerating = false
-                isInputFocused = true
-            } catch {
-                if !Task.isCancelled {
-                    if let idx = messages.firstIndex(where: { $0.id == aiID }) {
-                        messages[idx].content = "No AI model loaded. Open Logue and set up a model in Settings \u{2192} Models first."
-                        messages[idx].isStreaming = false
-                    }
-                    isGenerating = false
-                    isInputFocused = true
-                }
-            }
+        switch route {
+        case .agentLoop, .deepResearch:
+            // Deep Research is unreachable from here — no chip lights it — and if it ever
+            // becomes reachable it belongs on the same coordinator, not a second pipeline.
+            coordinator.send(message: text, conversationID: conversationID)
+        case let .imagePlayground(concept):
+            // ImagePlayground presents a sheet, which a floating pill cannot host. Answer it
+            // as a normal turn rather than silently dropping the send.
+            coordinator.send(message: concept, conversationID: conversationID)
         }
+    }
+
+    /// The island's thread, made on first use.
+    ///
+    /// Deliberately not selected — see `conversationID`. Titled so it is identifiable in the
+    /// main window's list rather than appearing as another "New Conversation" the user did
+    /// not knowingly start.
+    private func ensureConversation() -> UUID {
+        if let conversationID {
+            return conversationID
+        }
+        let conversation = store.createConversation(title: "Command Center", select: false)
+        conversationID = conversation.id
+        return conversation.id
     }
 
     private func stopStreaming() {
-        streamTask?.cancel()
-        streamTask = nil
-        if let lastIdx = messages.indices.last, messages[lastIdx].isStreaming {
-            messages[lastIdx].isStreaming = false
-        }
-        isGenerating = false
+        coordinator.cancel()
         isInputFocused = true
     }
 
+    /// Starts a fresh thread rather than erasing one.
+    ///
+    /// The old island discarded its messages because they existed nowhere else. They are a
+    /// real conversation now, so "clear" means the island stops pointing at it — deleting it
+    /// would throw away something the user can still open from the main window.
     private func clearSession() {
-        streamTask?.cancel()
-        streamTask = nil
+        coordinator.cancel()
         synthesizer.stopSpeaking(at: .immediate)
         speakingMessageID = nil
-        messages.removeAll()
+        conversationID = nil
         inputText = ""
-        isGenerating = false
         isInputFocused = true
     }
 
