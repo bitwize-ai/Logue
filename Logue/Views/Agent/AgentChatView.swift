@@ -322,18 +322,36 @@ struct AgentChatView: View {
                 let attachments = inputAttachments
                 let runDeepResearch = isDeepResearch
                 let oneShotWeb = isWebSearchOnce
-                // Allow attachment-only sends so the user can drop a file and ask
-                // the agent to read it without typing a question.
-                guard !text.isEmpty || !attachments.isEmpty else { return }
+                // One decision, in one place. `AskRouter` also answers "is there
+                // anything to send", so the empty-send guard is part of the same
+                // question rather than a separate check that can disagree with it —
+                // an attachment on its own is a valid send.
+                let route = AskRouter.route(
+                    for: AskRouter.Request(
+                        text: text,
+                        hasAttachments: !attachments.isEmpty,
+                        deepResearchRequested: runDeepResearch,
+                        imageIntentFires: PromptIntentClassifier.shared
+                            .shouldPresentImagePlayground(for: text)
+                    )
+                )
+                guard let route else { return }
+
                 inputText = ""
                 inputAttachments = []
                 // Reset the per-send AppStorage flags so the next turn starts
                 // clean. These mirror the chip state in the input pill.
                 isDeepResearch = false
                 isWebSearchOnce = false
-                if runDeepResearch {
+
+                switch route {
+                case .deepResearch:
                     startDeepResearch(text, oneShotWebSearch: oneShotWeb)
-                } else {
+                case let .imagePlayground(concept):
+                    HapticFeedback.send()
+                    imagePlaygroundConcept = concept
+                    showImagePlayground = true
+                case .agentLoop:
                     sendMessage(text, attachments: attachments, oneShotWebSearch: oneShotWeb)
                 }
             },
@@ -467,14 +485,10 @@ struct AgentChatView: View {
         attachments: [TempAttachment] = [],
         oneShotWebSearch: Bool = false
     ) {
-        // Phase F: Route to ImagePlayground when intent classifier fires.
-        if attachments.isEmpty, PromptIntentClassifier.shared.shouldPresentImagePlayground(for: text) {
-            HapticFeedback.send()
-            imagePlaygroundConcept = text
-            showImagePlayground = true
-            return
-        }
-
+        // Routing happens at the send site, in `AskRouter`. This used to re-ask the
+        // ImagePlayground question here, which meant two places could answer it
+        // differently — and the island, which never reached this method, got no
+        // routing at all.
         HapticFeedback.send()
         let conversationID = ensureActiveConversation()
 
