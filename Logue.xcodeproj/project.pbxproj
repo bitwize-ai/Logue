@@ -104,6 +104,7 @@
 		1BE965CE5953BCA256111BEA /* MeetingRowCompact.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EE330160AA0276B2907F2A /* MeetingRowCompact.swift */; };
 		1C1775454781744474E68510 /* ToolApprovalButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4DB5AD462B4A863201D5D61 /* ToolApprovalButtons.swift */; };
 		1C4A675BEB767A50A29D970F /* katex.min.css in Resources */ = {isa = PBXBuildFile; fileRef = E420BD97F84DEF6141ADEDA4 /* katex.min.css */; };
+		1C5F8AF69527526490E8CA54 /* AttachmentIntake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417436A70F2C0F1DDA347DC4 /* AttachmentIntake.swift */; };
 		1CCAD60D4518A9CCED75F860 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7449F6B54F0F197D704E4C59 /* AppDelegate.swift */; };
 		1CF5D6AE20C1BDE279762B9F /* ComingSoonPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4846B28779DCE95A2E8E9D23 /* ComingSoonPanelView.swift */; };
 		1CFA41464BB0BBD94D0F51D1 /* DurationFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D766396CB3F843CD222C7F46 /* DurationFormatter.swift */; };
@@ -873,6 +874,7 @@
 		3FF85EA0F9822CBD660E9AAB /* MarkdownStorageWarningSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownStorageWarningSheet.swift; sourceTree = "<group>"; };
 		40381D10206F56D057943756 /* SpaceContentPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceContentPane.swift; sourceTree = "<group>"; };
 		4066081DEC2821193FE7D882 /* WikiLinkURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikiLinkURLTests.swift; sourceTree = "<group>"; };
+		417436A70F2C0F1DDA347DC4 /* AttachmentIntake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentIntake.swift; sourceTree = "<group>"; };
 		41C0416ED8CE675F6EF78FA0 /* TaskStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStoreTests.swift; sourceTree = "<group>"; };
 		42BFEBF99163808EE4126279 /* HomeContextBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeContextBar.swift; sourceTree = "<group>"; };
 		42FA58E9E9D16008C0F7FF4E /* TaskTriage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTriage.swift; sourceTree = "<group>"; };
@@ -2165,6 +2167,7 @@
 				62CA343B98C1F62D9F89B0B6 /* AgentRunState.swift */,
 				B1CF9F695CCB56896DC9A02C /* ApprovalGate.swift */,
 				86C6E3021828B2B8589C720A /* AskRoute.swift */,
+				417436A70F2C0F1DDA347DC4 /* AttachmentIntake.swift */,
 				4B2F874FCD0AF25F7B37D3FC /* MalformedToolCall.swift */,
 				B55FA53C32F4D2968C07CEE5 /* MessageActions.swift */,
 				6711FB8D13DD53809A655A14 /* WritingAgentGraph.swift */,
@@ -2819,6 +2822,7 @@
 				ED283783D6A185FB3914A331 /* ApprovalGate.swift in Sources */,
 				556246B3C2F8B616A0CDD27B /* AskRoute.swift in Sources */,
 				B62AF07AD0FDB3E3E4B31D77 /* AssistantActionRow.swift in Sources */,
+				1C5F8AF69527526490E8CA54 /* AttachmentIntake.swift in Sources */,
 				ECB8B236B80423C7D1A752FF /* AudioFileChunkReader.swift in Sources */,
 				DEDC62FB8C63F071222D9115 /* AudioLevelNormalizer.swift in Sources */,
 				86E9087748D55EBF2768316A /* AudioPlaybackService.swift in Sources */,
