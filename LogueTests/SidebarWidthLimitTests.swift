@@ -10,7 +10,30 @@ struct SidebarWidthLimitTests {
     private static let limits: [(name: String, limit: SidebarWidthLimit)] = [
         ("categorySidebar", .categorySidebar),
         ("inspector", .inspector),
+        ("libraryPanel", .libraryPanel),
     ]
+
+    // MARK: - The library panel
+
+    /// The library panels sit beside a list, not an editor, so they are not held to the
+    /// editor's reading measure — which on a normal window capped them barely above their
+    /// own default width.
+    @Test("A library panel may be dragged far wider than an inspector")
+    func libraryPanelOutgrowsTheInspector() {
+        let window: CGFloat = 1280
+        let inspector = SidebarWidthLimit.inspector.maximum(inContainerOfWidth: window)
+        let library = SidebarWidthLimit.libraryPanel.maximum(inContainerOfWidth: window)
+        #expect(library > inspector * 1.5)
+    }
+
+    @Test("A library panel still leaves the list something to be")
+    func libraryPanelLeavesRoomForTheList() {
+        for window in [900, 1280, 1600, 2560].map(CGFloat.init) {
+            let maximum = SidebarWidthLimit.libraryPanel.maximum(inContainerOfWidth: window)
+            #expect(window - maximum >= SidebarWidthLimit.libraryPanel.minContentWidth
+                || maximum == SidebarWidthLimit.libraryPanel.minimum)
+        }
+    }
 
     // MARK: - The two limits
 

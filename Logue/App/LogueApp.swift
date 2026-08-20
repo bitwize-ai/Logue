@@ -16,10 +16,11 @@ extension Notification.Name {
     /// including the editor's text view.
     static let openQuickOpenPalette = Notification.Name("openQuickOpenPalette")
 
-    /// Phase A: chat-first shortcuts.
-    /// `Cmd+L` — start a new chat (and switch sidebar to Ask Logue).
+    /// Chat-first shortcuts.
+    /// `Cmd+L` — start a new chat and surface Home. A conversation with no messages *is*
+    /// the landing state, so this doubles as "go Home".
     static let chatNewConversation = Notification.Name("chatNewConversation")
-    /// `Cmd+Shift+L` — switch to Ask Logue and focus the input field.
+    /// `Cmd+Shift+L` — surface Home and focus the input, leaving the thread intact.
     static let chatFocusInput = Notification.Name("chatFocusInput")
 }
 
@@ -212,6 +213,11 @@ private struct AppRootView: View {
             .environment(RecordingSessionManager.shared)
             .environment(TemplateStore.shared)
             .environment(CalendarManager.shared)
+            .task {
+                // After the store has loaded and after SandboxContainerMigrator has run in init():
+                // recovery reads files whose location that migration may just have changed.
+                await RecordingSessionManager.shared.recoverInterruptedSessions()
+            }
             .sheet(
                 isPresented: Binding(
                     get: { !hasCompletedOnboarding },

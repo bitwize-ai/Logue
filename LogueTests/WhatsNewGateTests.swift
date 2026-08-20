@@ -164,15 +164,8 @@ struct WhatsNewGateTests {
 
     // MARK: - Stamp
 
-    /// A scratch defaults suite, so tests never touch the real preferences.
-    ///
-    /// `#require` rather than a `guard ... else { return }`: returning without running
-    /// the body would pass every test that uses this having asserted nothing at all.
     private func withScratchDefaults(_ body: (UserDefaults) throws -> Void) throws {
-        let name = "WhatsNewGateTests-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        try body(defaults)
+        try LogueTests.withScratchDefaults(label: "WhatsNewGateTests", body)
     }
 
     @Test("Marking a version seen records it")

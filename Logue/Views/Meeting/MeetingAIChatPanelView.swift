@@ -25,7 +25,11 @@ struct MeetingAIChatPanelView: View {
                 clearChatBar
             }
 
-            if messages.isEmpty, meeting.segments.isEmpty, !recorder.isRecording, !recorder.isStartingRecording {
+            // `isRecovering` too: neither of the other two is set while an interrupted session is
+            // being rebuilt, so the button rendered enabled and the press was refused in silence.
+            if messages.isEmpty, meeting.segments.isEmpty, !recorder.isRecording,
+               !recorder.isStartingRecording, !recorder.isRecovering
+            {
                 EmptyStateView(
                     icon: "sparkles",
                     title: "Record a meeting first",

@@ -122,6 +122,19 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         meetings.filter { !$0.isTrashed }
     }
 
+    /// Today's meetings, by the one definition of "today".
+    ///
+    /// Home shows this count twice in the same frame — once in the context bar, once as
+    /// the condition for the "What did I miss today?" chip beside it. Derived separately,
+    /// the two drift the moment either predicate is edited, and the screen contradicts
+    /// itself in a single glance.
+    var todaysMeetings: [MeetingNote] {
+        let calendar = Calendar.current
+        return activeMeetings.filter {
+            calendar.isDateInToday($0.createdAt) && !$0.isArchived
+        }
+    }
+
     var recentMeetings: [MeetingNote] {
         if let cached = _cachedRecent {
             return cached
@@ -414,7 +427,46 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
     /// when recording stops.
     func appendSegment(_ segment: TranscriptSegment, to meetingID: UUID, persistImmediately: Bool = true) {
         guard let index = meetingIndex(for: meetingID) else { return }
-        meetings[index].segments.append(segment)
+
+        // The transcriber finalises when it is confident, not when a sentence ends, so a thought
+        // arrives split across two lines. Joined here, as it arrives, the stored transcript is made
+        // of sentences and everything downstream inherits that rather than working around it.
+        // The system tap is the multi-speaker source: it carries every remote participant, so
+        // two consecutive lines from it can be two different people and nothing in the segment
+        // says which. Requiring the *mic* to be live as well had this backwards — a meeting with
+        // the mic muted is the case with the most speakers and the least protection, and it is
+        // the mode this branch exists for.
+        //
+        // Mic-only is left merging, and that is a judgement rather than a safe default: merging
+        // does not exist on main — `appendSegment` there is a plain append — so one microphone
+        // welding two people in a room into one line is a risk this branch introduces, not one
+        // it inherits. It is left on because the split-sentence join is the feature, and telling
+        // two in-room speakers apart before diarization needs per-buffer source tagging the
+        // shared analyzer does not carry. If that trade is not wanted, the place to make merging
+        // safe is after diarization has labelled the segments, where `speakerLabel` finally
+        // discriminates — not here.
+        //
+        // Read from the recorder rather than the meeting's mode: the mode is what was intended,
+        // this is what is actually running, and a system tap that failed to start should not
+        // cost the merge.
+        let mayCarryTwoSpeakers = RecordingSessionManager.shared.isCapturingSystemAudio
+        // Where this session starts on the meeting's timeline, so a line from an earlier session
+        // is never extended by this one.
+        let sessionStart = RecordingSessionManager.shared.timeOffset
+
+        if let last = meetings[index].segments.last,
+           TranscriptSentenceMerge.shouldMerge(
+               previous: last,
+               next: segment,
+               mayCarryTwoSpeakers: mayCarryTwoSpeakers,
+               sessionStart: sessionStart
+           )
+        {
+            meetings[index].segments[meetings[index].segments.count - 1] =
+                TranscriptSentenceMerge.merged(last, with: segment)
+        } else {
+            meetings[index].segments.append(segment)
+        }
         meetings[index].modifiedAt = Date()
         if persistImmediately {
             saveMeeting(id: meetingID)
@@ -522,55 +574,23 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         saveMeeting(id: meetingID)
     }
 
-    // MARK: - Action Item Due Date & Reminders
-
-    func setActionItemDueDate(_ dueDate: Date?, itemID: UUID, in meetingID: UUID) {
+    /// Marks an extracted action item as something the user chose not to act on.
+    ///
+    /// A dismissal cancels any reminder — leaving a notification armed for an item the user
+    /// just rejected is the one way this can nag them about a decision they already made.
+    func setActionItemDismissed(_ dismissed: Bool, itemID: UUID, in meetingID: UUID) {
         guard let mIdx = meetingIndex(for: meetingID),
               let itemIndex = meetings[mIdx].actionItems.firstIndex(where: { $0.id == itemID })
         else { return }
-        meetings[mIdx].actionItems[itemIndex].dueDate = dueDate
+        meetings[mIdx].actionItems[itemIndex].isDismissed = dismissed
         meetings[mIdx].modifiedAt = Date()
-        saveMeeting(id: meetingID)
-    }
 
-    func setActionItemReminder(itemID: UUID, in meetingID: UUID, reminderDate: Date) {
-        guard let mIdx = meetingIndex(for: meetingID),
-              let itemIndex = meetings[mIdx].actionItems.firstIndex(where: { $0.id == itemID })
-        else { return }
-
-        let item = meetings[mIdx].actionItems[itemIndex]
-        let meetingTitle = meetings[mIdx].title
-
-        // Cancel existing reminder if any
-        if let existingNotifID = item.notificationID {
-            ReminderManager.shared.cancelReminder(notificationID: existingNotifID)
-        }
-
-        // Schedule new reminder
-        let notifID = ReminderManager.shared.scheduleReminder(
-            for: item,
-            at: reminderDate,
-            meetingTitle: meetingTitle
-        )
-
-        meetings[mIdx].actionItems[itemIndex].reminderDate = reminderDate
-        meetings[mIdx].actionItems[itemIndex].notificationID = notifID
-        meetings[mIdx].modifiedAt = Date()
-        saveMeeting(id: meetingID)
-    }
-
-    func cancelActionItemReminder(itemID: UUID, in meetingID: UUID) {
-        guard let mIdx = meetingIndex(for: meetingID),
-              let itemIndex = meetings[mIdx].actionItems.firstIndex(where: { $0.id == itemID })
-        else { return }
-
-        if let notifID = meetings[mIdx].actionItems[itemIndex].notificationID {
+        if dismissed, let notifID = meetings[mIdx].actionItems[itemIndex].notificationID {
             ReminderManager.shared.cancelReminder(notificationID: notifID)
+            meetings[mIdx].actionItems[itemIndex].reminderDate = nil
+            meetings[mIdx].actionItems[itemIndex].notificationID = nil
         }
 
-        meetings[mIdx].actionItems[itemIndex].reminderDate = nil
-        meetings[mIdx].actionItems[itemIndex].notificationID = nil
-        meetings[mIdx].modifiedAt = Date()
         saveMeeting(id: meetingID)
     }
 }
@@ -582,6 +602,7 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
 // MeetingStore+Diarization.swift  — Speaker diarization data and transcript label assignment
 // MeetingStore+Metadata.swift     — Bookmarks, tags
 // MeetingStore+Persistence.swift  — File I/O: save, load, delete, bulk operations, digest cache
+// MeetingStore+Reminders.swift    — Action-item due dates and their scheduled notifications
 // MeetingStore+Search.swift       — Full-text search, snippet extraction, topic keywords, related meetings
 // MeetingStore+SeedData.swift     — Sample meeting data for first launch
 // MeetingStore+WelcomeMeeting.swift — Welcome/onboarding meeting seed

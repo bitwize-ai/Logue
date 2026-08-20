@@ -35,6 +35,13 @@ final class DocumentStorage {
             UserDefaults.standard.set(
                 mode.rawValue, forKey: AppConstants.UserDefaultsKeys.documentStorageMode
             )
+            // Tasks follow this mode, and where their folder is depends on it. Dropped here
+            // rather than in each switch method so no switch can leave a remembered path from
+            // the other mode behind. This does *not* cover the value read back at launch:
+            // `private init()` assigns `mode` directly and property observers do not run during
+            // initialisation. Harmless, because a fresh process has an empty cache — but a
+            // future route that sets the mode before the first resolve needs its own drop.
+            TaskStorage.invalidateFolderLocation()
         }
     }
 
@@ -94,6 +101,9 @@ final class DocumentStorage {
     func invalidateFileIndex() {
         cachedFileIndex = nil
         cachedSpaceFolders = nil
+        // Where the tasks folder is was read from the same tree, so it goes stale on exactly
+        // the same events — a scan, a space folder created, renamed or retired, a mode switch.
+        TaskStorage.invalidateFolderLocation()
     }
 
     /// Fills whichever of the two caches is cold, from a **single** traversal.
@@ -282,6 +292,10 @@ final class DocumentStorage {
         case folderUnavailable
         case folderIncomplete(found: Int, expected: Int)
         case reEncryptionIncomplete(count: Int)
+        /// The tasks half did not finish. Separate from the documents case because the user is
+        /// told which of their things needs attention, and because a count of `nil` — the
+        /// folder could not be read, so nobody knows how many — is a real answer here.
+        case taskReEncryptionIncomplete(count: Int?)
 
         var errorDescription: String? {
             switch self {
@@ -294,6 +308,19 @@ final class DocumentStorage {
                 "\(count) document(s) had not finished writing to encrypted storage, so the folder "
                     + "was left where it is. Your documents are safe in both places — try turning "
                     + "the setting off again."
+            case let .taskReEncryptionIncomplete(count):
+                // No "try again" here: the mode has already flipped by the time this is thrown,
+                // so pointing the user back at the toggle points them at a control that is
+                // already off. The folder is still on disk, which is the thing to say.
+                if let count {
+                    "\(count) task(s) had not finished writing to encrypted storage, so the Logue "
+                        + "folder was left where it is. Your tasks are still in it — nothing was "
+                        + "deleted."
+                } else {
+                    "Some tasks could not be read back from the Logue folder, so it was left where "
+                        + "it is. Nothing was deleted; check the Tasks folder for files that cannot "
+                        + "be opened."
+                }
             case let .folderIncomplete(found, expected):
                 "The folder holds \(found) document(s) but Logue has \(expected), so nothing was "
                     + "changed. Press the rescan button in the sidebar to reconcile them first — "
@@ -309,9 +336,17 @@ final class DocumentStorage {
     /// kilobytes and they are what makes turning this on reversible. They stop being read
     /// the moment the mode flips, and `DocumentStore.pruneStoredDocuments` clears the ones
     /// that have gone stale when markdown storage is turned off again.
+    /// - Parameter tasks: written to the folder before the mode flips.
+    ///
+    ///   Tasks follow this mode rather than having one of their own, so the instant it flips
+    ///   `TaskStorage` starts reading `~/Logue/Tasks` — and an empty folder there is
+    ///   indistinguishable from "the user has no tasks". Exporting first, and failing the
+    ///   whole switch if it cannot, is what stops turning the setting on from looking like
+    ///   it erased the task list.
     func switchToMarkdown(
         documents: [WritingDocument],
-        spaces: [Space]
+        spaces: [Space],
+        tasks: [TaskItem] = []
     ) throws {
         adoptLegacyFolderIfNeeded()
 
@@ -340,6 +375,10 @@ final class DocumentStorage {
             saveDerived(document.derived)
         }
 
+        // Before the flip, and allowed to abort it: after the flip an unwritten task is a
+        // task that has vanished from the app.
+        try TaskStorage.shared.exportAll(tasks)
+
         mode = .markdown
         // `reconcile` just wrote a file for every document, so nothing is outstanding. Without
         // this an id recorded in an earlier markdown session stays exempt from the deletion check
@@ -364,8 +403,35 @@ final class DocumentStorage {
             throw SwitchError.reEncryptionIncomplete(count: missing.count)
         }
 
-        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        // Tasks are checked on the same terms and for the same reason. Without this the
+        // documents half is guarded and the tasks half is not, so a failed task write sends
+        // the folder — holding the only copy of those tasks — to the Trash anyway.
+        let missingTasks = restoredTasks.filter { !TaskStorage.shared.hasEncryptedCopy(of: $0.id) }
+        guard taskReEncryptionIsComplete, missingTasks.isEmpty else {
+            // A count only when one was actually measured. `taskReEncryptionIsComplete` can be
+            // false because the folder could not be read at all, in which case nobody knows how
+            // many tasks are in it, and inventing "1" told the user a number no one had counted.
+            throw SwitchError.taskReEncryptionIncomplete(
+                count: missingTasks.isEmpty ? nil : missingTasks.count
+            )
+        }
+
+        try retireRootAndForgetTasks()
         logger.info("Moved the documents folder to the Trash")
+    }
+
+    /// Sends the documents folder to the Trash and stops the tasks side looking for what was
+    /// inside it.
+    ///
+    /// One method because the pairing is the point and nothing else enforces it: the tasks folder
+    /// lives inside this root, so every path that retires the root retires it too. A fourth
+    /// caller written later that retires without forgetting leaves the marker pointing into the
+    /// Trash — restoring that folder for some unrelated reason then hands the user back a library
+    /// they had told the app to retire — and, spelled as two statements, that omission looks like
+    /// nothing in review. It was already the defect at two of the three original call sites.
+    private func retireRootAndForgetTasks() throws {
+        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        TaskStorage.forgetMarker()
     }
 
     /// Whether a document has landed in encrypted storage.
@@ -440,6 +506,13 @@ final class DocumentStorage {
             )
         }
 
+        // Read and re-encrypted while the folder is still the live one, and before the mode
+        // flips: a task created during markdown mode has no encrypted copy at all, so this is
+        // the only thing carrying it across. Afterwards the folder may go to the Trash.
+        let taskResult = TaskStorage.shared.reEncryptFromFolder()
+        restoredTasks = taskResult.tasks
+        taskReEncryptionIsComplete = taskResult.isComplete
+
         // The folder is no longer the library, so a record of which documents it failed to hold
         // means nothing — and `save` returns early in encrypted mode, so nothing else could ever
         // clear it. Left set, it would still be exempt from the deletion check on the way back.
@@ -451,6 +524,19 @@ final class DocumentStorage {
         return documents
     }
 
+    /// The tasks read back by the most recent `switchToEncrypted`.
+    ///
+    /// Returned out-of-band rather than in the return value so the switch's signature — and
+    /// the four failure modes documented on it — stay about documents. The caller reads this
+    /// immediately after a successful switch.
+    private(set) var restoredTasks: [TaskItem] = []
+
+    /// Whether every task the folder held reached encrypted storage.
+    ///
+    /// Read by `retireFolderAfterReEncryption`: the folder is the only copy of anything created
+    /// while markdown mode was on, so it cannot be trashed on a partial re-encryption.
+    private(set) var taskReEncryptionIsComplete = true
+
     /// Empties the plain-markdown folder without changing the setting.
     ///
     /// For the "clear data" paths, which are not "turn this feature off": the folder went to the
@@ -460,9 +546,8 @@ final class DocumentStorage {
     func clearMarkdownFolderContents() throws {
         guard mode.isMarkdown else { return }
 
-        let migrator = MarkdownStorageMigrator(rootURL: Self.markdownRootURL)
-        try migrator.retireRoot()
-        try migrator.prepareRoot()
+        try retireRootAndForgetTasks()
+        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).prepareRoot()
         // The folder these ids referred to is gone, so the record refers to nothing.
         clearUnwritableDocuments()
         invalidateFileIndex()
@@ -476,7 +561,7 @@ final class DocumentStorage {
     /// would also be defensible. The Trash still wins: "erase" is a button people press by mistake.
     func eraseMarkdownFolder() throws {
         stopWatching()
-        try MarkdownStorageMigrator(rootURL: Self.markdownRootURL).retireRoot()
+        try retireRootAndForgetTasks()
         // The folder is no longer the library, so a record of which documents it failed to hold
         // means nothing — and `save` returns early in encrypted mode, so nothing else could ever
         // clear it. Left set, it would still be exempt from the deletion check on the way back.

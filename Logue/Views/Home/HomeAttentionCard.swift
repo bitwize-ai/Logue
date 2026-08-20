@@ -6,6 +6,8 @@ struct HomeAttentionCard: View {
     @Environment(MeetingStore.self) private var meetingStore
     @Environment(CalendarManager.self) private var calendarManager
     let onStartMeeting: (CalendarEvent) -> Void
+    /// Receives a finished prompt when the user taps a row's ✦. Nil hides the affordance.
+    var onAsk: ((String) -> Void)?
 
     var body: some View {
         let urgentItems = urgentActionItems
@@ -34,7 +36,6 @@ struct HomeAttentionCard: View {
                     }
                 }
             }
-            .padding(.horizontal, 24)
         }
     }
 
@@ -95,6 +96,14 @@ struct HomeAttentionCard: View {
 
             Spacer()
 
+            if let onAsk {
+                HomeAskAffordance(
+                    accessibilityLabel: "Ask Logue about \(item.actionItem.title)"
+                ) {
+                    onAsk(HomeAskPrompts.actionItem(title: item.actionItem.title))
+                }
+            }
+
             if let dueDate = item.actionItem.dueDate {
                 dueBadge(dueDate, isOverdue: item.isOverdue)
             }
@@ -150,6 +159,12 @@ struct HomeAttentionCard: View {
             }
 
             Spacer()
+
+            if let onAsk {
+                HomeAskAffordance(accessibilityLabel: "Ask Logue about \(event.title)") {
+                    onAsk(HomeAskPrompts.calendarEvent(title: event.title))
+                }
+            }
 
             // S-N5: Validate URL scheme before opening calendar event URLs
             if let url = event.url, url.scheme == "https" || url.scheme == "http" {

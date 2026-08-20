@@ -8,9 +8,65 @@ macOS app (macOS 26+ / Tahoe): AI-powered meeting notes + document editing. Priv
 - **Source:** `Logue/`, **Tests:** `LogueTests/`
 - **Swift 5.9 + SwiftUI + AppKit**
 - **Build system:** XcodeGen — run `xcodegen generate` after adding new `.swift` files or changing `project.yml`
-- **Build:** `xcodebuild build -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS'`
+- **Build (runnable):** `xcodebuild build -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS' DEVELOPMENT_TEAM=HC5R66SXM5 CODE_SIGN_STYLE=Automatic`
+- **Build / test (compile-check only):** append `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""`
 - **MLX prerequisite:** `xcodebuild -downloadComponent MetalToolchain`
 - **Test (LLM integration):** `xcodebuild test -project Logue.xcodeproj -scheme Logue -destination 'platform=macOS' -only-testing:LogueTests/<SuiteName>`
+
+> **`xcodebuild` with no signing arguments fails**, and the error — `"Logue" has entitlements that
+> require signing with a development certificate` — reads like a code error rather than a missing
+> flag. `project.yml` ships `DEVELOPMENT_TEAM: ""` deliberately, so the team is passed on the
+> command line and never committed.
+
+## Running the build you just made
+
+Three separate things will each hand you a *different* build than the one you compiled, and all
+three fail silently — the app launches, looks right, and simply does not contain your change. Every
+"my edit isn't showing up" report so far has been one of these, not a bug in the code.
+
+- **Never pick the app by timestamp.** More than one DerivedData root exists for this project (the
+  command line's and Xcode's). Ask the build system where it writes, rather than guessing:
+
+  ```bash
+  APP=$(xcodebuild -project Logue.xcodeproj -scheme Logue -configuration Debug \
+    -destination 'platform=macOS' -showBuildSettings 2>/dev/null \
+    | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/Logue.app
+  ```
+
+- **`open` may launch a different copy.** LaunchServices resolves by bundle identifier, so with a
+  release build installed in `/Applications`, `open <path-to-dev-build>` can start — or merely
+  re-activate — the installed one instead. Quit every running instance first, then exec the binary
+  directly, in its own session so it outlives the shell that started it:
+
+  ```bash
+  pkill -x Logue; sleep 2
+  "$APP/Contents/MacOS/Logue" &
+  ```
+
+- **Confirm what is running, by process, not by path you passed.**
+
+  ```bash
+  PID=$(pgrep -x Logue); ps -p $PID -o args=          # which bundle
+  lsof -p $PID | grep Logue.debug.dylib               # which code, actually loaded
+  ```
+
+  `Contents/MacOS/Logue` is a ~60 KB stub; the app's code lives in `Contents/MacOS/Logue.debug.dylib`.
+  Searching the stub for a string you just added always comes back empty and proves nothing.
+
+**Rebuilding revokes Screen Recording permission.** macOS ties that grant to the code signature, so
+each rebuild drops it and system-audio capture stops until Logue is re-enabled under System Settings
+→ Privacy & Security → Screen Recording. A signed release build keeps a stable signature and does not
+have this problem.
+
+## Where documentation goes
+
+- **`docs/specs/`** — design and specification documents. Checked in.
+- **`docs/plans/`** — implementation plans and other working notes. **Deliberately gitignored**;
+  they are scaffolding for building the thing, not part of it. Do not move a plan into `docs/specs/`
+  to get it committed, and do not `git add -f` it.
+- `.gitignore` ignores `docs/*` wholesale and then re-admits specific subdirectories, so **a new
+  documentation directory is invisible to git until `.gitignore` re-admits it.** Check with
+  `git check-ignore -v <path>` before assuming a doc was committed.
 
 ## Dependencies
 
@@ -285,5 +341,28 @@ because nothing can infer them:
 `WhatsNewCatalog.tour`, the fresh-install list, is hand-picked and does *not* change every
 release. It answers "what is this app for", not "what changed", and a newcomer handed the
 upgrade deck gets a dozen cards of features they have no context for yet.
+
+### Cutting a build for testing
+
+Tag `vX.Y.Z-rc.N` (or `-beta.N`) instead. The workflow builds, signs and notarizes it
+exactly as it would a real release and publishes it to GitHub Releases marked as a
+pre-release — but it **skips the appcast step**, so nothing is offered to installed copies.
+
+That skip is the whole point, and it is structural rather than remembered: `SUFeedURL`
+points at `appcast.xml` on `main`, so an entry landing there reaches every existing user.
+The version step decides pre-release once and both the GitHub Release flag and the appcast
+gate read that one value, so they cannot drift apart.
+
+Two things follow from the suffix:
+
+- **Leave `## [Unreleased]` where it is.** No `## [X.Y.Z-rc.N]` section exists, so the
+  extractor falls back to `[Unreleased]` — which is what the build is testing. Move it into
+  a versioned section when cutting the real release, not before.
+- **`AppVersion` orders `1.1.0-rc.1` as `1.1.0`.** The What's New pane therefore shows the
+  1.1.0 cards in the RC, which is what makes them testable — and a tester who has seen them
+  is not shown them again on the final build.
+
+Testers install the RC by downloading it from its GitHub Release. It will not auto-update
+to itself, and it *will* be offered the real release when that ships.
 
 Full runbook, including screenshots and the version stamp: **[docs/WHATS_NEW.md](docs/WHATS_NEW.md)**.

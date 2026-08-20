@@ -19,6 +19,16 @@ struct MeetingActionItemsPanelView: View {
         recorder.isRecording && recorder.currentMeetingID == meeting.id
     }
 
+    /// Whether pressing "Start Meeting" would actually start one.
+    ///
+    /// `isRecovering` is in here because neither of the other two flags is set while an
+    /// interrupted session is being rebuilt — so the button rendered enabled, `startRecording`
+    /// refused, and nothing told the user why.
+    private var canStartMeeting: Bool {
+        meeting.segments.isEmpty && !recorder.isRecording && !recorder.isStartingRecording
+            && !recorder.isRecovering
+    }
+
     var body: some View {
         Group {
             if isExtracting, meeting.actionItems.isEmpty {
@@ -45,10 +55,10 @@ struct MeetingActionItemsPanelView: View {
                                 ? "Tap to extract action items from the existing summary."
                                 : "Action items will be extracted when you generate a summary.")),
                     actionLabel: meeting.segments.isEmpty
-                        ? (!recorder.isRecording && !recorder.isStartingRecording ? "Start Meeting" : nil)
+                        ? (canStartMeeting ? "Start Meeting" : nil)
                         : (extractionMessage != nil ? "Try Again" : (hasSummary ? "Extract Action Items" : "Generate Summary")),
                     action: meeting.segments.isEmpty
-                        ? (!recorder.isRecording && !recorder.isStartingRecording ? {
+                        ? (canStartMeeting ? {
                             Task { await recorder.startRecording(for: meeting) }
                         } : nil)
                         : (isExtracting ? nil : {
@@ -154,7 +164,7 @@ struct MeetingActionItemsPanelView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(isExtracting || recorder.postRecordingPipeline.isGeneratingAISummary)
+                    .disabled(isExtracting || recorder.postRecordingPipeline.isGenerating(for: meeting.id))
                     .help("Re-extract action items with latest transcript")
                 }
             }
@@ -168,6 +178,7 @@ struct MeetingActionItemsPanelView: View {
 
 private struct ActionItemRow: View {
     @Environment(MeetingStore.self) private var store
+    @State private var taskStore = TaskStore.shared
     let item: ActionItem
     let meetingID: UUID
     let meetingTitle: String
@@ -220,8 +231,34 @@ private struct ActionItemRow: View {
             }
 
             Spacer()
+
+            taskMarker
         }
         .padding(.vertical, 2)
+    }
+
+    // MARK: - Task Marker
+
+    /// The task this action item was promoted into, if any.
+    ///
+    /// Read-only on purpose. Writing the task's status back into the meeting would edit a
+    /// record of what was said because the user later changed their mind about the work.
+    private var promotedTask: TaskItem? {
+        taskStore.promotedTask(for: item.id)
+    }
+
+    @ViewBuilder
+    private var taskMarker: some View {
+        if let promotedTask {
+            let isDone = promotedTask.status == .done
+            Label(
+                isDone ? "Done in Tasks" : "In Tasks",
+                systemImage: isDone ? "checkmark.circle.fill" : "arrow.right.circle"
+            )
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .help("This action item was added to your tasks")
+        }
     }
 
     // MARK: - Due Date Control

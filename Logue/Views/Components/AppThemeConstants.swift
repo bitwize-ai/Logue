@@ -127,6 +127,12 @@ enum AppThemeConstants {
     static let paddingXXLarge: CGFloat = 24
     static let sectionSpacing: CGFloat = 28
 
+    /// The reading column on Home: the prompt bar and every card beneath it share this
+    /// width so they line up as one column instead of the cards spanning the window
+    /// while the input stays narrow. Named rather than repeated, because the whole point
+    /// is that these two measurements can never drift apart.
+    static let contentColumnWidth: CGFloat = 720
+
     // MARK: - Borders
 
     static let borderColor = dynamicColor(light: "E9E9E7", dark: "373737")

@@ -43,10 +43,15 @@ extension DiarizationManager {
         }
 
         guard let tokenTimings = result.tokenTimings, !tokenTimings.isEmpty else {
+            // No timings means nothing to realign against; the live transcript stands as it is.
+            lastBatchWords = []
             logger.warning("Batch ASR: no token timings — returning single segment")
             return [TranscriptSegment(text: trimmed, startTime: 0, endTime: result.duration)]
         }
 
+        lastBatchWords = TranscriptRealignment.words(fromTokens: tokenTimings.map {
+            TranscriptRealignment.TimedWord(text: $0.token, startTime: $0.startTime, endTime: $0.endTime)
+        })
         let segments = segmentsFromTokenTimings(tokenTimings)
         logger.info("Batch ASR: \(segments.count) segments, \(tokenTimings.count) tokens, RTFx \(String(format: "%.1f", result.rtfx))x")
         guard !segments.isEmpty else { return nil }
@@ -69,17 +74,20 @@ extension DiarizationManager {
             let speechRegions = try await vad.segmentSpeech(audioBuffer, config: segConfig)
             guard !speechRegions.isEmpty else { return segments }
 
-            let filtered = segments.filter { seg in
-                speechRegions.contains { region in
-                    region.endTime > seg.startTime && region.startTime < seg.endTime
+            let result = BatchTranscriptFilter.filter(
+                segments,
+                speechRegions: speechRegions.map {
+                    BatchTranscriptFilter.SpeechRegion(startTime: $0.startTime, endTime: $0.endTime)
                 }
+            )
+            if result.distrustedVAD {
+                logger.warning(
+                    "VAD wanted to remove most of the transcript — keeping all \(segments.count) segment(s)"
+                )
+            } else if result.removed > 0 {
+                logger.info("VAD removed \(result.removed) silence segment(s), \(result.segments.count) kept")
             }
-            let removed = segments.count - filtered.count
-            if removed > 0 {
-                logger.info("VAD removed \(removed) silence segment(s), \(filtered.count) kept")
-            }
-            // Guard against VAD over-filtering: fall back if everything was removed.
-            return filtered.isEmpty ? segments : filtered
+            return result.segments
         } catch {
             logger.warning("VAD filtering failed, returning unfiltered: \(error.localizedDescription, privacy: .public)")
             return segments

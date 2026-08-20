@@ -244,8 +244,16 @@ extension MeetingStore {
                 return
             }
 
-            await replaceAIBookmarks(with: highlights, for: meetingID)
-            logger.info("generateAIHighlights: added \(highlights.count) highlights to meeting \(meetingID, privacy: .public)")
+            // The model estimates its timestamps from the transcript text rather than hearing the
+            // recording, and the estimates cluster — a meeting's highlights all landing in its first
+            // minute. The transcript knows when things were said, so each highlight is moved to the
+            // line its words actually appear in.
+            let anchored = HighlightAnchor.anchored(highlights, to: meeting.segments)
+            let moved = zip(highlights, anchored).count { $0.timestamp != $1.timestamp }
+            await replaceAIBookmarks(with: anchored, for: meetingID)
+            logger.info(
+                "generateAIHighlights: added \(anchored.count) highlights (\(moved) re-anchored to the transcript)"
+            )
         } catch {
             logger.error("generateAIHighlights: \(error.localizedDescription, privacy: .public)")
         }
