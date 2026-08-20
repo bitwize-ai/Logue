@@ -167,6 +167,25 @@ struct CommandCenterChatView: View {
 
                 Spacer()
 
+                if conversationID != nil {
+                    Button {
+                        openInLogue()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.forward")
+                                .font(.caption2.weight(.semibold))
+                            Text("Open in Logue")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Continue this conversation in the main window")
+                }
+
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.caption2.weight(.bold))
@@ -432,6 +451,26 @@ struct CommandCenterChatView: View {
             // as a normal turn rather than silently dropping the send.
             coordinator.send(message: concept, conversationID: conversationID)
         }
+    }
+
+    /// Hands the island's thread to the main window and steps out of the way.
+    ///
+    /// Only reachable once a thread exists — before the first send there is nothing to carry,
+    /// and selecting a conversation that does not exist would leave the main window on an
+    /// empty landing state that looks like the send was lost.
+    ///
+    /// `chatFocusInput` rather than `chatNewConversation`: the latter *creates* a
+    /// conversation, which is the opposite of what this does. This one surfaces Home and
+    /// focuses the input, leaving the selected thread alone — which is what "continue this
+    /// conversation over there" means.
+    private func openInLogue() {
+        guard let conversationID else { return }
+        // Selecting before activating, so the window is already showing the right thread when
+        // it comes forward rather than visibly switching to it afterwards.
+        store.selectedConversationID = conversationID
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .chatFocusInput, object: nil)
+        onDismiss()
     }
 
     /// The island's thread, made on first use.
