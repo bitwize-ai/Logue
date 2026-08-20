@@ -466,6 +466,7 @@
 		A9B34E653A84128492DE6474 /* BlockRowView+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FB93A6E198E565413AD03FC /* BlockRowView+Actions.swift */; };
 		A9C752BABC79AFFA2C4FD4F2 /* RecordingSpliceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94CFFCAEABE322C125D85AF3 /* RecordingSpliceTests.swift */; };
 		AA1456FCC75FBB7DFEFC1BE0 /* SpaceFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382510F54B865B60B16FDE73 /* SpaceFileTests.swift */; };
+		AAD4545E8533F6E509CC380C /* ModeChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD351EF77433FF052A024BAF /* ModeChip.swift */; };
 		AAEF3C6465DC0A9EA911FE93 /* AgentRunStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86029AD56EBB4317FFDFB4E4 /* AgentRunStateTests.swift */; };
 		AB209D330BE40FEB735204C7 /* MermaidRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCEE1CC67630CF84E03498D5 /* MermaidRenderer.swift */; };
 		AB5ECDB7A635C2DB974F908D /* SeedDataBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9478E4D1E64E36CDE232568E /* SeedDataBannerView.swift */; };
@@ -1379,6 +1380,7 @@
 		FBCD9FE533E01D4D082FF3EC /* WritingNSTextView+ListContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WritingNSTextView+ListContinuation.swift"; sourceTree = "<group>"; };
 		FC17E4D853587B8D1F0BED80 /* DocumentIconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentIconPicker.swift; sourceTree = "<group>"; };
 		FCEBD05BEF5831C92DDDE40E /* SuggestionParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionParser.swift; sourceTree = "<group>"; };
+		FD351EF77433FF052A024BAF /* ModeChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeChip.swift; sourceTree = "<group>"; };
 		FD9DB88569857E33E72CCFAE /* OverviewRecentActivityCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewRecentActivityCard.swift; sourceTree = "<group>"; };
 		FDFC48D1348543B9A74105F1 /* SpaceStore+MarkdownFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SpaceStore+MarkdownFolder.swift"; sourceTree = "<group>"; };
 		FE07F5F09706EA33B61BEF24 /* DocumentTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTemplate.swift; sourceTree = "<group>"; };
@@ -2020,6 +2022,7 @@
 				C2A85CBFCD11CDF2FB693F73 /* InlineDiagramView.swift */,
 				8CCF492C5BB1691EC0946B25 /* InlineLaTeXView.swift */,
 				0AC3AC1CC9E373112B4CBCBC /* MemoryListView.swift */,
+				FD351EF77433FF052A024BAF /* ModeChip.swift */,
 				D1A491C56C1501F3D06F7734 /* PulsingDot.swift */,
 				2B203FDECC75AFF647507580 /* SourcesPanelView.swift */,
 				A4DB5AD462B4A863201D5D61 /* ToolApprovalButtons.swift */,
@@ -3089,6 +3092,7 @@
 				AB209D330BE40FEB735204C7 /* MermaidRenderer.swift in Sources */,
 				8E93C898597CE89098CAA75E /* MessageActions.swift in Sources */,
 				077711B2656A23EF7E7727AF /* MicrophoneSpeechGate.swift in Sources */,
+				AAD4545E8533F6E509CC380C /* ModeChip.swift in Sources */,
 				C5DD444112B8F0EBD6B1089D /* ModelAction.swift in Sources */,
 				E20DD767DAF8932B1D24E243 /* ModelChip.swift in Sources */,
 				E16818A635960352322D24E5 /* ModelConfiguration.swift in Sources */,

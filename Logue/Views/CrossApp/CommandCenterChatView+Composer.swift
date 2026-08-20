@@ -51,6 +51,21 @@ extension CommandCenterChatView {
             .disabled(isGenerating)
             .help("Attach files")
 
+            // Web search for this turn
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { isWebSearchOnce.toggle() }
+            } label: {
+                Image(systemName: "globe")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(
+                        isWebSearchOnce ? AppThemeConstants.brandPrimary : .white.opacity(0.4)
+                    )
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .disabled(isGenerating)
+            .help(isWebSearchOnce ? "Web search is on for this message" : "Search the web for this message")
+
             // Mic button
             Button {
                 voiceManager.toggle()
@@ -102,7 +117,7 @@ extension CommandCenterChatView {
         )
         .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
         .overlay(alignment: .top) {
-            if !attachments.isEmpty {
+            if !attachments.isEmpty || isWebSearchOnce {
                 attachmentChips
                     .offset(y: -34)
             }
@@ -122,6 +137,15 @@ extension CommandCenterChatView {
     /// What is staged for the next send, with a way to take each one back off.
     private var attachmentChips: some View {
         HStack(spacing: 6) {
+            if isWebSearchOnce {
+                ModeChip(
+                    title: "Search",
+                    systemImage: "globe",
+                    tint: AppThemeConstants.brandPrimary
+                ) {
+                    isWebSearchOnce = false
+                }
+            }
             ForEach(attachments) { attachment in
                 HStack(spacing: 4) {
                     Image(systemName: "doc")

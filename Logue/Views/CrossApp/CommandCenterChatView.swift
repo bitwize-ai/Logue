@@ -38,6 +38,15 @@ struct CommandCenterChatView: View {
     /// Files staged for the next send. The island could not accept any until the intake was
     /// lifted out of the main window's input bar — see `AttachmentIntake`.
     @State var attachments: [TempAttachment] = []
+    // Extension-visible: +Composer
+    /// Web search for the next send.
+    ///
+    /// The same `UserDefaults` key the main window's chip binds, because the coordinator reads
+    /// it too — three readers of one value rather than a copy per surface. It follows that the
+    /// island must clear it after a send exactly as the main window does, or a search switched
+    /// on here silently arms the next send over there.
+    @AppStorage(AppConstants.UserDefaultsKeys.oneShotWebSearch)
+    var isWebSearchOnce: Bool = false
     // Extension-visible: +Bubbles
     @State var copiedMessageID: UUID?
     // Extension-visible: +Bubbles
@@ -288,8 +297,12 @@ struct CommandCenterChatView: View {
 
         let conversationID = ensureConversation()
         let staged = attachments
+        let searchThisTurn = isWebSearchOnce
         inputText = ""
         attachments = []
+        // Cleared per send, like the main window's chip. Left set, a search switched on here
+        // would arm the next send in the other window too.
+        isWebSearchOnce = false
 
         // Re-focus input after state update
         Task {
@@ -301,11 +314,21 @@ struct CommandCenterChatView: View {
         case .agentLoop, .deepResearch:
             // Deep Research is unreachable from here — no chip lights it — and if it ever
             // becomes reachable it belongs on the same coordinator, not a second pipeline.
-            coordinator.send(message: text, conversationID: conversationID, attachments: staged)
+            coordinator.send(
+                message: text,
+                conversationID: conversationID,
+                attachments: staged,
+                oneShotWebSearch: searchThisTurn
+            )
         case let .imagePlayground(concept):
             // ImagePlayground presents a sheet, which a floating pill cannot host. Answer it
             // as a normal turn rather than silently dropping the send.
-            coordinator.send(message: concept, conversationID: conversationID, attachments: staged)
+            coordinator.send(
+                message: concept,
+                conversationID: conversationID,
+                attachments: staged,
+                oneShotWebSearch: searchThisTurn
+            )
         }
     }
 
