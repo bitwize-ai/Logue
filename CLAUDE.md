@@ -313,4 +313,27 @@ because nothing can infer them:
 release. It answers "what is this app for", not "what changed", and a newcomer handed the
 upgrade deck gets a dozen cards of features they have no context for yet.
 
+### Cutting a build for testing
+
+Tag `vX.Y.Z-rc.N` (or `-beta.N`) instead. The workflow builds, signs and notarizes it
+exactly as it would a real release and publishes it to GitHub Releases marked as a
+pre-release — but it **skips the appcast step**, so nothing is offered to installed copies.
+
+That skip is the whole point, and it is structural rather than remembered: `SUFeedURL`
+points at `appcast.xml` on `main`, so an entry landing there reaches every existing user.
+The version step decides pre-release once and both the GitHub Release flag and the appcast
+gate read that one value, so they cannot drift apart.
+
+Two things follow from the suffix:
+
+- **Leave `## [Unreleased]` where it is.** No `## [X.Y.Z-rc.N]` section exists, so the
+  extractor falls back to `[Unreleased]` — which is what the build is testing. Move it into
+  a versioned section when cutting the real release, not before.
+- **`AppVersion` orders `1.1.0-rc.1` as `1.1.0`.** The What's New pane therefore shows the
+  1.1.0 cards in the RC, which is what makes them testable — and a tester who has seen them
+  is not shown them again on the final build.
+
+Testers install the RC by downloading it from its GitHub Release. It will not auto-update
+to itself, and it *will* be offered the real release when that ships.
+
 Full runbook, including screenshots and the version stamp: **[docs/WHATS_NEW.md](docs/WHATS_NEW.md)**.
