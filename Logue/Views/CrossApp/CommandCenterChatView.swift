@@ -218,6 +218,11 @@ struct CommandCenterChatView: View {
                     }
                 }
             }
+
+            if let error = currentError {
+                errorBanner(error)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .frame(width: pillWidth)
         .frame(maxHeight: 420)
@@ -468,6 +473,57 @@ struct CommandCenterChatView: View {
             // as a normal turn rather than silently dropping the send.
             coordinator.send(message: concept, conversationID: conversationID)
         }
+    }
+
+    /// The error for this thread, if the last run left one.
+    ///
+    /// Scoped like every other read: an error from a run the main window started is that
+    /// window's to report, and showing it here would blame the island for something it did
+    /// not do.
+    private var currentError: String? {
+        guard let conversationID else { return nil }
+        return coordinator.lastError(in: conversationID)
+    }
+
+    /// Says when a send failed.
+    ///
+    /// The island had this and lost it when it moved onto the coordinator: the old bare
+    /// completion caught its own error and wrote "No AI model loaded" into the bubble, and
+    /// that path went away with the `chatStream` call. Without this the most likely failure
+    /// a first-time user hits — no model set up yet — makes the send appear to vanish.
+    ///
+    /// Narrower than the main window's banner because the pill is narrow: the same
+    /// dismissable shape, without the second line of detail there is no room for.
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(AppThemeConstants.error)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 0)
+
+            Button {
+                withAnimation { coordinator.dismissError() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(3)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(AppThemeConstants.error.opacity(AppThemeConstants.hoverOpacity))
     }
 
     /// Hands the island's thread to the main window and steps out of the way.
