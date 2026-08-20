@@ -314,6 +314,23 @@ struct CommandCenterChatView: View {
             }
             .buttonStyle(.plain)
 
+            Button {
+                MessageActions.exportMarkdown(message.content)
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.caption2.weight(.medium))
+                    Text("Export")
+                        .font(.caption2.weight(.medium))
+                }
+                .foregroundStyle(Color.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.primary.opacity(0.04)))
+            }
+            .buttonStyle(.plain)
+            .help("Export as Markdown")
+
             Button { speakMessage(message) } label: {
                 HStack(spacing: 3) {
                     Image(systemName: speakingMessageID == message.id ? "stop.fill" : "speaker.wave.2")
@@ -526,11 +543,7 @@ struct CommandCenterChatView: View {
     }
 
     private func saveMessageAsNote(_ message: EphemeralChatMessage) {
-        let doc = DocumentStore.shared.createDocument(title: "Chat Note")
-        var updated = doc
-        updated.body = message.content
-        DocumentStore.shared.updateDocument(updated)
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        MessageActions.saveAsNote(message.content)
         savedMessageID = message.id
         Task {
             try? await Task.sleep(for: AppConstants.Delays.toastDismiss)
@@ -541,9 +554,7 @@ struct CommandCenterChatView: View {
     }
 
     private func copyToClipboard(_ message: EphemeralChatMessage) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(message.content, forType: .string)
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        MessageActions.copyToClipboard(message.content)
         copiedMessageID = message.id
         Task {
             try? await Task.sleep(for: AppConstants.Delays.toastDismiss)

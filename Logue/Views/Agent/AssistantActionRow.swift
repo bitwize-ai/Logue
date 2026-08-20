@@ -8,6 +8,9 @@ import UniformTypeIdentifiers
 struct AssistantActionRow: View {
     let content: String
     @State private var chartTable: ChartTable?
+    /// Ticks the save button for a moment, so the action confirms itself where it happened
+    /// rather than only in a toast the user may be looking away from.
+    @State private var savedNote = false
 
     @State private var readAloud = AgentReadAloudService.shared
 
@@ -18,7 +21,7 @@ struct AssistantActionRow: View {
     var body: some View {
         HStack(spacing: 4) {
             Button {
-                copyToClipboard(content)
+                MessageActions.copyToClipboard(content)
             } label: {
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 11))
@@ -30,7 +33,24 @@ struct AssistantActionRow: View {
             .help("Copy response")
 
             Button {
-                exportMarkdown(content)
+                MessageActions.saveAsNote(content)
+                savedNote = true
+                Task {
+                    try? await Task.sleep(for: AppConstants.Delays.toastDismiss)
+                    savedNote = false
+                }
+            } label: {
+                Image(systemName: savedNote ? "checkmark" : "square.and.arrow.down")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(5)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Save response as a note")
+
+            Button {
+                MessageActions.exportMarkdown(content)
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 11))
@@ -82,30 +102,6 @@ struct AssistantActionRow: View {
     }
 
     // MARK: - Helpers
-
-    private func copyToClipboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        HapticFeedback.copy()
-        Task { @MainActor in
-            ToastCenter.shared.show(UICopy.Toast.copied)
-        }
-    }
-
-    private func exportMarkdown(_ text: String) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType("net.daringfireball.markdown") ?? .plainText]
-        panel.nameFieldStringValue = "logue-response.md"
-        panel.canCreateDirectories = true
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            do {
-                try text.write(to: url, atomically: true, encoding: .utf8)
-            } catch {
-                NSLog("Failed to export markdown: \(error.localizedDescription)")
-            }
-        }
-    }
 }
 
 // MARK: - ChartTable Identifiable
