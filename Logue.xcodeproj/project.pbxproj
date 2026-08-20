@@ -334,6 +334,7 @@
 		7328DEDD5667BF5F7A16A4C2 /* TranscriptionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E668898070AF96B807C38D40 /* TranscriptionGate.swift */; };
 		734957AB953D227AAB99B235 /* MarkdownFolderScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECE5E10FE57E5C4B9E6658E /* MarkdownFolderScan.swift */; };
 		741C509F3A43CBF008D9C4BC /* ModelManager+Discovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9230215EEC7592F9378CA66C /* ModelManager+Discovery.swift */; };
+		74E1ECCB2472ED6957C5E552 /* CommandCenterChatView+Bubbles.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7847A3DB8F8CA72ECAE813F /* CommandCenterChatView+Bubbles.swift */; };
 		7574BF423E60FC56B9897A92 /* DeepResearchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293A43BD40C7FE1683585702 /* DeepResearchModels.swift */; };
 		7596EB185C35404F37571D7B /* TaskTextCommitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F736650FD9301A96321554D6 /* TaskTextCommitTests.swift */; };
 		75E00B6D645BDF14E88D8DDB /* DocumentSearchState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D771D4ECF4472264165F1C /* DocumentSearchState.swift */; };
@@ -1353,6 +1354,7 @@
 		F6EA5546BBF8C4D1187CD26E /* LangGraph-Swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "LangGraph-Swift"; path = "Vendor/LangGraph-Swift"; sourceTree = SOURCE_ROOT; };
 		F736650FD9301A96321554D6 /* TaskTextCommitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTextCommitTests.swift; sourceTree = "<group>"; };
 		F773F30D16F4FF92E56320E1 /* HomeContinueGridTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeContinueGridTests.swift; sourceTree = "<group>"; };
+		F7847A3DB8F8CA72ECAE813F /* CommandCenterChatView+Bubbles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CommandCenterChatView+Bubbles.swift"; sourceTree = "<group>"; };
 		F78B9E200B32B9974F32CF7D /* LLMResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMResponseParser.swift; sourceTree = "<group>"; };
 		F7B886861180D41A132F1B6A /* AgentChatView+Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentChatView+Input.swift"; sourceTree = "<group>"; };
 		F7E1089CE3E964A5BC0545A8 /* whatsnew-wikilinks.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-wikilinks.png"; sourceTree = "<group>"; };
@@ -2280,6 +2282,7 @@
 			isa = PBXGroup;
 			children = (
 				19129D8F0F9161BC3E21AA0F /* CommandCenterChatView.swift */,
+				F7847A3DB8F8CA72ECAE813F /* CommandCenterChatView+Bubbles.swift */,
 				7ABC89CED798F0088E00B682 /* CommandCenterComposeView.swift */,
 				E7300054D056065027CC1FF3 /* CommandCenterNewMeetingView.swift */,
 				24578E3A172E90DC703D4C9D /* CommandCenterPIIView.swift */,
@@ -2870,6 +2873,7 @@
 				064963B61C0242F39204C049 /* CodeSyntaxHighlighter.swift in Sources */,
 				1CF5D6AE20C1BDE279762B9F /* ComingSoonPanelView.swift in Sources */,
 				4BD0DCD9E20A28C06D40AF62 /* CommandCenterChatRule.swift in Sources */,
+				74E1ECCB2472ED6957C5E552 /* CommandCenterChatView+Bubbles.swift in Sources */,
 				E5DF85C2C0803078D80C350C /* CommandCenterChatView.swift in Sources */,
 				5CBFF3B40F91960EC8178989 /* CommandCenterComposeView.swift in Sources */,
 				99FCB8FEB17A1DA884E6892C /* CommandCenterController.swift in Sources */,

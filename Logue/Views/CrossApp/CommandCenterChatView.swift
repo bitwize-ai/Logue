@@ -33,9 +33,12 @@ struct CommandCenterChatView: View {
     @State private var store = AgentConversationStore.shared
     @State private var coordinator = AgentCoordinator.shared
     @State private var inputText: String = ""
-    @State private var copiedMessageID: UUID?
-    @State private var savedMessageID: UUID?
-    @State private var speakingMessageID: UUID?
+    // Extension-visible: +Bubbles
+    @State var copiedMessageID: UUID?
+    // Extension-visible: +Bubbles
+    @State var savedMessageID: UUID?
+    // Extension-visible: +Bubbles
+    @State var speakingMessageID: UUID?
     @State private var synthesizer = AVSpeechSynthesizer()
     @FocusState private var isInputFocused: Bool
 
@@ -234,123 +237,6 @@ struct CommandCenterChatView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
         )
-    }
-
-    // MARK: - Message Bubbles
-
-    private func messageBubble(_ message: EphemeralChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            if message.isUser {
-                Spacer(minLength: 120)
-            }
-
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 5) {
-                if message.isUser {
-                    Text(message.content)
-                        .font(AppThemeConstants.chatMessageFont)
-                        .foregroundStyle(.white)
-                        .textSelection(.enabled)
-                        .lineSpacing(3)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(AppThemeConstants.brandPrimary)
-                        )
-                } else {
-                    markdownContent(message)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color.primary.opacity(0.06))
-                        )
-                }
-
-                if !message.isUser, !message.isStreaming, !message.content.isEmpty {
-                    actionButtons(message)
-                }
-            }
-
-            if !message.isUser {
-                Spacer(minLength: 120)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func markdownContent(_ message: EphemeralChatMessage) -> some View {
-        let displayText = message.content.isEmpty && message.isStreaming ? "..." : message.content
-        StructuredText(markdown: displayText)
-            .font(AppThemeConstants.chatMessageFont)
-            .textual.structuredTextStyle(.gitHub)
-            .textual.inlineStyle(.gitHub)
-            .foregroundStyle(.primary)
-            .textSelection(.enabled)
-    }
-
-    private func actionButtons(_ message: EphemeralChatMessage) -> some View {
-        HStack(spacing: 4) {
-            Button { copyToClipboard(message) } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: copiedMessageID == message.id ? "checkmark" : "doc.on.doc")
-                        .font(.caption2.weight(.medium))
-                    Text(copiedMessageID == message.id ? "Copied" : "Copy")
-                        .font(.caption2.weight(.medium))
-                }
-                .foregroundStyle(copiedMessageID == message.id ? AppThemeConstants.success : Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-
-            Button { saveMessageAsNote(message) } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: savedMessageID == message.id ? "checkmark" : "square.and.arrow.down")
-                        .font(.caption2.weight(.medium))
-                    Text(savedMessageID == message.id ? "Saved" : "Save")
-                        .font(.caption2.weight(.medium))
-                }
-                .foregroundStyle(savedMessageID == message.id ? AppThemeConstants.success : Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                MessageActions.exportMarkdown(message.content)
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.caption2.weight(.medium))
-                    Text("Export")
-                        .font(.caption2.weight(.medium))
-                }
-                .foregroundStyle(Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-            .help("Export as Markdown")
-
-            Button { speakMessage(message) } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: speakingMessageID == message.id ? "stop.fill" : "speaker.wave.2")
-                        .font(.caption2.weight(.medium))
-                    Text(speakingMessageID == message.id ? "Stop" : "Speak")
-                        .font(.caption2.weight(.medium))
-                }
-                .foregroundStyle(speakingMessageID == message.id ? AppThemeConstants.error : Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.leading, 2)
     }
 
     // MARK: - Prompt Pill
@@ -579,7 +465,8 @@ struct CommandCenterChatView: View {
         isInputFocused = true
     }
 
-    private func speakMessage(_ message: EphemeralChatMessage) {
+    // Extension-visible: +Bubbles
+    func speakMessage(_ message: EphemeralChatMessage) {
         if speakingMessageID == message.id {
             synthesizer.stopSpeaking(at: .immediate)
             speakingMessageID = nil
@@ -598,7 +485,8 @@ struct CommandCenterChatView: View {
         synthesizer.speak(utterance)
     }
 
-    private func saveMessageAsNote(_ message: EphemeralChatMessage) {
+    // Extension-visible: +Bubbles
+    func saveMessageAsNote(_ message: EphemeralChatMessage) {
         MessageActions.saveAsNote(message.content)
         savedMessageID = message.id
         Task {
@@ -609,7 +497,8 @@ struct CommandCenterChatView: View {
         }
     }
 
-    private func copyToClipboard(_ message: EphemeralChatMessage) {
+    // Extension-visible: +Bubbles
+    func copyToClipboard(_ message: EphemeralChatMessage) {
         MessageActions.copyToClipboard(message.content)
         copiedMessageID = message.id
         Task {
