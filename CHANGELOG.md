@@ -18,9 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recordings that survive the worst.** Unplug a headset mid-call, mute for ten minutes, or
   quit the app outright — the recording keeps its place on the meeting's timeline and the
   transcript is rebuilt when Logue reopens, instead of ending where the trouble started.
-- **A Logue extension for Chrome.** Captures what happens in the tab — a call joined from the
-  browser, a page you are reading — and hands it to the same on-device transcription and
-  notes. Install it from the Chrome Web Store; it is listed in What's New with a link.
+- **A Logue extension for Chrome.** Brings Logue's chat and writing tools into any tab,
+  answered by the model on this Mac. Install it from the Chrome Web Store; What's New links to
+  it, and Help → Get the Chrome Extension keeps the link afterwards.
+
+### Changed
+
+- **Logue now accepts the browser extension's connection by default.** The loopback bridge the
+  extension talks to shipped off, which meant the extension did nothing until a switch in
+  Settings → Privacy was found — and almost nobody found it. It listens on your Mac's loopback
+  address only, so nothing off the machine can reach it, and a notice on Home says plainly that
+  it is listening and carries the switch to stop it. Anyone who turned it off deliberately stays
+  off; the new default only applies where no choice was recorded.
 - **What's New after an update.** Logue now says what a release changed, showing only the
   versions you have not already seen — several at once if you skipped some. Because nothing
   has ever been announced in-app, this first one covers everything shipped so far. A fresh

@@ -33,6 +33,27 @@ struct WhatsNewCatalogTests {
         #expect(try #require(release110).features.map(\.id).contains("cross-app") == false)
     }
 
+    @Test("The back catalogue is two recap cards, not a re-teaching of the app")
+    func backCatalogueIsCondensed() throws {
+        let ids = try #require(release110).features.map(\.id)
+        #expect(ids.prefix(2) == ["recap-capture", "recap-privacy"])
+
+        // The individual back-catalogue cards belong to the tour now. Someone upgrading
+        // opened this to find out what changed; every card spent on what they already use is
+        // one they click past to get there.
+        for retired in ["meeting-transcription", "smart-minutes", "writing-editor", "privacy"] {
+            #expect(ids.contains(retired) == false, "\(retired) should not be in the release deck")
+        }
+    }
+
+    @Test("Most of the deck is what this release added")
+    func theNewHalfDominates() throws {
+        let features = try #require(release110).features
+        let recap = features.filter { $0.id.hasPrefix("recap-") }.count
+        #expect(recap == 2)
+        #expect(features.count - recap > recap, "the new half should be the bulk of the deck")
+    }
+
     // MARK: - The card that leaves the app
 
     @Test("The Chrome extension card carries a link to the store listing")

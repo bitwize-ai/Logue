@@ -37,6 +37,9 @@ struct LogueApp: App {
         // Must run before any store singleton resolves its Application Support
         // directory or reads UserDefaults — see SandboxContainerMigrator.
         SandboxContainerMigrator.migrateIfNeeded()
+
+        // Before anything reads the setting, and before `@AppStorage` binds to it.
+        BrowserBridgeSettings.registerDefault()
     }
 
     var body: some Scene {

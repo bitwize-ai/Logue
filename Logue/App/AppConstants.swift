@@ -50,7 +50,12 @@ enum AppConstants {
         static let documentStorageMode = "documentStorageMode"
         static let unwritableDocuments = "unwritableDocuments"
 
-        /// Opt-in: whether the loopback server for the browser extension is running.
+        /// When the browser-extension callout was first shown, so its week can expire.
+        static let browserExtensionPromoFirstShown = "browserExtensionPromoFirstShown"
+        /// Whether the user closed the browser-extension callout.
+        static let browserExtensionPromoDismissed = "browserExtensionPromoDismissed"
+
+        /// On by default as of 1.1.0 — see `BrowserBridgeSettings` for the trade.
         static let browserBridgeEnabled = "browserBridgeEnabled"
         static let groupByDate = "groupByDate"
         static let customAPIModels = "CustomAPIModels"

@@ -11,7 +11,9 @@ struct BrowserExtensionSection: View {
     /// `@AppStorage` rather than a `@State` snapshot: the latter read the default once at view
     /// init and never again, so anything else toggling the setting would leave this switch
     /// showing the opposite of the truth.
-    @AppStorage(AppConstants.UserDefaultsKeys.browserBridgeEnabled) private var isEnabled = false
+    /// Matches the registered default, so the switch reads "on" on a fresh install rather than
+    /// showing the opposite of what the server is doing.
+    @AppStorage(AppConstants.UserDefaultsKeys.browserBridgeEnabled) private var isEnabled = true
     @State private var modelManager = ModelManager.shared
 
     /// Whether answers would be produced by an external provider rather than on this Mac.

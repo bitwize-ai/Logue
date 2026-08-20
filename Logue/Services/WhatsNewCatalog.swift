@@ -129,6 +129,36 @@ enum WhatsNewCatalog {
             string: "https://chromewebstore.google.com/detail/logue/gaegipceeccdchdffamdphfiegfeenhc"
         )!
 
+        // MARK: Recap, for the release deck only
+
+        /// The back catalogue as two cards instead of four. An upgrading user already owns
+        /// the app; re-teaching them transcription card by card buries the thing they opened
+        /// the deck for. The tour still introduces these one at a time, because a newcomer
+        /// has not seen any of it — the two lists exist to be different.
+        static let recapCapture = WhatsNewFeature(
+            id: "recap-capture",
+            symbol: "waveform",
+            title: "Everything you already had",
+            detail: """
+            Meetings that transcribe themselves from both sides of the call, Smart Minutes \
+            and action items written from the transcript, and a real editor for the notes \
+            that come out of it.
+            """,
+            screenshot: "whatsnew-transcription"
+        )
+
+        static let recapPrivacy = WhatsNewFeature(
+            id: "recap-privacy",
+            symbol: "lock.shield",
+            title: "…and it never left your Mac",
+            detail: """
+            Transcription, summaries and search all run on this machine, on your own \
+            models. Spaces and wiki-links keep the notes findable. Nothing is uploaded \
+            unless you turn on a feature that says so.
+            """,
+            screenshot: "whatsnew-privacy"
+        )
+
         static let chromeExtension = WhatsNewFeature(
             id: "chrome-extension",
             symbol: "puzzlepiece.extension.fill",
@@ -303,18 +333,14 @@ enum WhatsNewCatalog {
         WhatsNewRelease(
             version: AppVersion(major: 1, minor: 1, patch: 0),
             features: [
-                // Already there — the four pillars only. The back catalogue was longer,
-                // and adding this release's own features pushed the deck to sixteen cards,
-                // which `releaseNotesAreBounded` rejects for the right reason: past a dozen
-                // it stops being read. `spacesAndSearch` and `externalProviders` lost their
-                // slots as the tail of the catalogue rather than the point of it, and
-                // `askLogue` because `homeSurface` below now shows that surface — keeping
-                // both says the same thing twice, once as old and once as new.
-                Feature.meetings,
-                Feature.smartMinutes,
-                Feature.writingEditor,
-                Feature.privacy,
-                // New — what these releases added.
+                // The back catalogue, as two recap cards. It used to be eight, then four;
+                // both were the same mistake in different sizes. Someone upgrading opened
+                // this to find out what changed, and every card spent on what they already
+                // use is one they click past to get there.
+                Feature.recapCapture,
+                Feature.recapPrivacy,
+                // New — what these releases added, one card each. This is the half the deck
+                // is for, so it is the half that gets the room.
                 Feature.homeSurface,
                 Feature.tasks,
                 Feature.recordingResilience,

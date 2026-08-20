@@ -64,6 +64,7 @@ struct HomeLandingView: View {
     @ViewBuilder
     private var stockedCards: some View {
         SeedDataBannerView()
+        BrowserExtensionBannerView()
         HomeAttentionCard(onStartMeeting: startMeetingFromEvent, onAsk: onPrefill)
         HomeContinueSection(onAsk: onPrefill)
         HomeQuickActions(
