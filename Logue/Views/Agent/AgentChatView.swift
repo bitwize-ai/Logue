@@ -276,10 +276,13 @@ struct AgentChatView: View {
     private func hasMessagesLayout(conversation: AgentConversation) -> some View {
         MessageListView(
             messages: conversation.messages,
-            activeToolCalls: coordinator.activeToolCalls,
-            isProcessing: coordinator.isProcessing,
-            isStreaming: coordinator.isStreaming,
-            streamingText: coordinator.streamingText,
+            // Scoped to the conversation on screen. Read globally, a run started from the
+            // Command Center island would paint its spinner, its streaming text and its
+            // tool cards onto whatever thread this view happens to be showing.
+            activeToolCalls: coordinator.activeToolCalls(in: conversation.id),
+            isProcessing: coordinator.isProcessing(in: conversation.id),
+            isStreaming: coordinator.isStreaming(in: conversation.id),
+            streamingText: coordinator.streamingText(in: conversation.id),
             conversationID: conversation.id,
             scrollToTopTrigger: scrollToTopTrigger,
             scrollTargetID: scrollTargetID,
@@ -292,7 +295,7 @@ struct AgentChatView: View {
             }
         )
 
-        if let error = coordinator.lastError {
+        if let error = coordinator.lastError(in: conversation.id) {
             errorBanner(error)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
@@ -315,7 +318,7 @@ struct AgentChatView: View {
             inputText: $inputText,
             focusRequest: focusRequest,
             attachments: $inputAttachments,
-            isProcessing: coordinator.isProcessing || deepResearchCoordinator.isRunning,
+            isProcessing: isThisConversationProcessing || deepResearchCoordinator.isRunning,
             isBusy: isBusy,
             onSend: {
                 let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -363,7 +366,7 @@ struct AgentChatView: View {
                 }
             }
         )
-        .disabled(isBusy && !coordinator.isProcessing)
+        .disabled(isBusy && !isThisConversationProcessing)
     }
 
     // MARK: - Window Toolbar
@@ -414,12 +417,27 @@ struct AgentChatView: View {
         }
     }
 
+    /// Whether the live run belongs to the conversation this view is showing.
+    ///
+    /// `false` with no conversation selected: a surface showing nothing has no run of its
+    /// own, and answering `true` here is how the main window would report the island's work.
+    private var isThisConversationProcessing: Bool {
+        guard let id = activeConversation?.id else { return false }
+        return coordinator.isProcessing(in: id)
+    }
+
+    private var isThisConversationStreaming: Bool {
+        guard let id = activeConversation?.id else { return false }
+        return coordinator.isStreaming(in: id)
+    }
+
     private var topBarSubtitle: String {
         let messageCount = activeConversation?.messages.count ?? 0
-        if coordinator.isStreaming || coordinator.isProcessing {
+        if isThisConversationStreaming || isThisConversationProcessing {
             // Vary the subtitle by the active tool so users see what the
             // agent is actually doing, not a static "Thinking…".
-            let activeTool = coordinator.activeToolCalls.last?.toolName
+            let activeTool = activeConversation
+                .map { coordinator.activeToolCalls(in: $0.id) }?.last?.toolName
             return UICopy.Status.describe(toolName: activeTool)
         }
         if messageCount == 0 {
