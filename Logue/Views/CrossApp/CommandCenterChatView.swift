@@ -2,23 +2,6 @@ import AVFoundation
 import SwiftUI
 import Textual
 
-/// One bubble in the island, mapped from the conversation's `AgentMessage`.
-///
-/// No longer ephemeral despite the name: it is a view model over stored messages, and `id`
-/// is the stored message's, so bubbles keep their identity across a re-render rather than
-/// being reissued every time the mapping runs.
-struct EphemeralChatMessage: Identifiable, Equatable {
-    let id: UUID
-    var content: String
-    let isUser: Bool
-    var isStreaming: Bool
-    let timestamp: Date
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.id == rhs.id && lhs.content == rhs.content && lhs.isStreaming == rhs.isStreaming
-    }
-}
-
 /// Bottom-centered chat island.
 /// Prompt pill at bottom, messages float above with glass backdrop.
 struct CommandCenterChatView: View {
@@ -62,34 +45,31 @@ struct CommandCenterChatView: View {
         .shared
     }
 
-    /// The island's thread, as the bubbles want it.
+    /// The island's thread as stored.
     ///
     /// Read from the store rather than held here. That is the whole point of the change: the
     /// island used to keep its own array and throw it away on dismiss, so a question asked
     /// here had no history, no tools and no memory. It is now the same conversation the rest
     /// of Logue can see.
-    private var messages: [EphemeralChatMessage] {
+    private var storedMessages: [AgentMessage] {
         guard let conversationID,
               let conversation = store.conversations.first(where: { $0.id == conversationID })
         else { return [] }
+        return conversation.messages
+    }
 
-        let live = coordinator.isStreaming(in: conversationID)
-        return conversation.messages.enumerated().compactMap { index, message in
-            switch message.role {
-            case .user, .assistant: break
-            // Tool and system turns are the agent's bookkeeping. The main window renders
-            // them as cards; the island is a pill over someone else's app and has no room.
-            default: return nil
-            }
-            let isLast = index == conversation.messages.count - 1
-            return EphemeralChatMessage(
-                id: message.id,
-                content: message.content,
-                isUser: message.role == .user,
-                isStreaming: live && isLast && message.role == .assistant,
-                timestamp: message.timestamp
-            )
-        }
+    /// What the island draws: the turns, and the work the agent did between them.
+    private var rows: [IslandRow] {
+        guard let conversationID else { return [] }
+        return IslandThread.rows(
+            for: storedMessages,
+            isStreaming: coordinator.isStreaming(in: conversationID)
+        )
+    }
+
+    /// Whether there is anything in the thread at all — the pill stands alone until there is.
+    private var hasContent: Bool {
+        !rows.isEmpty
     }
 
     // Extension-visible: +Composer
@@ -103,14 +83,14 @@ struct CommandCenterChatView: View {
 
     private var content: CommandCenterChatContent {
         CommandCenterChatContent(
-            hasMessages: !messages.isEmpty,
+            hasMessages: hasContent,
             hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         )
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if !messages.isEmpty {
+            if hasContent {
                 messagesPanel
                     .padding(.bottom, 10)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -119,7 +99,7 @@ struct CommandCenterChatView: View {
             promptPill
         }
         .frame(width: pillWidth)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: messages.isEmpty)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: hasContent)
         .onAppear {
             isInputFocused = true
             voiceManager.onTranscriptReady = { transcript in
@@ -138,7 +118,7 @@ struct CommandCenterChatView: View {
             }
             synthesizer.stopSpeaking(at: .immediate)
         }
-        .onChange(of: messages.count) { _, _ in
+        .onChange(of: rows.count) { _, _ in
             onContentChanged(content)
         }
         .onChange(of: inputText) { _, _ in
@@ -222,16 +202,16 @@ struct CommandCenterChatView: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 14) {
-                        ForEach(messages) { message in
-                            messageBubble(message)
-                                .id(message.id)
+                        ForEach(rows) { row in
+                            islandRow(row)
+                                .id(row.id)
                         }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
                 }
-                .onChange(of: messages) { _, newMessages in
-                    if let last = newMessages.last {
+                .onChange(of: rows) { _, newRows in
+                    if let last = newRows.last {
                         withAnimation(.easeOut(duration: 0.15)) {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
@@ -348,9 +328,7 @@ struct CommandCenterChatView: View {
         guard let conversationID,
               let conversation = store.conversations.first(where: { $0.id == conversationID })
         else { return [] }
-        return conversation.messages
-            .flatMap(\.toolCalls)
-            .filter { $0.status == .needsConfirmation }
+        return AgentToolTimeline.awaitingApproval(in: conversation.messages)
     }
 
     /// The error for this thread, if the last run left one.

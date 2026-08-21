@@ -7,6 +7,22 @@ import Textual
 /// error banner. Rendering is the cohesive half: the view itself is now the panel, the prompt
 /// pill and the wiring to the coordinator, and this is what a message looks like.
 extension CommandCenterChatView {
+    /// One row: a turn, or a card for work the agent did between turns.
+    ///
+    /// The card is the same `ToolExecutionCard` the main window uses rather than an island
+    /// variant, per #61's rule that a feature is mounted by both surfaces and not drawn twice.
+    /// It has no `conversationID`, which is what keeps it read-only: approval belongs to the
+    /// strip pinned above the pill, where an answer cannot scroll out of reach.
+    @ViewBuilder
+    func islandRow(_ row: IslandRow) -> some View {
+        switch row {
+        case let .message(message):
+            messageBubble(message)
+        case let .tool(entry):
+            ToolExecutionCard(toolCall: entry.call, result: entry.result, conversationID: nil)
+        }
+    }
+
     /// The panel in `CommandCenterChatView` renders this, so it crosses the file boundary.
     func messageBubble(_ message: EphemeralChatMessage) -> some View {
         HStack(alignment: .top, spacing: 0) {

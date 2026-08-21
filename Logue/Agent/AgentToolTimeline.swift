@@ -24,7 +24,9 @@ enum AgentToolTimeline {
         /// `displayStatus(of:result:)`.
         let status: AgentToolCallStatus
 
-        var id: UUID { call.id }
+        var id: UUID {
+            call.id
+        }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.call.id == rhs.call.id
