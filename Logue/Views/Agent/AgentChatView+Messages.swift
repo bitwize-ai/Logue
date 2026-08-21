@@ -314,26 +314,10 @@ extension AgentChatView {
 
         private func toolCallView(_ message: AgentMessage) -> some View {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(message.toolCalls) { call in
-                    // Find matching result in subsequent messages
-                    let result = findResult(for: call.id, in: messages)
-                    // If the stored status is .needsConfirmation but a result has arrived, the
-                    // approval was resolved elsewhere — treat it as completed/failed.
-                    let displayStatus: AgentToolCallStatus = {
-                        if let result {
-                            return result.isError ? .failed : .completed
-                        }
-                        return call.status
-                    }()
+                ForEach(AgentToolTimeline.entries(in: message, allMessages: messages)) { entry in
                     ToolExecutionCard(
-                        toolCall: AgentToolCall(
-                            id: call.id,
-                            toolName: call.toolName,
-                            arguments: call.arguments,
-                            status: displayStatus,
-                            clearance: call.clearance
-                        ),
-                        result: result,
+                        toolCall: entry.call,
+                        result: entry.result,
                         conversationID: conversationID
                     )
                 }
@@ -345,16 +329,6 @@ extension AgentChatView {
             // Tool results are displayed inline in the ToolExecutionCard above
             // so we render them as invisible to avoid duplication
             EmptyView()
-        }
-
-        /// Finds the tool result matching a tool call ID from subsequent messages.
-        private func findResult(for toolCallID: UUID, in messages: [AgentMessage]) -> AgentToolResult? {
-            for message in messages where message.role == .toolResult {
-                if let result = message.toolResult, result.toolCallID == toolCallID {
-                    return result
-                }
-            }
-            return nil
         }
 
         // MARK: - Clipboard / Export
