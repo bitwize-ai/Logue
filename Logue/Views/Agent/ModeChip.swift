@@ -1,0 +1,37 @@
+import SwiftUI
+
+/// A mode that is on for the next send, with a way to turn it off.
+///
+/// Lifted out of `InputBarView` so the Command Center island shows the same chip rather than
+/// drawing its own. The modes are stored in `UserDefaults` and read by both surfaces *and* by
+/// the coordinator, so a chip that looked different on one of them would be describing the
+/// same state in two voices.
+struct ModeChip: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    /// Turns the mode off. The `×` exists so a mode can be dropped without reopening the menu
+    /// that set it.
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.caption)
+            Text(title)
+                .font(.caption.weight(.medium))
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .help("Turn off \(title)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .foregroundStyle(tint)
+        .background(Capsule().fill(tint.opacity(0.14)))
+        .overlay(Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 0.5))
+        .transition(.scale.combined(with: .opacity))
+    }
+}

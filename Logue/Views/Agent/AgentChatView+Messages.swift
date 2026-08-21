@@ -141,7 +141,7 @@ extension AgentChatView {
                 // Copy + Edit actions
                 HStack(spacing: 4) {
                     Button {
-                        copyToClipboard(message.content)
+                        MessageActions.copyToClipboard(message.content)
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 11))
@@ -358,29 +358,5 @@ extension AgentChatView {
         }
 
         // MARK: - Clipboard / Export
-
-        private func copyToClipboard(_ text: String) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            HapticFeedback.copy()
-            Task { @MainActor in
-                ToastCenter.shared.show(UICopy.Toast.copied)
-            }
-        }
-
-        private func exportMarkdown(_ text: String) {
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [UTType("net.daringfireball.markdown") ?? .plainText]
-            panel.nameFieldStringValue = "logue-response.md"
-            panel.canCreateDirectories = true
-            panel.begin { response in
-                guard response == .OK, let url = panel.url else { return }
-                do {
-                    try text.write(to: url, atomically: true, encoding: .utf8)
-                } catch {
-                    NSLog("Failed to export markdown: \(error.localizedDescription)")
-                }
-            }
-        }
     }
 }
