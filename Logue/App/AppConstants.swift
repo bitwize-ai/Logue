@@ -77,6 +77,8 @@ enum AppConstants {
         /// Comma-separated list of tool names the user has disabled in Settings.
         /// The registry strips these on every rebuild.
         static let disabledAgentTools = "agent.disabledTools"
+        /// The user's MCP servers. Configuration, not secrets — see `MCPServerStore`.
+        static let mcpServers = "agent.mcpServers"
         /// The marker of the tasks folder this app last used. Remembered so a folder
         /// minted while the real one was missing can be told from a copy of it.
         static let lastTaskFolderMarker = "lastTaskFolderMarker"
