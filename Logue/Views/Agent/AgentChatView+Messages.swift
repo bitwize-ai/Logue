@@ -46,11 +46,17 @@ extension AgentChatView {
                                 .id("active-\(call.id.uuidString)")
                         }
 
-                        // Processing indicator (only when not streaming and no tool calls active)
-                        if isProcessing, activeToolCalls.isEmpty, !isStreaming {
+                        // When to show this, and what it says, are both shared with the
+                        // island — see `AgentThinkingState`.
+                        if AgentThinkingState.showsThinking(
+                            isProcessing: isProcessing,
+                            isStreaming: isStreaming,
+                            pendingAnswerText: streamingText,
+                            hasActiveToolCard: !activeToolCalls.isEmpty
+                        ) {
                             HStack(spacing: 8) {
                                 PulsingDot()
-                                Text("Thinking…")
+                                Text(AgentThinkingState.label(activeToolName: activeToolCalls.last?.toolName))
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                             }

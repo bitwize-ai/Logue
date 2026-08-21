@@ -9,13 +9,23 @@ struct VoiceInputIndicator: View {
 
     @State private var pulse = false
 
+    /// The dot pulses to say the mic is live. "Listening..." beside it says the same thing,
+    /// so the pulse can stop. The level meter below is left alone deliberately — its movement
+    /// *is* the reading, and a still meter is not a calmer meter, it is a broken one.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(AppThemeConstants.error)
                 .frame(width: 8, height: 8)
                 .opacity(pulse ? 1 : 0.4)
-                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+                .animation(
+                    IslandMotion.allowsPulse(reduceMotion: reduceMotion)
+                        ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                        : nil,
+                    value: pulse
+                )
                 .onAppear { pulse = true }
 
             Text(partialTranscript.isEmpty ? "Listening..." : partialTranscript)

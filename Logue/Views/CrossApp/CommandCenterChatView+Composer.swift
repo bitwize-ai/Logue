@@ -49,11 +49,13 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help("Attach files")
+            .islandControl(IslandControlCopy.attach(isBusy: isGenerating))
 
             // Web search for this turn
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { isWebSearchOnce.toggle() }
+                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
+                    isWebSearchOnce.toggle()
+                }
             } label: {
                 Image(systemName: "globe")
                     .font(.subheadline.weight(.medium))
@@ -64,11 +66,13 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help(isWebSearchOnce ? "Web search is on for this message" : "Search the web for this message")
+            .islandControl(IslandControlCopy.webSearch(isOn: isWebSearchOnce))
 
             // Deep Research for this turn
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { isDeepResearchOnce.toggle() }
+                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
+                    isDeepResearchOnce.toggle()
+                }
             } label: {
                 Image(systemName: "sparkle.magnifyingglass")
                     .font(.subheadline.weight(.medium))
@@ -79,13 +83,7 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help(
-                isDeepResearchOnce
-                    ? "Deep Research is on for this message"
-                    : "Research this in depth before answering"
-            )
-            .accessibilityLabel("Deep Research")
-            .accessibilityValue(isDeepResearchOnce ? "On" : "Off")
+            .islandControl(IslandControlCopy.deepResearch(isOn: isDeepResearchOnce))
 
             // Mic button
             Button {
@@ -98,7 +96,21 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help(voiceManager.isRecording ? "Stop voice input" : "Voice input")
+            .islandControl(IslandControlCopy.microphone(isRecording: voiceManager.isRecording))
+
+            // What Return will do, once it will do anything.
+            //
+            // Shown only when there is something to send: a hint that is always there is
+            // chrome, and the island has one line to spend. Shift-Return for a newline is
+            // deliberately not advertised — it is the escape hatch from the hint, not a
+            // second thing to learn.
+            if canSend, !isGenerating {
+                Text("↩")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+            }
 
             // Send / Stop
             if isGenerating {
@@ -110,6 +122,7 @@ extension CommandCenterChatView {
                         .background(Circle().fill(AppThemeConstants.error))
                 }
                 .buttonStyle(.plain)
+                .islandControl(IslandControlCopy.send(canSend: canSend, isGenerating: true))
             } else {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up")
@@ -123,26 +136,14 @@ extension CommandCenterChatView {
                 .buttonStyle(.plain)
                 .disabled(!canSend || LLMEngineStatus.shared.isBusy)
                 .keyboardShortcut(.return, modifiers: .command)
+                .islandControl(IslandControlCopy.send(canSend: canSend, isGenerating: false))
             }
         }
+        .animation(IslandMotion.control(reduceMotion: reduceMotion), value: canSend)
         .padding(.leading, 14)
         .padding(.trailing, 10)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 0.92)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
-        .overlay(alignment: .top) {
-            if !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce {
-                attachmentChips
-                    .offset(y: -34)
-            }
-        }
+        .islandSurface(cornerRadius: 22)
         // Dropping onto the pill is the same intake as the picker, so a file arrives the
         // same way whichever route the user takes.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -155,48 +156,149 @@ extension CommandCenterChatView {
         }
     }
 
-    /// What is staged for the next send, with a way to take each one back off.
-    private var attachmentChips: some View {
-        HStack(spacing: 6) {
-            if isDeepResearchOnce {
-                ModeChip(
-                    title: "Deep Research",
-                    systemImage: "sparkle.magnifyingglass",
-                    tint: AppThemeConstants.brandPrimary
-                ) {
-                    isDeepResearchOnce = false
-                }
-            }
-            if isWebSearchOnce {
-                ModeChip(
-                    title: "Search",
-                    systemImage: "globe",
-                    tint: AppThemeConstants.brandPrimary
-                ) {
-                    isWebSearchOnce = false
-                }
-            }
-            ForEach(attachments) { attachment in
-                HStack(spacing: 4) {
-                    Image(systemName: "doc")
-                        .font(.caption2)
-                    Text(attachment.displayName)
-                        .font(.caption2)
-                        .lineLimit(1)
-                    Button {
-                        attachments.removeAll { $0.id == attachment.id }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
+    /// Something to ask, on an island with nothing in it yet.
+    ///
+    /// The same chips Home offers, from the same rule and the same reading of the workspace —
+    /// so the island suggests summarising the meeting you have not summarised rather than a
+    /// hardcoded list that goes stale. Hidden until the stores report, because offering
+    /// first-run chips to a returning user is worse than offering nothing.
+    var starters: some View {
+        VStack(spacing: 0) {
+            if HomeSuggestions.storesAreLoaded, !chips.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(chips) { chip in
+                        Button {
+                            inputText = chip.prompt
+                            isInputFocused = true
+                        } label: {
+                            Text(chip.label)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.white.opacity(0.10)))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .help(chip.prompt)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(attachment.displayName)")
                 }
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.white.opacity(0.12)))
+                .padding(.bottom, 10)
             }
         }
     }
+
+    private var chips: [HomeSuggestions.Chip] {
+        HomeSuggestions.chips(
+            for: HomeSuggestions.currentInputs(overdueCount: insights.actionItemStats.overdue)
+        )
+    }
+
+    /// What is staged for the next send, with a way to take each one back off.
+    ///
+    /// Part of the island's layout rather than an overlay floating above the pill. As an
+    /// overlay it took no space, so with a conversation on screen it drew over the bottom of
+    /// the transcript — and nothing bounded it, so six files ran the row off both ends.
+    var stagedChips: some View {
+        let layout = ComposerChipRow.layout(
+            modeCount: activeModes.count,
+            attachmentCount: attachments.count
+        )
+        let shown = attachments.prefix(layout.attachments)
+
+        return HStack(spacing: 6) {
+            ForEach(activeModes) { mode in
+                ModeChip(title: mode.title, systemImage: mode.systemImage, tint: mode.tint) {
+                    mode.turnOff()
+                }
+            }
+            ForEach(shown) { attachment in
+                attachmentChip(attachment)
+            }
+            if layout.showsOverflow {
+                Text("+\(layout.hidden) more")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.white.opacity(0.10)))
+                    .help(hiddenNames(after: layout.attachments))
+                    .accessibilityLabel("\(layout.hidden) more attachments: \(hiddenNames(after: layout.attachments))")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// The names behind the counter, so nothing is unreachable — hover, or VoiceOver, reads
+    /// them out. A chip that hides a file with no way to find out which one is worse than a
+    /// row that overflows.
+    private func hiddenNames(after shown: Int) -> String {
+        attachments.dropFirst(shown).map(\.displayName).joined(separator: ", ")
+    }
+
+    private func attachmentChip(_ attachment: TempAttachment) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "doc")
+                .font(.caption2)
+            Text(attachment.displayName)
+                .font(.caption2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Button {
+                attachments.removeAll { $0.id == attachment.id }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(attachment.displayName)")
+        }
+        .foregroundStyle(.white.opacity(0.8))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(0.12)))
+    }
+
+    /// The per-send modes that are on, in the order they are drawn.
+    ///
+    /// Modelled so the count is a number `ComposerChipRow` can be handed rather than two
+    /// booleans the row has to remember to add up.
+    private var activeModes: [ComposerMode] {
+        var modes: [ComposerMode] = []
+        if isDeepResearchOnce {
+            modes.append(
+                ComposerMode(
+                    id: "deepResearch",
+                    title: "Deep Research",
+                    systemImage: "sparkle.magnifyingglass",
+                    tint: AppThemeConstants.brandPrimary
+                ) { isDeepResearchOnce = false }
+            )
+        }
+        if isWebSearchOnce {
+            modes.append(
+                ComposerMode(
+                    id: "search",
+                    title: "Search",
+                    systemImage: "globe",
+                    tint: AppThemeConstants.brandPrimary
+                ) { isWebSearchOnce = false }
+            )
+        }
+        return modes
+    }
+}
+
+/// One per-send mode, as the chip row draws it.
+///
+/// A value rather than two booleans read in three places, so the row can count them and the
+/// order they appear in is stated once.
+struct ComposerMode: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let turnOff: () -> Void
 }
