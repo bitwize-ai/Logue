@@ -247,6 +247,12 @@ struct CommandCenterChatView: View {
                             islandRow(row)
                                 .id(row.id)
                         }
+
+                        if showsThinking {
+                            thinkingRow(toolName: activeToolName)
+                                .id("island-thinking")
+                                .transition(.opacity)
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
@@ -382,6 +388,39 @@ struct CommandCenterChatView: View {
               let conversation = store.conversations.first(where: { $0.id == conversationID })
         else { return [] }
         return AgentToolTimeline.awaitingApproval(in: conversation.messages)
+    }
+
+    /// Whether to say the island is working rather than show an answer.
+    ///
+    /// The same rule the main window uses. Note what is passed as the pending answer: the
+    /// *last* message's text only when it is the one being streamed. Reading the last
+    /// assistant message unconditionally would be the previous answer, which is non-empty for
+    /// the whole of every later gap — so the indicator would never appear again after the
+    /// first reply.
+    private var showsThinking: Bool {
+        guard let conversationID else { return false }
+        let streaming = coordinator.isStreaming(in: conversationID)
+        let pending: String = if case let .message(message)? = rows.last, message.isStreaming {
+            message.content
+        } else {
+            ""
+        }
+        return AgentThinkingState.showsThinking(
+            isProcessing: coordinator.isProcessing(in: conversationID),
+            isStreaming: streaming,
+            pendingAnswerText: pending,
+            hasActiveToolCard: !activeToolCalls.isEmpty
+        )
+    }
+
+    /// The tool the island is currently running, which is what the thinking row names.
+    private var activeToolName: String? {
+        activeToolCalls.last?.toolName
+    }
+
+    private var activeToolCalls: [AgentToolCall] {
+        guard let conversationID else { return [] }
+        return coordinator.activeToolCalls(in: conversationID)
     }
 
     /// The error for this thread, if the last run left one.
