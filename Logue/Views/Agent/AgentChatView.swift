@@ -253,19 +253,12 @@ struct AgentChatView: View {
             && spaceStore.topLevelSpaces.isEmpty
     }
 
-    /// Derived fresh each render from the stores — no inference, no caching. The rules
-    /// live in `HomeSuggestions` so they can be tested without a view.
+    /// Derived fresh each render from the stores — no inference, no caching. The rules live
+    /// in `HomeSuggestions` and the reading of the workspace in `+Inputs`, so the island can
+    /// offer the same chips rather than growing its own list.
     private var suggestionChips: [HomeSuggestions.Chip] {
-        let unsummarized = meetingStore.activeMeetings
-            .filter { ($0.summary ?? "").isEmpty && !$0.isArchived }
-            .max { $0.createdAt < $1.createdAt }
-        return HomeSuggestions.chips(
-            for: HomeSuggestions.Inputs(
-                unsummarizedMeetingTitle: unsummarized?.title,
-                overdueCount: insights.actionItemStats.overdue,
-                meetingsToday: meetingStore.todaysMeetings.count,
-                hasAnyContent: !workspaceIsEmpty
-            )
+        HomeSuggestions.chips(
+            for: HomeSuggestions.currentInputs(overdueCount: insights.actionItemStats.overdue)
         )
     }
 

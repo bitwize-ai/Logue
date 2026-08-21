@@ -250,6 +250,7 @@
 		54F9DAED7E0DD30B5A16041A /* LLMEngine+Convenience.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADFE072C32F14B59D0406571 /* LLMEngine+Convenience.swift */; };
 		5516345F1ECA8AD048BB0889 /* AITitleGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79F5EE85D7AA8E700D4C0FC3 /* AITitleGenerator.swift */; };
 		556246B3C2F8B616A0CDD27B /* AskRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C6E3021828B2B8589C720A /* AskRoute.swift */; };
+		558680C6A112BCC39EEC95AF /* HomeSuggestionsInputs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92E24E330864CAA8AB7B207A /* HomeSuggestionsInputs.swift */; };
 		559A068B64BFBACC538549C3 /* FileAccessGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E86EBBF6643966395A7DE8B /* FileAccessGate.swift */; };
 		5649718294F9E5770348BD76 /* LLMTestEvalExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31ED31FAD045668E64BA99B1 /* LLMTestEvalExtensions.swift */; };
 		56910F4D1E3DBFB9D424BE65 /* ExternalChangePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C141390FECB3AC097A5F95B /* ExternalChangePlan.swift */; };
@@ -1117,6 +1118,7 @@
 		9226B7B10683E42ABEB71810 /* HighlightMarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightMarkTests.swift; sourceTree = "<group>"; };
 		9230215EEC7592F9378CA66C /* ModelManager+Discovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ModelManager+Discovery.swift"; sourceTree = "<group>"; };
 		92DB0F899AF6F08FEAF8AA46 /* AgentConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationListView.swift; sourceTree = "<group>"; };
+		92E24E330864CAA8AB7B207A /* HomeSuggestionsInputs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSuggestionsInputs.swift; sourceTree = "<group>"; };
 		92E9FCC3C656E8D24AC7A610 /* LLMTestHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMTestHarness.swift; sourceTree = "<group>"; };
 		93368B5F8A112B6802BF4001 /* AISettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsTab.swift; sourceTree = "<group>"; };
 		934F6981002CF41976F94D99 /* ActionItemInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionItemInbox.swift; sourceTree = "<group>"; };
@@ -1971,6 +1973,7 @@
 				1EE7A71E63405D18365880DF /* HomeAskPrompts.swift */,
 				F26F4F42013205EAE3A14D9D /* HomeContinueGrid.swift */,
 				BB5DF28B62DFDA51D847EB70 /* HomeSuggestions.swift */,
+				92E24E330864CAA8AB7B207A /* HomeSuggestionsInputs.swift */,
 				39AC4C78B6DA5F62A04B49C3 /* InlineAttributeVisitor.swift */,
 				358D99D88D3FB7C39EE0C7E7 /* InlineRewriteEngine.swift */,
 				D6829731778689289CE48545 /* InlineSpellEngine.swift */,
@@ -3048,6 +3051,7 @@
 				44E47FDFA97164AD97F8B8E2 /* HomeLandingView.swift in Sources */,
 				8116FACB27C74191337D74FE /* HomeSpacesSection.swift in Sources */,
 				07D07554D07FE31EE59D028A /* HomeSuggestions.swift in Sources */,
+				558680C6A112BCC39EEC95AF /* HomeSuggestionsInputs.swift in Sources */,
 				276FE55FD853C4367F2AE751 /* HorizontalInspectorTabBar.swift in Sources */,
 				F1C5EFB9959BBAB77986EBBA /* HoverToolbar.swift in Sources */,
 				3078B745D4379CB1523EA5D2 /* IconToolbarView.swift in Sources */,
