@@ -28,12 +28,23 @@ final class AgentConversationStore {
 
     // MARK: - CRUD
 
-    /// Creates a new conversation and selects it.
+    /// Creates a new conversation.
+    ///
+    /// - Parameter select: whether to make it the selected conversation. `true` for the main
+    ///   window, where creating a thread means opening it. The Command Center island passes
+    ///   `false`: it floats over another app with its own thread, and selecting that thread
+    ///   would change what the main window is showing behind it — a window the user is not
+    ///   looking at, silently navigated away from whatever they left open.
     @discardableResult
-    func createConversation(title: String = "New Conversation") -> AgentConversation {
+    func createConversation(
+        title: String = "New Conversation",
+        select: Bool = true
+    ) -> AgentConversation {
         let conversation = AgentConversation(title: title)
         conversations.insert(conversation, at: 0)
-        selectedConversationID = conversation.id
+        if select {
+            selectedConversationID = conversation.id
+        }
         save(conversation)
         pruneIfNeeded()
         return conversation

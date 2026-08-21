@@ -276,10 +276,13 @@ struct AgentChatView: View {
     private func hasMessagesLayout(conversation: AgentConversation) -> some View {
         MessageListView(
             messages: conversation.messages,
-            activeToolCalls: coordinator.activeToolCalls,
-            isProcessing: coordinator.isProcessing,
-            isStreaming: coordinator.isStreaming,
-            streamingText: coordinator.streamingText,
+            // Scoped to the conversation on screen. Read globally, a run started from the
+            // Command Center island would paint its spinner, its streaming text and its
+            // tool cards onto whatever thread this view happens to be showing.
+            activeToolCalls: coordinator.activeToolCalls(in: conversation.id),
+            isProcessing: coordinator.isProcessing(in: conversation.id),
+            isStreaming: coordinator.isStreaming(in: conversation.id),
+            streamingText: coordinator.streamingText(in: conversation.id),
             conversationID: conversation.id,
             scrollToTopTrigger: scrollToTopTrigger,
             scrollTargetID: scrollTargetID,
@@ -292,7 +295,7 @@ struct AgentChatView: View {
             }
         )
 
-        if let error = coordinator.lastError {
+        if let error = coordinator.lastError(in: conversation.id) {
             errorBanner(error)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
@@ -315,25 +318,43 @@ struct AgentChatView: View {
             inputText: $inputText,
             focusRequest: focusRequest,
             attachments: $inputAttachments,
-            isProcessing: coordinator.isProcessing || deepResearchCoordinator.isRunning,
+            isProcessing: isThisConversationProcessing || deepResearchCoordinator.isRunning,
             isBusy: isBusy,
             onSend: {
                 let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
                 let attachments = inputAttachments
                 let runDeepResearch = isDeepResearch
                 let oneShotWeb = isWebSearchOnce
-                // Allow attachment-only sends so the user can drop a file and ask
-                // the agent to read it without typing a question.
-                guard !text.isEmpty || !attachments.isEmpty else { return }
+                // One decision, in one place. `AskRouter` also answers "is there
+                // anything to send", so the empty-send guard is part of the same
+                // question rather than a separate check that can disagree with it —
+                // an attachment on its own is a valid send.
+                let route = AskRouter.route(
+                    for: AskRouter.Request(
+                        text: text,
+                        hasAttachments: !attachments.isEmpty,
+                        deepResearchRequested: runDeepResearch,
+                        imageIntentFires: PromptIntentClassifier.shared
+                            .shouldPresentImagePlayground(for: text)
+                    )
+                )
+                guard let route else { return }
+
                 inputText = ""
                 inputAttachments = []
                 // Reset the per-send AppStorage flags so the next turn starts
                 // clean. These mirror the chip state in the input pill.
                 isDeepResearch = false
                 isWebSearchOnce = false
-                if runDeepResearch {
+
+                switch route {
+                case .deepResearch:
                     startDeepResearch(text, oneShotWebSearch: oneShotWeb)
-                } else {
+                case let .imagePlayground(concept):
+                    HapticFeedback.send()
+                    imagePlaygroundConcept = concept
+                    showImagePlayground = true
+                case .agentLoop:
                     sendMessage(text, attachments: attachments, oneShotWebSearch: oneShotWeb)
                 }
             },
@@ -345,7 +366,7 @@ struct AgentChatView: View {
                 }
             }
         )
-        .disabled(isBusy && !coordinator.isProcessing)
+        .disabled(isBusy && !isThisConversationProcessing)
     }
 
     // MARK: - Window Toolbar
@@ -396,12 +417,27 @@ struct AgentChatView: View {
         }
     }
 
+    /// Whether the live run belongs to the conversation this view is showing.
+    ///
+    /// `false` with no conversation selected: a surface showing nothing has no run of its
+    /// own, and answering `true` here is how the main window would report the island's work.
+    private var isThisConversationProcessing: Bool {
+        guard let id = activeConversation?.id else { return false }
+        return coordinator.isProcessing(in: id)
+    }
+
+    private var isThisConversationStreaming: Bool {
+        guard let id = activeConversation?.id else { return false }
+        return coordinator.isStreaming(in: id)
+    }
+
     private var topBarSubtitle: String {
         let messageCount = activeConversation?.messages.count ?? 0
-        if coordinator.isStreaming || coordinator.isProcessing {
+        if isThisConversationStreaming || isThisConversationProcessing {
             // Vary the subtitle by the active tool so users see what the
             // agent is actually doing, not a static "Thinking…".
-            let activeTool = coordinator.activeToolCalls.last?.toolName
+            let activeTool = activeConversation
+                .map { coordinator.activeToolCalls(in: $0.id) }?.last?.toolName
             return UICopy.Status.describe(toolName: activeTool)
         }
         if messageCount == 0 {
@@ -467,14 +503,10 @@ struct AgentChatView: View {
         attachments: [TempAttachment] = [],
         oneShotWebSearch: Bool = false
     ) {
-        // Phase F: Route to ImagePlayground when intent classifier fires.
-        if attachments.isEmpty, PromptIntentClassifier.shared.shouldPresentImagePlayground(for: text) {
-            HapticFeedback.send()
-            imagePlaygroundConcept = text
-            showImagePlayground = true
-            return
-        }
-
+        // Routing happens at the send site, in `AskRouter`. This used to re-ask the
+        // ImagePlayground question here, which meant two places could answer it
+        // differently — and the island, which never reached this method, got no
+        // routing at all.
         HapticFeedback.send()
         let conversationID = ensureActiveConversation()
 

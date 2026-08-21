@@ -118,6 +118,33 @@ Two rules the recording path depends on, both learned the hard way:
 - `LLMEngineStatus` (@MainActor @Observable) — singleton busy flag (`isBusy`) driven by `LLMEngine.inferenceQueueDepth`. UI views use `.disabled(LLMEngineStatus.shared.isBusy)` to prevent concurrent AI operations.
 - `ModelManager` (@MainActor @Observable) — model downloads, activation, endpoint scanning (split: +Download, +Discovery, +HuggingFace)
 
+### Ask Logue invariants (two surfaces, one assistant)
+
+Ask Logue is reachable from two places — the pane in the main window and the Command
+Center island floating over another app. They were built separately and drifted: the island
+was a bare `chatStream` call with no tools, no memory, no attachments and nothing kept, while
+the same question asked from the app got the full agent. **Which window you asked from
+decided what Logue was.** These rules exist so that cannot happen again.
+
+- **Which pipeline answers a question is decided in one pure place.** `AskRouter.route(for:)`
+  returns agent loop, Deep Research or ImagePlayground. It is a pure function of its inputs —
+  no SwiftUI, no `UserDefaults`, no classifier call — so the matrix is testable without a
+  view or a model. A decision made inside a `View` is a decision the other surface cannot
+  reach, which is exactly how the island ended up with no routing at all.
+- **A route is never a function of the surface.** `AskSurface` says which window asked, and
+  it is deliberately not an input to `route`. `AskRouteTests` asserts this, so adding it
+  later fails the suite rather than silently reintroducing the split.
+- **Live run state belongs to a conversation, not to the app.** `AgentRunState` scopes
+  `isProcessing`, `isStreaming`, `streamingText`, `activeToolCalls` and `lastError` to the
+  conversation that started the run. A global flag means a run on one surface paints its
+  spinner, its streaming text and its tool cards onto the other's thread.
+- **An error outlives its run but never its owner.** `lastError` persists after the run ends,
+  so the banner survives until acknowledged — which is why `conversationID` survives
+  `finish()` too. An error with no owner paints on every surface.
+- **Anything added to one surface is added to both.** The composer, the conversation view and
+  the error banner are *mounted* by both, never redrawn per surface. A feature that exists in
+  one window and not the other is the bug this section is about.
+
 ### Data Layer
 
 - `MeetingStore` (@MainActor @Observable) — encrypted JSON persistence (split: +AI, +Diarization, +Metadata, +Persistence, +Search, +SeedData, +WelcomeMeeting, Protocols)
@@ -269,6 +296,8 @@ nothing to reconcile. Rules that follow from that, all of which have bitten:
 | ---- | ---- |
 | `Engine/LLMEngine.swift` | Actor — all LLM inference (serialized via `inferenceGate`) |
 | `Engine/LLMEngineStatus.swift` | @MainActor @Observable busy flag for disabling AI controls |
+| `Agent/AskRoute.swift` | Which pipeline answers a question — pure, and the same from both surfaces |
+| `Agent/AgentRunState.swift` | Live run state scoped to the conversation that started it |
 | `Engine/RetryHelper.swift` | `withRetry()` / `withRetryOptional()` — centralized retry |
 | `Engine/MeetingPromptBuilder.swift` | All LLM prompt construction + JSON parsing |
 | `Engine/LLMClient.swift` | External LLM provider clients (OpenAI/Anthropic-compatible) — optional, user-configured |
