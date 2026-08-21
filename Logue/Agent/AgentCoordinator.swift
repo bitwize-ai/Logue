@@ -136,6 +136,15 @@ final class AgentCoordinator {
         if !disabledNames.isEmpty {
             tools.removeAll { disabledNames.contains($0.name) }
         }
+
+        // Tools from the user's MCP servers, alongside the built-ins rather than in a second
+        // list — the model, the approval gate and both surfaces then treat them identically,
+        // which is #63's requirement and the reason none of this needed a second pipeline.
+        //
+        // The disable list is handed to the catalog rather than applied afterwards: a remote
+        // tool's registry name is namespaced, so the filter above would not have matched it,
+        // and a remote tool is not exempt from "I never want the agent to do X".
+        tools.append(contentsOf: MCPCatalog.shared.tools(disabledToolNames: disabledNames))
         return tools
     }
 

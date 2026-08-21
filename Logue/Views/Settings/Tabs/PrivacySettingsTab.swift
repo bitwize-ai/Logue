@@ -24,6 +24,8 @@ struct PrivacySettingsTab: View {
                 Divider()
                 markdownStorageSection
                 Divider()
+                NetworkEgressSection()
+                Divider()
                 BrowserExtensionSection()
                 Divider()
                 permissionsSection
