@@ -128,15 +128,7 @@ extension CommandCenterChatView {
         .padding(.leading, 14)
         .padding(.trailing, 10)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 0.92)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
+        .islandSurface(cornerRadius: 22)
         .overlay(alignment: .top) {
             if !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce {
                 attachmentChips

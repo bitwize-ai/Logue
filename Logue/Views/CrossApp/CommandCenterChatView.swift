@@ -110,6 +110,13 @@ struct CommandCenterChatView: View {
             promptPill
         }
         .frame(width: pillWidth)
+        // The island commits to dark. Every foreground in it is white and `Material` is not:
+        // in Light appearance `.ultraThinMaterial` is a light frost, so the transcript drew
+        // white text on a white-ish panel and could not be read. Half a palette adapting is
+        // worse than none, and this is a HUD over someone else's window rather than a
+        // document — so it does not follow the system, which is what makes it legible in
+        // both appearances.
+        .environment(\.colorScheme, .dark)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: hasContent)
         .onAppear {
             isInputFocused = true
@@ -257,14 +264,7 @@ struct CommandCenterChatView: View {
         }
         .frame(width: pillWidth)
         .frame(maxHeight: 420)
-        .background(
-            .ultraThinMaterial,
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-        )
+        .islandSurface(cornerRadius: 18)
     }
 
     // MARK: - Logic
