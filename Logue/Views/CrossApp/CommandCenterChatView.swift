@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 import Textual
 
@@ -50,8 +49,14 @@ struct CommandCenterChatView: View {
     // Extension-visible: +Bubbles
     @State var savedMessageID: UUID?
     // Extension-visible: +Bubbles
-    @State var speakingMessageID: UUID?
-    @State private var synthesizer = AVSpeechSynthesizer()
+    /// The same service the main window reads with.
+    ///
+    /// The island used to own a bare `AVSpeechSynthesizer`, which is how the two surfaces
+    /// ended up sounding different: `AgentReadAloudService` strips Markdown before speaking,
+    /// so the main window says "hello" where the island said "asterisk asterisk hello
+    /// asterisk asterisk". It also tracks what is playing, which removes the polling loop the
+    /// island needed to notice that speech had finished.
+    @State var readAloud = AgentReadAloudService.shared
     // Extension-visible: +Composer
     @FocusState var isInputFocused: Bool
 
@@ -133,7 +138,7 @@ struct CommandCenterChatView: View {
             if voiceManager.isRecording {
                 voiceManager.stopListening()
             }
-            synthesizer.stopSpeaking(at: .immediate)
+            readAloud.stop()
         }
         .onChange(of: rows.count) { _, _ in
             onContentChanged(content)
@@ -146,23 +151,6 @@ struct CommandCenterChatView: View {
         }
         .onChange(of: inputText) { _, _ in
             onContentChanged(content)
-        }
-        // U7: Replaced continuous Timer.publish with onChange-triggered task
-        .onChange(of: speakingMessageID) { _, newValue in
-            if newValue != nil {
-                Task {
-                    let deadline = ContinuousClock.now + .seconds(60)
-                    while speakingMessageID != nil, synthesizer.isSpeaking {
-                        if ContinuousClock.now >= deadline {
-                            break
-                        }
-                        try? await Task.sleep(for: AppConstants.Delays.speechSynthesisPolling)
-                    }
-                    if speakingMessageID != nil, !synthesizer.isSpeaking {
-                        speakingMessageID = nil
-                    }
-                }
-            }
         }
     }
 
@@ -519,8 +507,7 @@ struct CommandCenterChatView: View {
     /// would throw away something the user can still open from the main window.
     private func clearSession() {
         cancelWhicheverIsRunning()
-        synthesizer.stopSpeaking(at: .immediate)
-        speakingMessageID = nil
+        readAloud.stop()
         conversationID = nil
         inputText = ""
         isInputFocused = true
@@ -528,22 +515,11 @@ struct CommandCenterChatView: View {
 
     // Extension-visible: +Bubbles
     func speakMessage(_ message: EphemeralChatMessage) {
-        if speakingMessageID == message.id {
-            synthesizer.stopSpeaking(at: .immediate)
-            speakingMessageID = nil
-            return
+        if readAloud.isSpeaking(content: message.content) {
+            readAloud.stop()
+        } else {
+            readAloud.speak(message.content)
         }
-        synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: message.content)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        if let voice = AVSpeechSynthesisVoice.speechVoices()
-            .filter({ $0.language.hasPrefix("en") })
-            .max(by: { $0.quality.rawValue < $1.quality.rawValue })
-        {
-            utterance.voice = voice
-        }
-        speakingMessageID = message.id
-        synthesizer.speak(utterance)
     }
 
     // Extension-visible: +Bubbles

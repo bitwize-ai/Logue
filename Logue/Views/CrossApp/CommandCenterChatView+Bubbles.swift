@@ -124,12 +124,12 @@ extension CommandCenterChatView {
 
             Button { speakMessage(message) } label: {
                 HStack(spacing: 3) {
-                    Image(systemName: speakingMessageID == message.id ? "stop.fill" : "speaker.wave.2")
+                    Image(systemName: readAloud.isSpeaking(content: message.content) ? "stop.fill" : "speaker.wave.2")
                         .font(.caption2.weight(.medium))
-                    Text(speakingMessageID == message.id ? "Stop" : "Speak")
+                    Text(readAloud.isSpeaking(content: message.content) ? "Stop" : "Speak")
                         .font(.caption2.weight(.medium))
                 }
-                .foregroundStyle(speakingMessageID == message.id ? AppThemeConstants.error : Color.secondary)
+                .foregroundStyle(readAloud.isSpeaking(content: message.content) ? AppThemeConstants.error : Color.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.primary.opacity(0.04)))
