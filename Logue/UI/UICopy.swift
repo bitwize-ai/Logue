@@ -34,6 +34,15 @@ enum UICopy {
         static let stop = "Stop"
         static let webSearch = "Search"
         static let deepResearch = "Deep Research"
+        /// The `+` menu's items. One definition, because both composers mount the same
+        /// menu and two copies of a label is how the surfaces start naming one action
+        /// two different things.
+        static let addFiles = "Add photos & files"
+        static let searchTheWeb = "Search the web"
+        static let deepResearchMenu = "Deep research"
+        static let toolSettings = "Tool settings…"
+        static let composerMenuHelp = "Attach, search, deep research…"
+        static let composerMenuLabel = "More actions"
         static let reasoning = "Reasoning"
         static let footerPrivacy = "Local model · Offline-capable · No data leaves this Mac"
         static let charLimitNear = "Approaching context limit"

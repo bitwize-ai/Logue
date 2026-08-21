@@ -30,9 +30,15 @@ struct CommandCenterChatView: View {
     /// window and left armed on an unsent prompt. They would never be told — the prompt just
     /// runs without web tools.
     ///
-    /// The coordinator takes the value as a parameter, so nothing needs the shared read. A
-    /// per-send mode is per surface, and this is `@State` accordingly.
-    @State var isWebSearchOnce: Bool = false
+    /// The coordinator takes the value as a parameter, so nothing needs the shared read.
+    ///
+    /// It is `@AppStorage` on the island's *own* key rather than `@State`, because the `+`
+    /// menu's `Toggle` has to bind one: on macOS a SwiftUI `Menu` swallows `.toggle()`
+    /// against a plain `@Binding` in its deferred-close pipeline. A separate key keeps the
+    /// per-surface isolation that matters here while satisfying that. `.onAppear` clears it,
+    /// so a mode still dies with the island rather than surviving to the next launch.
+    @AppStorage(AppConstants.UserDefaultsKeys.islandOneShotWebSearch)
+    var isWebSearchOnce: Bool = false
     // Extension-visible: +Composer
     /// Deep Research for the next send, belonging to this island alone.
     ///
@@ -40,8 +46,9 @@ struct CommandCenterChatView: View {
     /// window's Deep Research toggle binds, and the island clears it after every send — so a
     /// question asked here disarmed a Deep Research run the user had set up over there. The
     /// consequence is larger than the search one, because that run is the expensive one they
-    /// deliberately chose.
-    @State var isDeepResearchOnce: Bool = false
+    /// deliberately chose. Same storage story as the flag above.
+    @AppStorage(AppConstants.UserDefaultsKeys.islandOneShotDeepResearch)
+    var isDeepResearchOnce: Bool = false
     // Extension-visible: +Composer
     @State var deepResearch = DeepResearchCoordinator.shared
     // Extension-visible: +Bubbles
@@ -150,6 +157,12 @@ struct CommandCenterChatView: View {
             // The controller resets its copy when it builds the panel, so tell it what
             // we actually hold before any change fires.
             onContentChanged(content)
+            // A per-send mode belongs to the question it was set for. These live in
+            // `UserDefaults` only because the `+` menu's toggles need somewhere bindable,
+            // so clear them here — otherwise an armed Deep Research would outlive the
+            // island and surprise the user with an expensive run days later.
+            isWebSearchOnce = false
+            isDeepResearchOnce = false
         }
         .onChange(of: conversationID) { _, _ in
             onContentChanged(content)

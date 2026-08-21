@@ -17,6 +17,23 @@ extension CommandCenterChatView {
                 .frame(width: 28, height: 28)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
+            // Everything that arms or attaches, in one menu — the same one the main
+            // window mounts. It used to be three separate glyphs here, which is the
+            // per-surface redraw #61 exists to stop, and left no way to reach tool
+            // settings from the island at all.
+            ComposerPlusMenu(
+                webSearchKey: AppConstants.UserDefaultsKeys.islandOneShotWebSearch,
+                deepResearchKey: AppConstants.UserDefaultsKeys.islandOneShotDeepResearch,
+                isDisabled: isGenerating,
+                style: .island,
+                onAttach: {
+                    Task { @MainActor in
+                        let picked = await AttachmentIntake.pickFiles()
+                        attachments = AttachmentIntake.merging(picked, into: attachments)
+                    }
+                }
+            )
+
             // Input field
             TextField("What can I help you with?", text: $inputText, axis: .vertical)
                 .font(.body)
@@ -34,58 +51,6 @@ extension CommandCenterChatView {
                     }
                     return .handled
                 }
-
-            // Attach
-            Button {
-                Task { @MainActor in
-                    let picked = await AttachmentIntake.pickFiles()
-                    attachments = AttachmentIntake.merging(picked, into: attachments)
-                }
-            } label: {
-                Image(systemName: "paperclip")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .help("Attach files")
-
-            // Web search for this turn
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) { isWebSearchOnce.toggle() }
-            } label: {
-                Image(systemName: "globe")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        isWebSearchOnce ? AppThemeConstants.brandPrimary : .white.opacity(0.4)
-                    )
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .help(isWebSearchOnce ? "Web search is on for this message" : "Search the web for this message")
-
-            // Deep Research for this turn
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) { isDeepResearchOnce.toggle() }
-            } label: {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        isDeepResearchOnce ? AppThemeConstants.brandPrimary : .white.opacity(0.4)
-                    )
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .help(
-                isDeepResearchOnce
-                    ? "Deep Research is on for this message"
-                    : "Research this in depth before answering"
-            )
-            .accessibilityLabel("Deep Research")
-            .accessibilityValue(isDeepResearchOnce ? "On" : "Off")
 
             // Mic button
             Button {

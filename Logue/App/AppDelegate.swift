@@ -650,8 +650,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Opens Settings on the AI tab, from either composer's `+` menu.
+    ///
+    /// Goes through `activateApp` because the island floats over another application:
+    /// posting the notification alone opens the Settings window *behind* whatever is
+    /// frontmost, which reads as the menu item doing nothing. From the main window the
+    /// activation is a no-op.
     @objc
-    private func showSettings() {
+    static func openToolSettings() {
+        SettingsNavigator.shared.pendingTab = .ai
+        (NSApp.delegate as? AppDelegate)?.showSettings()
+    }
+
+    @objc
+    fileprivate func showSettings() {
         activateApp {
             NotificationCenter.default.post(name: .openSettingsGeneral, object: nil)
         }
