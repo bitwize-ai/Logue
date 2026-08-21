@@ -55,6 +55,10 @@ struct CommandCenterChatView: View {
     @State private var synthesizer = AVSpeechSynthesizer()
     // Extension-visible: +Composer
     @FocusState var isInputFocused: Bool
+    // Extension-visible: +Composer
+    /// Accessibility → Display → Reduce motion. The island slides in over another app,
+    /// springs open on the first message and scales its chips; none of it consulted this.
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     // Extension-visible: +Composer
     var voiceManager: VoicePushToTalkManager {
@@ -110,7 +114,7 @@ struct CommandCenterChatView: View {
             if hasContent {
                 messagesPanel
                     .padding(.bottom, 10)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             } else {
                 starters
             }
@@ -146,7 +150,7 @@ struct CommandCenterChatView: View {
         // document — so it does not follow the system, which is what makes it legible in
         // both appearances.
         .environment(\.colorScheme, .dark)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: hasContent)
+        .animation(IslandMotion.layout(reduceMotion: reduceMotion), value: hasContent)
         .onAppear {
             isInputFocused = true
             voiceManager.onTranscriptReady = { transcript in
@@ -267,7 +271,7 @@ struct CommandCenterChatView: View {
                 }
                 .onChange(of: rows) { _, newRows in
                     if let last = newRows.last {
-                        withAnimation(.easeOut(duration: 0.15)) {
+                        withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
@@ -286,7 +290,7 @@ struct CommandCenterChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             }
 
             // Mounted, not redrawn: the island shows the same seven-step strip the main
@@ -296,7 +300,7 @@ struct CommandCenterChatView: View {
 
             if let error = currentError {
                 errorBanner(error)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             }
         }
         .frame(width: pillWidth)
@@ -471,7 +475,9 @@ struct CommandCenterChatView: View {
             Spacer(minLength: 0)
 
             Button {
-                withAnimation { coordinator.dismissError() }
+                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
+                    coordinator.dismissError()
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))

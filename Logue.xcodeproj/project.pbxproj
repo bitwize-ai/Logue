@@ -63,6 +63,7 @@
 		0D4341603B1E69D6890BD16A /* GraphRetriever.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4837D7E60145F15B37A2310 /* GraphRetriever.swift */; };
 		0D825C8BE5FEA23AA4BEFFBB /* TaskDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4E3CD415CB79A60753F21DC /* TaskDrafts.swift */; };
 		0DF9D55AFF9C181065A4C69E /* SourceMeetingChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BF8F4CE67B450542E7CFAD3 /* SourceMeetingChip.swift */; };
+		0E2EB8FE3379AEF959988D62 /* IslandMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7390A75F79EE786998273DA7 /* IslandMotion.swift */; };
 		0EA7AB55C23D022F1C35E001 /* RewritePanelLLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6922E834A41AFDEB9150115 /* RewritePanelLLMTests.swift */; };
 		0F40B34FE9CF24DC1B55D9F0 /* SpaceContentPane+Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21302B0871DD6955B6F5148 /* SpaceContentPane+Cards.swift */; };
 		0FB26798FD61EEBC32BFD3A7 /* SpeechTranscriberEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D270AE60AD2503E159E4A50 /* SpeechTranscriberEngine.swift */; };
@@ -115,6 +116,7 @@
 		204FCF6880ABDA5F9C7684FF /* MeetingExportPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DE0AF8C2141C4DDEC98CB32 /* MeetingExportPanelView.swift */; };
 		2097A69FB625B8274E022216 /* DocumentTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE07F5F09706EA33B61BEF24 /* DocumentTemplate.swift */; };
 		217939881B4BBD3104148F19 /* WritingStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BF2A584F3FE0BCC2C793B7 /* WritingStatsTests.swift */; };
+		21A331E075E178E69671F1AC /* IslandMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346072038493F695836F34BD /* IslandMotionTests.swift */; };
 		22025C227E49A8B48BD70654 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CA636898FBC407FB4FB69C61 /* Sparkle */; };
 		2206F8D1450B6DA3886A850F /* CommandCenterRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6445D0008F16B2DFE083F469 /* CommandCenterRecordingView.swift */; };
 		22EACBCCB7BD304F9AE40B4E /* QuickPromptChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 840A12365F18257475A34827 /* QuickPromptChip.swift */; };
@@ -868,6 +870,7 @@
 		33AE1CBE332B50E515AAA7EE /* RecordingSessionManager+Recovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingSessionManager+Recovery.swift"; sourceTree = "<group>"; };
 		3423F242140F7A2AE832B0FD /* DocumentFilenameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentFilenameTests.swift; sourceTree = "<group>"; };
 		344DDE65E3765B845016619D /* ExternalModelsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalModelsSection.swift; sourceTree = "<group>"; };
+		346072038493F695836F34BD /* IslandMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandMotionTests.swift; sourceTree = "<group>"; };
 		3474D653C2A7624A299D8F8F /* MeetingMemoryIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingMemoryIndex.swift; sourceTree = "<group>"; };
 		347E49226D27CD7AF6B329EE /* LinkRenamer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkRenamer.swift; sourceTree = "<group>"; };
 		34E69663E0AE733F0F38C648 /* MeetingStore+AI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeetingStore+AI.swift"; sourceTree = "<group>"; };
@@ -1041,6 +1044,7 @@
 		71CCC37048141456C9BA5AA3 /* DocumentSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentSearchBar.swift; sourceTree = "<group>"; };
 		7250A0C394AFABC041C58D68 /* DeepResearchCoordinator+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeepResearchCoordinator+Helpers.swift"; sourceTree = "<group>"; };
 		72EE330160AA0276B2907F2A /* MeetingRowCompact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingRowCompact.swift; sourceTree = "<group>"; };
+		7390A75F79EE786998273DA7 /* IslandMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandMotion.swift; sourceTree = "<group>"; };
 		739A71E158624FCF8E71C075 /* PostRecordingPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostRecordingPipeline.swift; sourceTree = "<group>"; };
 		73A0577F01A5B33292317D52 /* SummaryNarrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryNarrationService.swift; sourceTree = "<group>"; };
 		73C82679F61FC2AC07FC9220 /* whatsnew-transcription.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-transcription.png"; sourceTree = "<group>"; };
@@ -1552,6 +1556,7 @@
 				A3600798EF27A735FC4BC80E /* HomeSuggestionsTests.swift */,
 				0062B04D59734428AFC49682 /* ImportFileReadingTests.swift */,
 				D21D2BCBEBA7DC11B30D5CAB /* IslandControlCopyTests.swift */,
+				346072038493F695836F34BD /* IslandMotionTests.swift */,
 				464AB56546E36263CEB595E8 /* IslandSurfaceTests.swift */,
 				402D8E4447C9B7063ADE7358 /* IslandThreadTests.swift */,
 				7F48D46D3D40534008356F5D /* LinkIndexBuildTests.swift */,
@@ -1714,6 +1719,7 @@
 				207FDDB5AF3841198B2438E4 /* ChatHomeEmptyState.swift */,
 				CFB4EE100316EB840B5D93EE /* HoverToolbar.swift */,
 				86BACB5F9085F6C7DB5B4CD8 /* IslandControlCopy.swift */,
+				7390A75F79EE786998273DA7 /* IslandMotion.swift */,
 				2666524E8E079ED62C748893 /* JumpToLatestPill.swift */,
 				E28B906C35C686A1F97C984E /* ModelChip.swift */,
 				3E2383DBE96586FC70FE52CB /* Motion.swift */,
@@ -2791,6 +2797,7 @@
 				549C3D0D72BD69E53B7929A5 /* HomeSuggestionsTests.swift in Sources */,
 				D0FFBA721311ED3F007A7D49 /* ImportFileReadingTests.swift in Sources */,
 				99B0158F57D74A593DAFF903 /* IslandControlCopyTests.swift in Sources */,
+				21A331E075E178E69671F1AC /* IslandMotionTests.swift in Sources */,
 				A1A603E973000958C89D1EDF /* IslandSurfaceTests.swift in Sources */,
 				2F4BA10FF02C91BDC115F449 /* IslandThreadTests.swift in Sources */,
 				5649718294F9E5770348BD76 /* LLMTestEvalExtensions.swift in Sources */,
@@ -3113,6 +3120,7 @@
 				8621E76EC5A20A48091893C4 /* InsightsSectionView.swift in Sources */,
 				3C8B6B59AC5A90F65186C43C /* InsightsStatsProvider.swift in Sources */,
 				5688E339841DC63FA2F61E8E /* IslandControlCopy.swift in Sources */,
+				0E2EB8FE3379AEF959988D62 /* IslandMotion.swift in Sources */,
 				EC1F72AE3061CEF89F456398 /* IslandSurface.swift in Sources */,
 				69B2689283C249CBE8252ADE /* IslandSurfaceModifier.swift in Sources */,
 				CF68588BF9879F2449BC4BEE /* IslandThread.swift in Sources */,

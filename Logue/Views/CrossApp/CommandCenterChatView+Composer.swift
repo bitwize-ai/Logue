@@ -53,7 +53,9 @@ extension CommandCenterChatView {
 
             // Web search for this turn
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { isWebSearchOnce.toggle() }
+                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
+                    isWebSearchOnce.toggle()
+                }
             } label: {
                 Image(systemName: "globe")
                     .font(.subheadline.weight(.medium))
@@ -68,7 +70,9 @@ extension CommandCenterChatView {
 
             // Deep Research for this turn
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { isDeepResearchOnce.toggle() }
+                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
+                    isDeepResearchOnce.toggle()
+                }
             } label: {
                 Image(systemName: "sparkle.magnifyingglass")
                     .font(.subheadline.weight(.medium))
@@ -135,7 +139,7 @@ extension CommandCenterChatView {
                 .islandControl(IslandControlCopy.send(canSend: canSend, isGenerating: false))
             }
         }
-        .animation(.easeOut(duration: 0.12), value: canSend)
+        .animation(IslandMotion.control(reduceMotion: reduceMotion), value: canSend)
         .padding(.leading, 14)
         .padding(.trailing, 10)
         .padding(.vertical, 10)
