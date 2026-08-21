@@ -104,7 +104,13 @@ struct CommandCenterChatView: View {
 
     private var content: CommandCenterChatContent {
         CommandCenterChatContent(
-            hasMessages: hasContent,
+            // A thread the island owns counts, whether or not anything is drawn in it
+            // yet. `AgentCoordinator.send` appends the user message inside a `Task`
+            // while this view clears the composer synchronously, so asking `hasContent`
+            // alone left a window in which a just-sent island reported itself empty —
+            // and an empty island is one every rule here is allowed to throw away.
+            // Clicking Send could close the island.
+            hasConversation: hasContent || conversationID != nil,
             hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             hasAttachments: !attachments.isEmpty
         )
@@ -139,6 +145,14 @@ struct CommandCenterChatView: View {
                 voiceManager.stopListening()
             }
             readAloud.stop()
+        }
+        .onAppear {
+            // The controller resets its copy when it builds the panel, so tell it what
+            // we actually hold before any change fires.
+            onContentChanged(content)
+        }
+        .onChange(of: conversationID) { _, _ in
+            onContentChanged(content)
         }
         .onChange(of: rows.count) { _, _ in
             onContentChanged(content)
