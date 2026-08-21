@@ -104,7 +104,8 @@ struct CommandCenterChatView: View {
     private var content: CommandCenterChatContent {
         CommandCenterChatContent(
             hasMessages: !messages.isEmpty,
-            hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            hasAttachments: !attachments.isEmpty
         )
     }
 
@@ -139,6 +140,12 @@ struct CommandCenterChatView: View {
             synthesizer.stopSpeaking(at: .immediate)
         }
         .onChange(of: messages.count) { _, _ in
+            onContentChanged(content)
+        }
+        // Staged files count as content, so the controller has to be told about them —
+        // without this the island reports itself empty while holding a PDF, and the next
+        // click anywhere off the pill throws it away.
+        .onChange(of: attachments.count) { _, _ in
             onContentChanged(content)
         }
         .onChange(of: inputText) { _, _ in
