@@ -58,8 +58,14 @@ struct ToolExecutionCard: View {
                             conversationID: conversationID,
                             clearance: toolCall.clearance
                         )
+                        // How to refuse must never be what gets compressed. The summary beside
+                        // it is already truncating, so it is the one that should give way.
+                        .fixedSize()
+                        .layoutPriority(1)
                     } else {
                         statusBadge
+                            .fixedSize()
+                            .layoutPriority(1)
                     }
                 }
                 .padding(.vertical, 6)
@@ -82,11 +88,13 @@ struct ToolExecutionCard: View {
                                 .fontDesign(.monospaced)
                                 .foregroundStyle(.secondary)
 
-                            if !toolCall.arguments.isEmpty, toolCall.arguments != "{}" {
-                                Text(formatArguments(toolCall.arguments))
+                            let arguments = ToolArgumentSummary.summary(fromJSON: toolCall.arguments)
+                            if !arguments.isEmpty {
+                                Text(arguments)
                                     .font(.caption)
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
                         }
 
@@ -346,11 +354,4 @@ struct ToolExecutionCard: View {
     }
 
     // MARK: - Helpers
-
-    private func formatArguments(_ json: String) -> String {
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return json }
-        return dict.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-    }
 }
