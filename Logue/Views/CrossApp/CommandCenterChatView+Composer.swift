@@ -144,12 +144,6 @@ extension CommandCenterChatView {
         .padding(.trailing, 10)
         .padding(.vertical, 10)
         .islandSurface(cornerRadius: 22)
-        .overlay(alignment: .top) {
-            if !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce {
-                attachmentChips
-                    .offset(y: -34)
-            }
-        }
         // Dropping onto the pill is the same intake as the picker, so a file arrives the
         // same way whichever route the user takes.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -202,47 +196,109 @@ extension CommandCenterChatView {
     }
 
     /// What is staged for the next send, with a way to take each one back off.
-    private var attachmentChips: some View {
-        HStack(spacing: 6) {
-            if isDeepResearchOnce {
-                ModeChip(
+    ///
+    /// Part of the island's layout rather than an overlay floating above the pill. As an
+    /// overlay it took no space, so with a conversation on screen it drew over the bottom of
+    /// the transcript — and nothing bounded it, so six files ran the row off both ends.
+    var stagedChips: some View {
+        let layout = ComposerChipRow.layout(
+            modeCount: activeModes.count,
+            attachmentCount: attachments.count
+        )
+        let shown = attachments.prefix(layout.attachments)
+
+        return HStack(spacing: 6) {
+            ForEach(activeModes) { mode in
+                ModeChip(title: mode.title, systemImage: mode.systemImage, tint: mode.tint) {
+                    mode.turnOff()
+                }
+            }
+            ForEach(shown) { attachment in
+                attachmentChip(attachment)
+            }
+            if layout.showsOverflow {
+                Text("+\(layout.hidden) more")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.white.opacity(0.10)))
+                    .help(hiddenNames(after: layout.attachments))
+                    .accessibilityLabel("\(layout.hidden) more attachments: \(hiddenNames(after: layout.attachments))")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// The names behind the counter, so nothing is unreachable — hover, or VoiceOver, reads
+    /// them out. A chip that hides a file with no way to find out which one is worse than a
+    /// row that overflows.
+    private func hiddenNames(after shown: Int) -> String {
+        attachments.dropFirst(shown).map(\.displayName).joined(separator: ", ")
+    }
+
+    private func attachmentChip(_ attachment: TempAttachment) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "doc")
+                .font(.caption2)
+            Text(attachment.displayName)
+                .font(.caption2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Button {
+                attachments.removeAll { $0.id == attachment.id }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(attachment.displayName)")
+        }
+        .foregroundStyle(.white.opacity(0.8))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(0.12)))
+    }
+
+    /// The per-send modes that are on, in the order they are drawn.
+    ///
+    /// Modelled so the count is a number `ComposerChipRow` can be handed rather than two
+    /// booleans the row has to remember to add up.
+    private var activeModes: [ComposerMode] {
+        var modes: [ComposerMode] = []
+        if isDeepResearchOnce {
+            modes.append(
+                ComposerMode(
+                    id: "deepResearch",
                     title: "Deep Research",
                     systemImage: "sparkle.magnifyingglass",
                     tint: AppThemeConstants.brandPrimary
-                ) {
-                    isDeepResearchOnce = false
-                }
-            }
-            if isWebSearchOnce {
-                ModeChip(
+                ) { isDeepResearchOnce = false }
+            )
+        }
+        if isWebSearchOnce {
+            modes.append(
+                ComposerMode(
+                    id: "search",
                     title: "Search",
                     systemImage: "globe",
                     tint: AppThemeConstants.brandPrimary
-                ) {
-                    isWebSearchOnce = false
-                }
-            }
-            ForEach(attachments) { attachment in
-                HStack(spacing: 4) {
-                    Image(systemName: "doc")
-                        .font(.caption2)
-                    Text(attachment.displayName)
-                        .font(.caption2)
-                        .lineLimit(1)
-                    Button {
-                        attachments.removeAll { $0.id == attachment.id }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(attachment.displayName)")
-                }
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.white.opacity(0.12)))
-            }
+                ) { isWebSearchOnce = false }
+            )
         }
+        return modes
     }
+}
+
+/// One per-send mode, as the chip row draws it.
+///
+/// A value rather than two booleans read in three places, so the row can count them and the
+/// order they appear in is stated once.
+struct ComposerMode: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let turnOff: () -> Void
 }

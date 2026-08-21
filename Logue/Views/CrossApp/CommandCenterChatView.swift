@@ -130,6 +130,12 @@ struct CommandCenterChatView: View {
                 .transition(.opacity)
             }
 
+            // In the layout rather than floating over it: as an overlay offset above the
+            // pill, the chip row took no space and drew over the bottom of the transcript.
+            if hasStagedChips {
+                stagedChips
+            }
+
             promptPill
         }
         .frame(width: pillWidth)
@@ -388,6 +394,11 @@ struct CommandCenterChatView: View {
               let conversation = store.conversations.first(where: { $0.id == conversationID })
         else { return [] }
         return AgentToolTimeline.awaitingApproval(in: conversation.messages)
+    }
+
+    /// Whether anything is staged for the next send.
+    private var hasStagedChips: Bool {
+        !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce
     }
 
     /// Whether to say the island is working rather than show an answer.
