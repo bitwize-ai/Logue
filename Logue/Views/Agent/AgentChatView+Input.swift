@@ -25,12 +25,11 @@ extension AgentChatView {
         /// re-entrancy the counter exists to rule out.
         let focusRequest: Int
         @Binding var attachments: [TempAttachment]
-        /// Per-send flags use @AppStorage instead of @Binding<Bool> because
-        /// SwiftUI's Menu silently drops Button.action closures on macOS — the
-        /// only reliable way to flip these from inside a Menu is to bind a
-        /// Toggle to a UserDefault (AppStorage). The AgentCoordinator and the
-        /// parent's onSend handler also read these defaults, so all three
-        /// surfaces (Menu, chip, send) see the same value.
+        /// Per-send flags bind `@AppStorage` rather than `@Binding<Bool>`, which is
+        /// load-bearing rather than incidental — `ComposerPlusMenu` explains what macOS
+        /// does to a `Menu`'s toggles otherwise. The chip and the send path read the same
+        /// key, so all three agree; the coordinator does not read it at all, it is handed
+        /// the value at send time.
         @AppStorage(AppConstants.UserDefaultsKeys.oneShotWebSearch)
         var isWebSearchOnce: Bool = false
         @AppStorage(AppConstants.UserDefaultsKeys.oneShotDeepResearch)
@@ -158,7 +157,7 @@ extension AgentChatView {
             HStack(spacing: 6) {
                 if isWebSearchOnce {
                     ModeChip(
-                        title: "Search",
+                        title: UICopy.Input.webSearch,
                         systemImage: "globe",
                         tint: AppThemeConstants.brandPrimary
                     ) {
@@ -167,7 +166,7 @@ extension AgentChatView {
                 }
                 if isDeepResearch {
                     ModeChip(
-                        title: "Deep research",
+                        title: UICopy.Input.deepResearch,
                         systemImage: "sparkle.magnifyingglass",
                         tint: AppThemeConstants.brandPrimary
                     ) {
@@ -206,8 +205,7 @@ extension AgentChatView {
         /// per-send flags are passed as keys rather than bindings.
         private var plusMenuButton: some View {
             ComposerPlusMenu(
-                webSearchKey: AppConstants.UserDefaultsKeys.oneShotWebSearch,
-                deepResearchKey: AppConstants.UserDefaultsKeys.oneShotDeepResearch,
+                surface: .mainWindow,
                 isDisabled: isProcessing || isBusy,
                 onAttach: { openFilePicker() }
             )

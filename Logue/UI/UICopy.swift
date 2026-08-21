@@ -32,8 +32,10 @@ enum UICopy {
         static let voice = "Dictate"
         static let send = "Send"
         static let stop = "Stop"
+        /// Chip titles. Shared because the island and the main window render the same
+        /// `ModeChip` for the same mode, and were spelling it two ways.
         static let webSearch = "Search"
-        static let deepResearch = "Deep Research"
+        static let deepResearch = "Deep research"
         /// The `+` menu's items. One definition, because both composers mount the same
         /// menu and two copies of a label is how the surfaces start naming one action
         /// two different things.

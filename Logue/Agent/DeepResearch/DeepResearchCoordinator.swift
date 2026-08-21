@@ -35,6 +35,18 @@ final class DeepResearchCoordinator {
     /// `AgentRunState`: live run state belongs to a conversation, not to the app, and the
     /// owner survives the run because `lastError` and `clarifyingQuestions` do.
     private(set) var runningConversationID: UUID?
+
+    /// Which run the coordinator's state currently describes.
+    ///
+    /// `cancel()` releases `isRunning` synchronously, but the cancelled task does not unwind
+    /// until whatever it is awaiting returns — and MLX generation is not preemptible, so that
+    /// can be tens of seconds. In that window a second run legitimately starts, and then the
+    /// first one finally throws `CancellationError` and writes *its* terminal state over the
+    /// live run's: the strip reads "Cancelled", `isRunning` goes false while the second run is
+    /// still working, its web-tool override is cleared underneath it, and nothing can stop it.
+    ///
+    /// Every write from inside `execute` is therefore gated on still owning this.
+    private var runGeneration = 0
     private(set) var currentStep: DeepResearchStep = .idle
     private(set) var sections: [ResearchSection] = []
     private(set) var currentSectionIdx: Int = 0
@@ -117,15 +129,20 @@ final class DeepResearchCoordinator {
         if oneShotWebSearch {
             AgentCoordinator.shared.setOneShotIncludeWebTools(true)
         }
+        runGeneration += 1
+        let generation = runGeneration
         task = Task { [weak self] in
             guard let self else { return }
-            await execute(prompt: prompt, conversationID: conversationID)
+            await execute(prompt: prompt, conversationID: conversationID, generation: generation)
         }
     }
 
     func cancel() {
         task?.cancel()
         task = nil
+        // The cancelled task may still be unwinding; bumping the generation makes anything
+        // it writes afterwards a no-op, including its own "Cancelled." bookkeeping.
+        runGeneration += 1
         if isRunning {
             currentStep = .failed
             lastError = "Cancelled."
@@ -144,13 +161,18 @@ final class DeepResearchCoordinator {
     // MARK: - Pipeline
 
     // swiftlint:disable:next function_body_length
-    private func execute(prompt: String, conversationID: UUID) async {
+    private func execute(prompt: String, conversationID: UUID, generation: Int) async {
         defer {
-            isRunning = false
-            // Match the AgentCoordinator cleanup contract — clear any per-run
-            // web-search override regardless of success/error/cancellation.
-            if AgentCoordinator.shared.oneShotIncludeWebTools {
-                AgentCoordinator.shared.setOneShotIncludeWebTools(false)
+            // Only if this is still the run the coordinator is describing. A cancelled run
+            // unwinding late must not release a *newer* run's `isRunning`, nor strip its
+            // web-tool override.
+            if generation == runGeneration {
+                isRunning = false
+                // Match the AgentCoordinator cleanup contract — clear any per-run
+                // web-search override regardless of success/error/cancellation.
+                if AgentCoordinator.shared.oneShotIncludeWebTools {
+                    AgentCoordinator.shared.setOneShotIncludeWebTools(false)
+                }
             }
         }
 
@@ -164,6 +186,7 @@ final class DeepResearchCoordinator {
             case .sufficient:
                 break
             case let .insufficient(questions):
+                guard generation == runGeneration else { return }
                 clarifyingQuestions = questions
                 currentStep = .failed
                 lastError = "Need more detail."
@@ -221,14 +244,18 @@ final class DeepResearchCoordinator {
             // posting throws (future refactor), we don't want the UI to claim
             // success while the conversation store has nothing.
             postReport(to: conversationID, report: finalReport)
+            guard generation == runGeneration else { return }
             currentStep = .completed
         } catch is CancellationError {
-            currentStep = .failed
-            lastError = "Cancelled."
+            // A cancelled run says nothing. `cancel()` already wrote the message, and by now
+            // a newer run may own the coordinator — repeating it here is how "Cancelled."
+            // landed on top of a run that was still going.
+            return
         } catch {
+            logger.error("Deep Research failed: \(error.localizedDescription, privacy: .public)")
+            guard generation == runGeneration else { return }
             currentStep = .failed
             lastError = error.localizedDescription
-            logger.error("Deep Research failed: \(error.localizedDescription, privacy: .public)")
             postFailure(to: conversationID, error: error.localizedDescription)
         }
     }

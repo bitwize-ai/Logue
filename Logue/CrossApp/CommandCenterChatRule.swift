@@ -108,10 +108,15 @@ enum CommandCenterChatRule {
     ///
     /// - Parameter pressedInIsland: the keystroke went to the island itself. That is
     ///   someone deliberately dismissing what they are looking at, so it always
-    ///   works. Esc pressed while another app is frontmost is not about the island,
-    ///   and is held to the same bar as a stray click — which is why an island
-    ///   holding a conversation survives it.
+    ///   works.
+    ///
+    /// Esc from another app is not about the island, so it may not close a
+    /// conversation. It *may* still close one holding only staged files, and that is
+    /// deliberate rather than an oversight: an island with no conversation draws no
+    /// close button, so refusing here as well would leave it with no keyboard exit at
+    /// all — the user would have to click into the field first to make the panel key.
+    /// Clicks still spare the files (`clickOff`); only an explicit Esc discards them.
     static func escape(content: CommandCenterChatContent, pressedInIsland: Bool) -> Bool {
-        pressedInIsland || clickOff(content)
+        pressedInIsland || !content.hasConversation
     }
 }

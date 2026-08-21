@@ -86,6 +86,31 @@ struct DeepResearchOwnershipTests {
         }
     }
 
+    @Test("A cancelled run cannot take the next one down with it")
+    func aCancelledRunDoesNotClobberItsSuccessor() {
+        // `cancel()` releases `isRunning` synchronously, but the cancelled task keeps
+        // unwinding until whatever it is awaiting returns — MLX generation is not
+        // preemptible, so that can be tens of seconds. A second run legitimately starts in
+        // that window, and the first one then wrote its own terminal state over it: the strip
+        // read "Cancelled", `isRunning` went false while the second was still working, and
+        // nothing could stop it. The generation counter is what makes those late writes
+        // no-ops; this pins the part of it that is observable synchronously.
+        withIdleCoordinator { coordinator in
+            let first = UUID()
+            let second = UUID()
+
+            coordinator.run(prompt: "one", conversationID: first)
+            coordinator.cancel()
+            #expect(coordinator.lastError != nil, "the cancel itself still reports")
+
+            coordinator.run(prompt: "two", conversationID: second)
+            #expect(coordinator.isRunning(in: second), "the second run owns the coordinator")
+            #expect(coordinator.runningConversationID == second)
+            #expect(coordinator.lastError == nil, "a fresh run starts clean")
+            #expect(coordinator.currentStep != .failed)
+        }
+    }
+
     @Test("Dismissing a finished run gives up the thread")
     func dismissReleasesOwnership() {
         withIdleCoordinator { coordinator in

@@ -122,7 +122,14 @@ private class TransparentContainerView: NSView {
         // Reached for two different clicks — one on the island's own inert area, one
         // beside it — and only the second is a decision about the island.
         let localPoint = convert(event.locationInWindow, from: nil)
-        guard !isInsideIsland(localPoint) else { return }
+        guard !isInsideIsland(localPoint) else {
+            // Still hand it up the responder chain: `CommandCenterPanel.mouseDown`
+            // makes the panel key, and swallowing this meant clicking the island's own
+            // background no longer focused it — which silently disabled Esc, since the
+            // local monitor only acts while the panel is key.
+            super.mouseDown(with: event)
+            return
+        }
         onClickEmptyArea?()
     }
 
@@ -287,7 +294,9 @@ class CommandCenterController: ObservableObject {
         switch mode {
         case .chat:
             let chatView = CommandCenterChatView(
-                onDismiss: { [weak self] in self?.dismissPanel(reason: .closeButton) },
+                onDismiss: { [weak self] dismissal in
+                    self?.dismissPanel(reason: dismissal == .openInLogue ? .openInLogue : .closeButton)
+                },
                 onContentChanged: { [weak self] content in self?.chatContent = content }
             )
             let hv = TransparentHostingView(rootView: chatView)
@@ -481,8 +490,13 @@ class CommandCenterController: ObservableObject {
             // landed yet, so the island was torn down before the file arrived.
 
             clickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let window = event.window
-                Task { @MainActor in self?.dismissIfClickLandedElsewhere(in: window) }
+                // Reduced to two Sendable facts here rather than carrying the `NSWindow`
+                // across the actor hop, which `NSWindow` is not.
+                let clicked = event.window.map(ObjectIdentifier.init)
+                let isPanel = event.window is NSPanel
+                Task { @MainActor in
+                    self?.dismissIfClickLandedElsewhere(windowID: clicked, isPanel: isPanel)
+                }
                 return event
             }
         }
@@ -504,8 +518,9 @@ class CommandCenterController: ObservableObject {
     /// Panels are excluded wholesale. Every panel Logue puts on screen — the picker,
     /// the toast, the island itself — is either ours or transient, and none of them
     /// is a user saying "I am done with the island".
-    private func dismissIfClickLandedElsewhere(in window: NSWindow?) {
-        guard let panel, let window, window !== panel, !(window is NSPanel) else { return }
+    private func dismissIfClickLandedElsewhere(windowID: ObjectIdentifier?, isPanel: Bool) {
+        guard case .chat = currentMode, let panel, let windowID, !isPanel else { return }
+        guard windowID != ObjectIdentifier(panel) else { return }
         guard CommandCenterChatRule.clickOff(chatContent) else { return }
         dismissPanel(reason: .clickOnOtherWindow)
     }
@@ -513,6 +528,12 @@ class CommandCenterController: ObservableObject {
     /// Handles Esc from either monitor. `pressedInIsland` is what separates a
     /// deliberate dismissal from a keystroke that happened elsewhere.
     private func dismissIfEscapeApplies(pressedInIsland: Bool) {
+        // The global Esc monitor is installed for both modes, and `chatContent` is a chat
+        // fact. Recording keeps the unconditional dismissal it has always had.
+        guard case .chat = currentMode else {
+            dismissPanel(reason: .escape(inIsland: pressedInIsland))
+            return
+        }
         guard panel != nil else { return }
         guard CommandCenterChatRule.escape(content: chatContent, pressedInIsland: pressedInIsland) else { return }
         dismissPanel(reason: .escape(inIsland: pressedInIsland))
@@ -562,8 +583,8 @@ class CommandCenterController: ObservableObject {
     /// Why an island is being put away.
     ///
     /// Recorded on every dismissal because the island vanishing for the wrong reason
-    /// is invisible after the fact — the panel is gone either way — and there are
-    /// eight paths that can do it. With this, the log says which one fired.
+    /// is invisible after the fact — the panel is gone either way — and several paths
+    /// can do it. With this, the log says which one fired.
     enum DismissReason: Equatable {
         /// The X in the island's header.
         case closeButton

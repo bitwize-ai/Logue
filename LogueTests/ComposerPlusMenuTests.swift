@@ -27,6 +27,30 @@ struct ComposerPlusMenuTests {
         )
     }
 
+    @Test("Each surface's menu is wired to that surface's keys")
+    func eachSurfaceUsesItsOwnKeys() {
+        // The previous version of this suite compared two constants, which cannot fail for
+        // the regression it names: the mistake happens at the *call site*, where a surface
+        // passes the other one's key into the menu. Routing both call sites through this
+        // mapping is what makes the assertion mean something.
+        #expect(ComposerPlusMenu.keys(for: .island).webSearch
+            == AppConstants.UserDefaultsKeys.islandOneShotWebSearch)
+        #expect(ComposerPlusMenu.keys(for: .island).deepResearch
+            == AppConstants.UserDefaultsKeys.islandOneShotDeepResearch)
+        #expect(ComposerPlusMenu.keys(for: .mainWindow).webSearch
+            == AppConstants.UserDefaultsKeys.oneShotWebSearch)
+        #expect(ComposerPlusMenu.keys(for: .mainWindow).deepResearch
+            == AppConstants.UserDefaultsKeys.oneShotDeepResearch)
+    }
+
+    @Test("The two surfaces never share a key")
+    func surfacesShareNothing() {
+        let island = ComposerPlusMenu.keys(for: .island)
+        let main = ComposerPlusMenu.keys(for: .mainWindow)
+        #expect(island.webSearch != main.webSearch)
+        #expect(island.deepResearch != main.deepResearch)
+    }
+
     @Test("No two of the four one-shot keys collide")
     func allFourKeysAreDistinct() {
         let keys = Set([

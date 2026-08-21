@@ -14,20 +14,14 @@ import Testing
 struct CommandCenterChatRuleTests {
     // MARK: - Trigger
 
-    @Test("The shortcut closes a chat island that is up in front")
+    @Test("The shortcut closes a chat island however much it is holding")
     func triggerDismissesShowingChat() {
+        // Deliberate, so it is not held to the bar a stray click is — and it is the
+        // keyboard way out now that clicks and app switches spare a conversation.
         #expect(
             CommandCenterChatRule.trigger(mode: .chat, isShowingPanel: true)
                 == .dismiss
         )
-    }
-
-    @Test("The shortcut closes an island however much it is holding")
-    func triggerDismissesRegardlessOfContent() {
-        // The shortcut is deliberate, so it is not held to the bar a stray click is.
-        // It is also the keyboard way out now that an island with a conversation
-        // survives clicks and app switches.
-        #expect(CommandCenterChatRule.trigger(mode: .chat, isShowingPanel: true) == .dismiss)
     }
 
     @Test("The shortcut opens the chat island when nothing is up")
@@ -210,10 +204,6 @@ struct CommandCenterChatRuleTests {
             content: CommandCenterChatContent(hasConversation: true, hasDraft: false),
             pressedInIsland: false
         ))
-        #expect(!CommandCenterChatRule.escape(
-            content: CommandCenterChatContent(hasConversation: false, hasDraft: false, hasAttachments: true),
-            pressedInIsland: false
-        ))
     }
 
     @Test("Esc pressed in another app still closes an island holding nothing")
@@ -225,21 +215,27 @@ struct CommandCenterChatRuleTests {
         ))
     }
 
-    @Test("Esc and a stray click agree about what may be closed")
-    func escapeElsewhereMatchesClickOff() {
-        // Two incidental inputs, one bar. Stated as an equivalence so a future edit
-        // cannot make one of them stricter than the other without saying so here.
+    @Test("Neither a stray click nor a stray Esc can close a conversation")
+    func incidentalInputsSpareAConversation() {
+        // The one thing both incidental paths must agree on.
         for content in [
-            CommandCenterChatContent(hasConversation: false, hasDraft: false),
-            CommandCenterChatContent(hasConversation: false, hasDraft: true),
-            CommandCenterChatContent(hasConversation: false, hasDraft: false, hasAttachments: true),
             CommandCenterChatContent(hasConversation: true, hasDraft: false),
             CommandCenterChatContent(hasConversation: true, hasDraft: true, hasAttachments: true),
         ] {
-            #expect(
-                CommandCenterChatRule.escape(content: content, pressedInIsland: false)
-                    == CommandCenterChatRule.clickOff(content)
-            )
+            #expect(!CommandCenterChatRule.clickOff(content))
+            #expect(!CommandCenterChatRule.escape(content: content, pressedInIsland: false))
         }
+    }
+
+    @Test("An island holding only files keeps them through a click but not through Esc")
+    func attachmentsSurviveClicksButNotEscape() {
+        // They part company here on purpose. An island with no conversation draws no close
+        // button, so if Esc from elsewhere also refused, a file-only island would have no
+        // keyboard exit at all — the user would have to click into the field first to make
+        // the panel key. A click is cheap to make by accident and spares the files; pressing
+        // Esc is not.
+        let staged = CommandCenterChatContent(hasConversation: false, hasDraft: false, hasAttachments: true)
+        #expect(!CommandCenterChatRule.clickOff(staged))
+        #expect(CommandCenterChatRule.escape(content: staged, pressedInIsland: false))
     }
 }

@@ -4,7 +4,9 @@ import Textual
 /// Bottom-centered chat island.
 /// Prompt pill at bottom, messages float above with glass backdrop.
 struct CommandCenterChatView: View {
-    let onDismiss: () -> Void
+    /// Puts the island away. The reason is passed so the controller's log can tell a
+    /// hand-off apart from someone pressing the close button.
+    let onDismiss: (CommandCenterChatDismissal) -> Void
     let onContentChanged: (CommandCenterChatContent) -> Void
 
     /// The island's own thread, created on first send and never selected.
@@ -99,6 +101,22 @@ struct CommandCenterChatView: View {
         !rows.isEmpty
     }
 
+    /// Whether anything is staged for the next send.
+    private var hasStagedChips: Bool {
+        !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce
+    }
+
+    /// Whether this island owns a thread — drawn or not.
+    ///
+    /// The close button lives in `messagesPanel`, and the rules that refuse to dismiss the
+    /// island read `hasConversation`. Those two must be the same question or the island
+    /// reaches a state where nothing incidental can close it and there is no X to press: a
+    /// conversation exists with no rows yet, which happens between `ensureConversation()` and
+    /// the first row, and persists when a send is refused.
+    private var hasThread: Bool {
+        hasContent || conversationID != nil
+    }
+
     // Extension-visible: +Composer
     /// Whether the island's own thread is busy — never the main window's.
     var isGenerating: Bool {
@@ -117,7 +135,7 @@ struct CommandCenterChatView: View {
             // alone left a window in which a just-sent island reported itself empty —
             // and an empty island is one every rule here is allowed to throw away.
             // Clicking Send could close the island.
-            hasConversation: hasContent || conversationID != nil,
+            hasConversation: hasThread,
             hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             hasAttachments: !attachments.isEmpty
         )
@@ -125,16 +143,27 @@ struct CommandCenterChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if hasContent {
+            if hasThread {
                 messagesPanel
                     .padding(.bottom, 10)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
+            // In the layout rather than floating above the pill. As an `.overlay` offset
+            // -34pt they sat outside the hosting view's frame on a fresh island — which the
+            // panel clips, and which hit-testing treats as "not the island", so a staged
+            // file or an armed mode showed no chip at all on the one path where you most
+            // need to see it.
+            if hasStagedChips {
+                attachmentChips
+                    .frame(width: pillWidth, alignment: .leading)
+                    .padding(.bottom, 6)
+            }
+
             promptPill
         }
         .frame(width: pillWidth)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: hasContent)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: hasThread)
         .onAppear {
             isInputFocused = true
             voiceManager.onTranscriptReady = { transcript in
@@ -151,7 +180,11 @@ struct CommandCenterChatView: View {
             if voiceManager.isRecording {
                 voiceManager.stopListening()
             }
-            readAloud.stop()
+            // The callback lives on a shared singleton, so leaving ours installed means a
+            // later dictation from the editor's chat panel is delivered into this dead
+            // view's state and vanishes. The two in-app panels already clear theirs.
+            voiceManager.onTranscriptReady = nil
+            stopReadAloudIfOurs()
         }
         .onAppear {
             // The controller resets its copy when it builds the panel, so tell it what
@@ -224,7 +257,7 @@ struct CommandCenterChatView: View {
                     .help("Continue this conversation in the main window")
                 }
 
-                Button(action: onDismiss) {
+                Button { onDismiss(.closeButton) } label: {
                     Image(systemName: "xmark")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.secondary)
@@ -325,7 +358,10 @@ struct CommandCenterChatView: View {
         // staged files and the mode flags, then hit that refusal and did nothing — no bubble,
         // no error, and an empty conversation left behind by `ensureConversation`.
         guard !coordinator.isProcessingAnyConversation else {
-            ToastCenter.shared.show(UICopy.Status.busyElsewhere, kind: .warning)
+            // Not a toast: `.toastOverlay()` is mounted only on the main window, so a toast
+            // raised here is shown in the window behind the pill or not at all — the same
+            // trap `MessageActions` documents. The island has its own banner.
+            localError = UICopy.Status.busyElsewhere
             return
         }
 
@@ -335,8 +371,8 @@ struct CommandCenterChatView: View {
         inputText = ""
         attachments = []
         // Cleared per send: a one-shot mode must not survive the question it was set for.
-        // Both flags are this island's own `@State` — see their declarations for why they
-        // stopped being the main window's `UserDefaults` keys.
+        // Both flags are `@AppStorage` on the island's own keys — see their declarations
+        // for why they are not the main window's — and are cleared again in `.onAppear`.
         isWebSearchOnce = false
         isDeepResearchOnce = false
 
@@ -370,11 +406,11 @@ struct CommandCenterChatView: View {
             )
             if started == nil {
                 // One run at a time, app-wide — and this one belongs to the other surface, so
-                // none of the island's own indicators would have said anything. Put the
-                // question back rather than losing it.
-                inputText = text
-                isDeepResearchOnce = true
-                ToastCenter.shared.show(UICopy.Status.busyElsewhere, kind: .warning)
+                // none of the island's own indicators would have said anything. Put the whole
+                // send back, both modes included: restoring the prompt and the Deep Research
+                // chip while dropping the Search one is how the next attempt runs without web
+                // tools and never says so.
+                restore(text: text, webSearch: searchThisTurn, deepResearch: true, files: staged)
             }
         case let .imagePlayground(concept):
             // ImagePlayground presents a sheet, which a floating pill cannot host. Answer it
@@ -407,6 +443,14 @@ struct CommandCenterChatView: View {
         else { return [] }
         return AgentToolTimeline.awaitingApproval(in: conversation.messages)
     }
+
+    // Extension-visible: +Composer
+    /// An error the island raised itself, as opposed to one a run left behind.
+    ///
+    /// Separate from the coordinator's `lastError` because a refused send never reaches a
+    /// coordinator — there is no run to own the message — and because it must clear as soon
+    /// as the user does anything.
+    @State var localError: String?
 
     /// The error for this thread, if the last run left one.
     ///
@@ -443,7 +487,10 @@ struct CommandCenterChatView: View {
             Spacer(minLength: 0)
 
             Button {
-                withAnimation { coordinator.dismissError() }
+                withAnimation {
+                    localError = nil
+                    coordinator.dismissError()
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
@@ -480,7 +527,7 @@ struct CommandCenterChatView: View {
         // thread it promised to carry over unreachable until the user opened a window by hand.
         AppDelegate.bringMainWindowForward()
         NotificationCenter.default.post(name: .chatFocusInput, object: nil)
-        onDismiss()
+        onDismiss(.openInLogue)
     }
 
     /// The island's thread, made on first use.
@@ -534,10 +581,46 @@ struct CommandCenterChatView: View {
     /// would throw away something the user can still open from the main window.
     private func clearSession() {
         cancelWhicheverIsRunning()
-        readAloud.stop()
+        stopReadAloudIfOurs()
         conversationID = nil
         inputText = ""
+        // A staged file belonged to the question being abandoned. Leaving it meant "New"
+        // handed you a fresh thread that was still holding — and about to send — the
+        // previous one's attachment.
+        attachments = []
+        localError = nil
         isInputFocused = true
+    }
+
+    /// Puts a refused send back exactly as it was.
+    ///
+    /// `sendMessage` clears the composer before it knows whether the send was accepted, so
+    /// every refusal has to undo all of it. Written once because the branch that restored
+    /// the prompt and one mode while dropping the other is the bug this replaced.
+    private func restore(text: String, webSearch: Bool, deepResearch: Bool, files: [TempAttachment]) {
+        inputText = text
+        isWebSearchOnce = webSearch
+        isDeepResearchOnce = deepResearch
+        attachments = files
+        localError = UICopy.Status.busyElsewhere
+    }
+
+    /// Stops read-aloud only when what is playing is one of this island's answers.
+    ///
+    /// `AgentReadAloudService` is shared with the main window — that is the point of
+    /// mounting it rather than owning a second synthesizer — so an unconditional `stop()`
+    /// here cut off a reply the *main window* was reading whenever the island was dismissed
+    /// or cleared. Same rule as every other piece of live state: it belongs to the
+    /// conversation that started it.
+    private func stopReadAloudIfOurs() {
+        guard rows.contains(where: { row in
+            if case let .message(message) = row {
+                return readAloud.isSpeaking(content: message.content)
+            }
+            return false
+        })
+        else { return }
+        readAloud.stop()
     }
 
     // Extension-visible: +Bubbles

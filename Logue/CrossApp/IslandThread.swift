@@ -1,5 +1,15 @@
 import Foundation
 
+/// Why the island is putting itself away.
+///
+/// The view knows the difference; the controller only knows a closure fired. Without this
+/// the dismissal log attributed "Open in Logue" to the close button, which is the one thing
+/// the log exists to tell apart.
+enum CommandCenterChatDismissal: Equatable {
+    case closeButton
+    case openInLogue
+}
+
 /// One turn as the island draws it.
 ///
 /// Named for what it was — a view model over messages the island kept in its own array and

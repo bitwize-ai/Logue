@@ -37,16 +37,37 @@ struct ComposerPlusMenu: View {
         )
     }
 
+    /// Which composer this menu belongs to.
+    ///
+    /// The per-send keys are chosen from this rather than passed in, so a surface cannot be
+    /// wired to the other one's storage by mistake — which is the regression that made the
+    /// island's send disarm a chip armed in the main window.
+    enum Surface {
+        case mainWindow
+        case island
+    }
+
+    static func keys(for surface: Surface) -> (webSearch: String, deepResearch: String) {
+        switch surface {
+        case .mainWindow:
+            (AppConstants.UserDefaultsKeys.oneShotWebSearch, AppConstants.UserDefaultsKeys.oneShotDeepResearch)
+        case .island:
+            (
+                AppConstants.UserDefaultsKeys.islandOneShotWebSearch,
+                AppConstants.UserDefaultsKeys.islandOneShotDeepResearch
+            )
+        }
+    }
+
     let isDisabled: Bool
     let onAttach: () -> Void
-    var style: Style = .mainWindow
+    let style: Style
 
     @AppStorage private var isWebSearchOnce: Bool
     @AppStorage private var isDeepResearchOnce: Bool
 
     init(
-        webSearchKey: String,
-        deepResearchKey: String,
+        surface: Surface,
         isDisabled: Bool,
         style: Style = .mainWindow,
         onAttach: @escaping () -> Void
@@ -54,8 +75,9 @@ struct ComposerPlusMenu: View {
         self.isDisabled = isDisabled
         self.style = style
         self.onAttach = onAttach
-        _isWebSearchOnce = AppStorage(wrappedValue: false, webSearchKey)
-        _isDeepResearchOnce = AppStorage(wrappedValue: false, deepResearchKey)
+        let keys = Self.keys(for: surface)
+        _isWebSearchOnce = AppStorage(wrappedValue: false, keys.webSearch)
+        _isDeepResearchOnce = AppStorage(wrappedValue: false, keys.deepResearch)
     }
 
     var body: some View {

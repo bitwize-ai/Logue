@@ -22,8 +22,7 @@ extension CommandCenterChatView {
             // per-surface redraw #61 exists to stop, and left no way to reach tool
             // settings from the island at all.
             ComposerPlusMenu(
-                webSearchKey: AppConstants.UserDefaultsKeys.islandOneShotWebSearch,
-                deepResearchKey: AppConstants.UserDefaultsKeys.islandOneShotDeepResearch,
+                surface: .island,
                 isDisabled: isGenerating,
                 style: .island,
                 onAttach: {
@@ -45,7 +44,10 @@ extension CommandCenterChatView {
                     if NSEvent.modifierFlags.contains(.shift) {
                         inputText += "\n"
                         return .handled
-                    } else if canSend {
+                    } else if canSend, !LLMEngineStatus.shared.isBusy {
+                        // The same condition the Send button is disabled on. Without it
+                        // Return sent while the button beside it refused to, which reads as
+                        // the button being broken.
                         sendMessage()
                         return .handled
                     }
@@ -79,10 +81,14 @@ extension CommandCenterChatView {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(canSend ? .white : .white.opacity(0.25))
+                        .foregroundStyle(canSend && !LLMEngineStatus.shared.isBusy ? .white : .white.opacity(0.25))
                         .frame(width: 32, height: 32)
                         .background(
-                            Circle().fill(canSend ? AppThemeConstants.brandPrimary : Color.white.opacity(0.08))
+                            Circle().fill(
+                                canSend && !LLMEngineStatus.shared.isBusy
+                                    ? AppThemeConstants.brandPrimary
+                                    : Color.white.opacity(0.08)
+                            )
                         )
                 }
                 .buttonStyle(.plain)
@@ -102,12 +108,6 @@ extension CommandCenterChatView {
                 .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
-        .overlay(alignment: .top) {
-            if !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce {
-                attachmentChips
-                    .offset(y: -34)
-            }
-        }
         // Dropping onto the pill is the same intake as the picker, so a file arrives the
         // same way whichever route the user takes.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -121,11 +121,11 @@ extension CommandCenterChatView {
     }
 
     /// What is staged for the next send, with a way to take each one back off.
-    private var attachmentChips: some View {
+    var attachmentChips: some View {
         HStack(spacing: 6) {
             if isDeepResearchOnce {
                 ModeChip(
-                    title: "Deep Research",
+                    title: UICopy.Input.deepResearch,
                     systemImage: "sparkle.magnifyingglass",
                     tint: AppThemeConstants.brandPrimary
                 ) {
@@ -134,7 +134,7 @@ extension CommandCenterChatView {
             }
             if isWebSearchOnce {
                 ModeChip(
-                    title: "Search",
+                    title: UICopy.Input.webSearch,
                     systemImage: "globe",
                     tint: AppThemeConstants.brandPrimary
                 ) {
