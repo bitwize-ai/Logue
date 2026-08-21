@@ -189,6 +189,11 @@ enum UICopy {
             "New in \(version)"
         }
 
+        /// Help menu. Says where it goes, because it leaves the app.
+        static let chromeExtensionMenuItem = "Get the Chrome Extension"
+        /// The card's button. A verb, so the deck is plainly not the destination.
+        static let chromeExtensionLink = "Get the Chrome extension"
+
         /// Help menu. Named for the app because it sits among app-wide items.
         static let menuItem = "What's New in Logue"
         /// Settings → General, beside "Show welcome tour".

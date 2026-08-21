@@ -13,10 +13,21 @@ enum HelpMenuActions {
         static let aboutUs = URL(string: "https://bitwize.ai/")!
         static let privacyPolicy = URL(string: "https://bitwize.ai/privacy")!
         static let termsOfService = URL(string: "https://bitwize.ai/terms")!
+        static let chromeExtension = URL(
+            string: "https://chromewebstore.google.com/detail/logue/gaegipceeccdchdffamdphfiegfeenhc"
+        )!
     }
 
     static func openDocumentation() {
         NSWorkspace.shared.open(URLs.documentation)
+    }
+
+    /// The extension lives in the Chrome Web Store, not in this build, so the only thing the
+    /// app can do about it is point. Kept in Help beside Documentation rather than buried in
+    /// Settings: it is the menu people open when looking for the parts of Logue they have
+    /// not found yet, and the What's New card announcing it is seen once.
+    static func openChromeExtension() {
+        NSWorkspace.shared.open(URLs.chromeExtension)
     }
 
     static func openKeyboardShortcuts() {

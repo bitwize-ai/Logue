@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One place to start.** Home and Ask Logue were two screens doing one job; they are now a
+  single landing surface — your day, what to pick back up, and a prompt bar that becomes the
+  conversation without navigating away.
+- **Tasks, and a way to triage them.** Action items Logue finds in a meeting land in a real
+  list with due dates, priorities and tags. Typing "Send the deck tomorrow #launch !" files
+  itself, and the triage panel turns a meeting's loose ends into things you can work.
+- **Recordings that survive the worst.** Unplug a headset mid-call, mute for ten minutes, or
+  quit the app outright — the recording keeps its place on the meeting's timeline and the
+  transcript is rebuilt when Logue reopens, instead of ending where the trouble started.
+- **A Logue extension for Chrome.** Puts the same chat and writing tools in any tab — ask
+  about the page you are on, answered by the model on this Mac rather than someone's server. Install it from the Chrome Web Store; What's New links to
+  it, and Help → Get the Chrome Extension keeps the link afterwards.
+
+### Changed
+
+- **Logue now accepts the browser extension's connection by default.** The loopback bridge the
+  extension talks to shipped off, which meant the extension did nothing until a switch in
+  Settings → Privacy was found — and almost nobody found it. It listens on your Mac's loopback
+  address only, so nothing off the machine can reach it, and a notice on Home says plainly that
+  it is listening and carries the switch to stop it. Anyone who turned it off deliberately stays
+  off; the new default only applies where no choice was recorded.
 - **What's New after an update.** Logue now says what a release changed, showing only the
   versions you have not already seen — several at once if you skipped some. Because nothing
   has ever been announced in-app, this first one covers everything shipped so far. A fresh

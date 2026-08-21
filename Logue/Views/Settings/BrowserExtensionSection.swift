@@ -1,17 +1,21 @@
 import SwiftUI
 
-/// The opt-in for the browser bridge, under Privacy.
+/// The switch for the browser bridge, under Privacy, and the link to the extension itself.
 ///
 /// Under Privacy rather than a general or "integrations" tab because the trade is a privacy one:
-/// turning it on opens a listening socket that any program running as this user can reach. That is
+/// the bridge is a listening socket that any program running as this user can reach. That is
 /// worth saying in the interface rather than only in a commit message, so the copy names the
 /// address and says plainly that nothing leaves the Mac.
+///
+/// It is on by default as of 1.1.0 — see `BrowserBridgeSettings` — so the copy here says when
+/// the port is open rather than describing it as something the user has yet to allow.
 struct BrowserExtensionSection: View {
     @State private var bridge = BrowserBridgeServer.shared
     /// `@AppStorage` rather than a `@State` snapshot: the latter read the default once at view
     /// init and never again, so anything else toggling the setting would leave this switch
-    /// showing the opposite of the truth.
-    @AppStorage(AppConstants.UserDefaultsKeys.browserBridgeEnabled) private var isEnabled = false
+    /// showing the opposite of the truth. The `true` matches what `BrowserBridgeSettings`
+    /// registers, so a fresh install does not show "off" while the server is running.
+    @AppStorage(AppConstants.UserDefaultsKeys.browserBridgeEnabled) private var isEnabled = true
     @State private var modelManager = ModelManager.shared
 
     /// Whether answers would be produced by an external provider rather than on this Mac.
@@ -35,6 +39,11 @@ struct BrowserExtensionSection: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Button(UICopy.WhatsNew.chromeExtensionLink) {
+                HelpMenuActions.openChromeExtension()
+            }
+            .controlSize(.small)
+
             Toggle("Allow the browser extension to connect", isOn: $isEnabled)
                 .toggleStyle(.switch)
                 .onChange(of: isEnabled) { _, enabled in
@@ -50,8 +59,9 @@ struct BrowserExtensionSection: View {
             }
 
             Text("While this is on, Logue accepts connections on 127.0.0.1 — reachable only from "
-                + "this Mac, never from the network. Any program running as you can reach it too, "
-                + "which is why it is off until you turn it on.")
+                + "this Mac, never from the network. Any program running as you can reach it too. "
+                + "Logue accepts them by default so the extension works once installed; turn this "
+                + "off to close the port, and it stays off.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

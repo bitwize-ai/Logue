@@ -2,6 +2,13 @@ import Foundation
 
 // MARK: - Types
 
+/// Somewhere a card can send the reader, for a feature that does not live inside Logue.
+struct WhatsNewLink: Equatable, Sendable {
+    /// What the button says. A verb, so it is obvious the deck is not the destination.
+    let label: String
+    let url: URL
+}
+
 /// One thing worth telling the user about.
 struct WhatsNewFeature: Identifiable, Equatable, Sendable {
     /// Stable slug. Never renamed and never reused — tests and screenshots pin to it.
@@ -13,18 +20,38 @@ struct WhatsNewFeature: Identifiable, Equatable, Sendable {
     /// Base names of PNGs in `Logue/Resources`, without the extension. Several play as a
     /// sequence, in the order written. See docs/WHATS_NEW.md.
     let screenshots: [String]
+    /// Where to send the reader, for the few features that live outside the app.
+    let link: WhatsNewLink?
 
-    init(id: String, symbol: String, title: String, detail: String, screenshots: [String] = []) {
+    init(
+        id: String,
+        symbol: String,
+        title: String,
+        detail: String,
+        screenshots: [String] = [],
+        link: WhatsNewLink? = nil
+    ) {
         self.id = id
         self.symbol = symbol
         self.title = title
         self.detail = detail
         self.screenshots = screenshots
+        self.link = link
     }
 
     /// Convenience for the common case of a single still.
-    init(id: String, symbol: String, title: String, detail: String, screenshot: String) {
-        self.init(id: id, symbol: symbol, title: title, detail: detail, screenshots: [screenshot])
+    init(
+        id: String,
+        symbol: String,
+        title: String,
+        detail: String,
+        screenshot: String,
+        link: WhatsNewLink? = nil
+    ) {
+        self.init(
+            id: id, symbol: symbol, title: title, detail: detail,
+            screenshots: [screenshot], link: link
+        )
     }
 
     var hasArt: Bool {
@@ -95,6 +122,88 @@ enum WhatsNewCatalog {
             // Where it lives before what it does: the menu bar item is the part nobody
             // finds on their own.
             screenshots: ["whatsnew-asklogue-1-where", "whatsnew-asklogue-2-answer"]
+        )
+
+        /// Compile-time constant string — `URL(string:)` will never return nil.
+        private static let chromeStore = URL(
+            string: "https://chromewebstore.google.com/detail/logue/gaegipceeccdchdffamdphfiegfeenhc"
+        )!
+
+        // MARK: Recap, for the release deck only
+
+        /// The back catalogue as two cards instead of four. An upgrading user already owns
+        /// the app; re-teaching them transcription card by card buries the thing they opened
+        /// the deck for. The tour still introduces these one at a time, because a newcomer
+        /// has not seen any of it — the two lists exist to be different.
+        static let recapCapture = WhatsNewFeature(
+            id: "recap-capture",
+            symbol: "waveform",
+            title: "Everything you already had",
+            detail: """
+            Meetings that transcribe themselves from both sides of the call, Smart Minutes \
+            and action items written from the transcript, and a real editor for the notes \
+            that come out of it.
+            """,
+            screenshot: "whatsnew-transcription"
+        )
+
+        static let recapPrivacy = WhatsNewFeature(
+            id: "recap-privacy",
+            symbol: "lock.shield",
+            title: "…and it never left your Mac",
+            detail: """
+            Transcription, summaries and search all run on this machine, on your own \
+            models. Spaces and wiki-links keep the notes findable. Nothing is uploaded \
+            unless you turn on a feature that says so.
+            """,
+            screenshot: "whatsnew-privacy"
+        )
+
+        static let chromeExtension = WhatsNewFeature(
+            id: "chrome-extension",
+            symbol: "puzzlepiece.extension.fill",
+            title: "Bring the browser in too",
+            detail: """
+            The Logue extension puts the same chat and writing tools in any tab — ask \
+            about the page you are on, and the answer comes from the model on this Mac \
+            rather than from someone's server. Install it, take it for a spin, and tell \
+            us how it goes: a review helps other people find it.
+            """,
+            screenshot: "whatsnew-chrome-extension",
+            link: WhatsNewLink(label: UICopy.WhatsNew.chromeExtensionLink, url: chromeStore)
+        )
+
+        static let tasks = WhatsNewFeature(
+            id: "tasks-and-triage",
+            symbol: "checklist",
+            title: "Tasks, and a way to triage them",
+            detail: """
+            Every action item Logue finds in a meeting lands somewhere you can actually \
+            work: one list, with due dates, priorities and tags. Type "Send the deck \
+            tomorrow #launch !" and it files itself.
+            """
+        )
+
+        static let homeSurface = WhatsNewFeature(
+            id: "home-agent-surface",
+            symbol: "house",
+            title: "One place to start",
+            detail: """
+            Home and Ask Logue were two screens doing one job. They are now a single \
+            landing surface: your day, what to pick back up, and a prompt bar that turns \
+            into the conversation without going anywhere else.
+            """
+        )
+
+        static let recordingResilience = WhatsNewFeature(
+            id: "recording-resilience",
+            symbol: "shield.lefthalf.filled",
+            title: "A recording that survives the worst",
+            detail: """
+            Unplug the headset mid-call, mute for ten minutes, or quit the app outright — \
+            the recording keeps its place and the transcript comes back when Logue \
+            reopens, instead of ending where the trouble started.
+            """
         )
 
         static let crossApp = WhatsNewFeature(
@@ -215,19 +324,28 @@ enum WhatsNewCatalog {
         // 1.1.0 is a one-off: it introduces What's New, so it carries the whole back
         // catalogue rather than its own additions. Read in two halves — what Logue
         // already does, then what is new, which only means anything against the first.
+        //
+        // `crossApp` is deliberately not here. "Logue works in every other app too" is
+        // true and is not what someone opening a release deck wants to be told: it asks
+        // them to learn two shortcuts before they have used the thing in front of them.
+        // It stays in the codebase and in the docs; it is the deck it does not earn.
+        // `chromeExtension` is the one card that sends the reader somewhere else, which
+        // is the point — the extension is not in this build and has to be installed.
         WhatsNewRelease(
             version: AppVersion(major: 1, minor: 1, patch: 0),
             features: [
-                // Already there.
-                Feature.meetings,
-                Feature.smartMinutes,
-                Feature.writingEditor,
-                Feature.spacesAndSearch,
-                Feature.privacy,
-                Feature.askLogue,
-                Feature.crossApp,
-                Feature.externalProviders,
-                // New — what these releases added.
+                // The back catalogue, as two recap cards. It used to be eight, then four;
+                // both were the same mistake in different sizes. Someone upgrading opened
+                // this to find out what changed, and every card spent on what they already
+                // use is one they click past to get there.
+                Feature.recapCapture,
+                Feature.recapPrivacy,
+                // New — what these releases added, one card each. This is the half the deck
+                // is for, so it is the half that gets the room.
+                Feature.homeSurface,
+                Feature.tasks,
+                Feature.recordingResilience,
+                Feature.chromeExtension,
                 Feature.markdownStorage,
                 Feature.wikiLinks,
                 Feature.properties,

@@ -56,6 +56,12 @@ struct WhatsNewView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var index = 0
+    /// Which way the deck last moved, so the slide matches the button that was pressed.
+    ///
+    /// Stored rather than derived: a transition is resolved as the card is inserted, and by
+    /// then the index it came from is gone. Only `go(to:)` writes either of these, so they
+    /// cannot fall out of step.
+    @State private var isMovingBack = false
 
     private static let logger = Logger(subsystem: AppConstants.bundleID, category: "WhatsNew")
 
@@ -122,8 +128,10 @@ struct WhatsNewView: View {
                     if position == index {
                         card(page)
                             .transition(.asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
-                                removal: .move(edge: .leading).combined(with: .opacity)
+                                insertion: .move(edge: isMovingBack ? .leading : .trailing)
+                                    .combined(with: .opacity),
+                                removal: .move(edge: isMovingBack ? .trailing : .leading)
+                                    .combined(with: .opacity)
                             ))
                     }
                 }
@@ -200,6 +208,17 @@ struct WhatsNewView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 460)
 
+            if let link = page.feature.link {
+                // Opened in the user's browser rather than in a window here: the
+                // destination is a web store listing, and a card is not a browser.
+                Link(destination: link.url) {
+                    Label(link.label, systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.top, 4)
+            }
+
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 30)
@@ -218,6 +237,19 @@ struct WhatsNewView: View {
         } else {
             ShowcaseSequence(urls: urls, label: feature.title)
         }
+    }
+
+    // MARK: - Navigation
+
+    /// Moves the deck, recording which way it went first.
+    ///
+    /// The order matters: the transition for the incoming card is resolved from
+    /// `isMovingBack` during the same update that changes `index`, so setting the direction
+    /// afterwards would animate the previous move's direction.
+    private func go(to newIndex: Int) {
+        guard pages.indices.contains(newIndex) else { return }
+        isMovingBack = newIndex < index
+        index = newIndex
     }
 
     // MARK: - Footer
@@ -242,7 +274,7 @@ struct WhatsNewView: View {
             }
 
             if index > 0 {
-                Button(UICopy.WhatsNew.back) { index -= 1 }
+                Button(UICopy.WhatsNew.back) { go(to: index - 1) }
                     .keyboardShortcut(.leftArrow, modifiers: [])
             }
 
@@ -250,7 +282,7 @@ struct WhatsNewView: View {
                 if isLastPage {
                     dismiss()
                 } else {
-                    index += 1
+                    go(to: index + 1)
                 }
             }
             .buttonStyle(.borderedProminent)
