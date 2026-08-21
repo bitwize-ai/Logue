@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: [ "main", "dev" ]
+  # Every pull request, whatever it targets. Filtering by base branch meant a PR
+  # stacked on another PR's branch got no CI at all — it was reviewed, approved and
+  # merged on the strength of a green tick it never had. Pushes stay filtered:
+  # a branch with no PR open is someone's work in progress, not a thing to gate.
   pull_request:
-    branches: [ "main", "dev" ]
 
 # Least privilege: CI only reads the repo. Denies write access to the
 # GITHUB_TOKEN for all workflow runs, including those from fork pull requests.
