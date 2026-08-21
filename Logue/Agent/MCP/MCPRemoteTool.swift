@@ -101,4 +101,6 @@ struct MCPRemoteTool: AgentTool {
 
 enum MCPCallError: Error, Equatable {
     case timedOut
+    /// The transport is not built yet. Takes the same path as a server that is down.
+    case notImplemented
 }
