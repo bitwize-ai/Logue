@@ -51,6 +51,8 @@ enum UICopy {
         static let researching = "Researching…"
         static let summarizing = "Summarizing…"
         static let executing = "Running tool…"
+        /// Shown when a send is refused because another conversation holds the engine.
+        static let busyElsewhere = "Logue is busy with another conversation"
 
         /// Pick a status string based on what the agent is currently doing.
         /// Falls back to "Thinking…" when no signal is available.

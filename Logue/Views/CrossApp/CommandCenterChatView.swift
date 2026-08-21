@@ -39,14 +39,18 @@ struct CommandCenterChatView: View {
     /// lifted out of the main window's input bar — see `AttachmentIntake`.
     @State var attachments: [TempAttachment] = []
     // Extension-visible: +Composer
-    /// Web search for the next send.
+    /// Web search for the next send, belonging to this island alone.
     ///
-    /// The same `UserDefaults` key the main window's chip binds, because the coordinator reads
-    /// it too — three readers of one value rather than a copy per surface. It follows that the
-    /// island must clear it after a send exactly as the main window does, or a search switched
-    /// on here silently arms the next send over there.
-    @AppStorage(AppConstants.UserDefaultsKeys.oneShotWebSearch)
-    var isWebSearchOnce: Bool = false
+    /// It used to bind the same `UserDefaults` key as the main window's chip, on the reasoning
+    /// that one value with several readers beats a copy per surface. That was wrong in the
+    /// direction nobody checked: the island clears the flag after every send, so asking a
+    /// quick question here silently disarmed a Search chip the user had turned on in the main
+    /// window and left armed on an unsent prompt. They would never be told — the prompt just
+    /// runs without web tools.
+    ///
+    /// The coordinator takes the value as a parameter, so nothing needs the shared read. A
+    /// per-send mode is per surface, and this is `@State` accordingly.
+    @State var isWebSearchOnce: Bool = false
     // Extension-visible: +Bubbles
     @State var copiedMessageID: UUID?
     // Extension-visible: +Bubbles
@@ -302,6 +306,16 @@ struct CommandCenterChatView: View {
         )
         guard let route, !isGenerating else { return }
 
+        // `isGenerating` is scoped to this conversation, which is right for the spinner and
+        // wrong for this: `AgentCoordinator.send` refuses on a *global* busy check. Without
+        // this guard a send made while the main window was mid-run cleared the field, the
+        // staged files and the mode flags, then hit that refusal and did nothing — no bubble,
+        // no error, and an empty conversation left behind by `ensureConversation`.
+        guard !coordinator.isProcessingAnyConversation else {
+            ToastCenter.shared.show(UICopy.Status.busyElsewhere, kind: .warning)
+            return
+        }
+
         let conversationID = ensureConversation()
         let staged = attachments
         let searchThisTurn = isWebSearchOnce
@@ -426,7 +440,11 @@ struct CommandCenterChatView: View {
         // Selecting before activating, so the window is already showing the right thread when
         // it comes forward rather than visibly switching to it afterwards.
         store.selectedConversationID = conversationID
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        // Activating is not enough. With the main window closed or minimised there is no
+        // window to come forward and no `MainWindowView` to observe `.chatFocusInput`, so the
+        // button dismissed the island, made Logue frontmost, and showed nothing — leaving the
+        // thread it promised to carry over unreachable until the user opened a window by hand.
+        AppDelegate.bringMainWindowForward()
         NotificationCenter.default.post(name: .chatFocusInput, object: nil)
         onDismiss()
     }
