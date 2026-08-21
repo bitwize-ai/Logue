@@ -40,6 +40,12 @@ struct CommandCenterChatView: View {
     var isDeepResearchOnce: Bool = false
     // Extension-visible: +Composer
     @State var deepResearch = DeepResearchCoordinator.shared
+    // Extension-visible: +Composer
+    /// Built the way `MainWindowView` builds its own, off the same singletons. The island is
+    /// an `NSPanel` and never receives the main window's environment, so a shared instance
+    /// would have to be reached for globally; two providers over one set of stores answer
+    /// the same question.
+    @State var insights = InsightsStatsProvider(meetingStore: .shared, documentStore: .shared)
     // Extension-visible: +Bubbles
     @State var copiedMessageID: UUID?
     // Extension-visible: +Bubbles
@@ -105,6 +111,23 @@ struct CommandCenterChatView: View {
                 messagesPanel
                     .padding(.bottom, 10)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                starters
+            }
+
+            if voiceManager.isRecording {
+                // The same indicator the two in-app chat panels mount. The island streams the
+                // partial transcript straight into the field so it can be edited before
+                // sending, so the indicator is handed none — what it adds here is the level,
+                // which is the only thing that says the mic is actually hearing anything, and
+                // a stop target bigger than the mic glyph.
+                VoiceInputIndicator(
+                    audioLevel: voiceManager.audioLevel,
+                    partialTranscript: "",
+                    onStop: { voiceManager.stopListening() }
+                )
+                .padding(.bottom, 8)
+                .transition(.opacity)
             }
 
             promptPill

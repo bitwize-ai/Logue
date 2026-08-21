@@ -100,6 +100,20 @@ extension CommandCenterChatView {
             .disabled(isGenerating)
             .help(voiceManager.isRecording ? "Stop voice input" : "Voice input")
 
+            // What Return will do, once it will do anything.
+            //
+            // Shown only when there is something to send: a hint that is always there is
+            // chrome, and the island has one line to spend. Shift-Return for a newline is
+            // deliberately not advertised — it is the escape hatch from the hint, not a
+            // second thing to learn.
+            if canSend, !isGenerating {
+                Text("↩")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+            }
+
             // Send / Stop
             if isGenerating {
                 Button(action: stopStreaming) {
@@ -125,6 +139,7 @@ extension CommandCenterChatView {
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }
+        .animation(.easeOut(duration: 0.12), value: canSend)
         .padding(.leading, 14)
         .padding(.trailing, 10)
         .padding(.vertical, 10)
@@ -145,6 +160,45 @@ extension CommandCenterChatView {
             }
             return true
         }
+    }
+
+    /// Something to ask, on an island with nothing in it yet.
+    ///
+    /// The same chips Home offers, from the same rule and the same reading of the workspace —
+    /// so the island suggests summarising the meeting you have not summarised rather than a
+    /// hardcoded list that goes stale. Hidden until the stores report, because offering
+    /// first-run chips to a returning user is worse than offering nothing.
+    var starters: some View {
+        VStack(spacing: 0) {
+            if HomeSuggestions.storesAreLoaded, !chips.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(chips) { chip in
+                        Button {
+                            inputText = chip.prompt
+                            isInputFocused = true
+                        } label: {
+                            Text(chip.label)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.white.opacity(0.10)))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .help(chip.prompt)
+                    }
+                }
+                .padding(.bottom, 10)
+            }
+        }
+    }
+
+    private var chips: [HomeSuggestions.Chip] {
+        HomeSuggestions.chips(
+            for: HomeSuggestions.currentInputs(overdueCount: insights.actionItemStats.overdue)
+        )
     }
 
     /// What is staged for the next send, with a way to take each one back off.
