@@ -12,16 +12,49 @@ final class AgentCoordinator {
 
     // MARK: - State
 
-    private(set) var isProcessing = false
-    private(set) var streamingText = ""
-    private(set) var isStreaming = false
-    private(set) var activeToolCalls: [AgentToolCall] = []
+    /// The live run, and which conversation it belongs to.
+    ///
+    /// These were five global flags. That was harmless while one surface existed, because
+    /// there was only ever one thread on screen. It stops being harmless the moment the
+    /// Command Center island runs the same loop: a run started there sets the same flags the
+    /// main window reads, and the island's spinner, streaming text and tool cards paint onto
+    /// whatever thread the main window happens to be showing.
+    ///
+    /// Reads are scoped — see `isProcessing(in:)` and friends — so a surface can only see its
+    /// own activity.
+    private(set) var run = AgentRunState()
 
-    /// Last conversation-level error surfaced to the UI. Cleared automatically on the
-    /// next `send`/`regenerate`, or explicitly via `dismissError()`.
-    /// Stays set even after `isStreaming` flips to false, so the UI can show a
-    /// persistent banner until the user acknowledges or sends again.
-    private(set) var lastError: String?
+    /// Whether *any* run is in flight, regardless of whose.
+    ///
+    /// For the coordinator's own re-entrancy guards, which are about the singleton being
+    /// busy rather than about a conversation. A surface asking "am I busy" wants
+    /// `isProcessing(in:)`; asking this instead is how the island would report the main
+    /// window's work as its own.
+    var isProcessingAnyConversation: Bool {
+        run.isProcessing
+    }
+
+    // MARK: - Scoped reads
+
+    func isProcessing(in conversationID: UUID) -> Bool {
+        run.isProcessing(for: conversationID)
+    }
+
+    func isStreaming(in conversationID: UUID) -> Bool {
+        run.isStreaming(for: conversationID)
+    }
+
+    func streamingText(in conversationID: UUID) -> String {
+        run.streamingText(for: conversationID)
+    }
+
+    func lastError(in conversationID: UUID) -> String? {
+        run.lastError(for: conversationID)
+    }
+
+    func activeToolCalls(in conversationID: UUID) -> [AgentToolCall] {
+        run.activeToolCalls(for: conversationID)
+    }
 
     private var processingTask: Task<Void, Never>?
     private let logger = Logger(subsystem: AppConstants.bundleID, category: "AgentCoordinator")
@@ -222,8 +255,8 @@ final class AgentCoordinator {
         attachments: [TempAttachment] = [],
         oneShotWebSearch: Bool = false
     ) {
-        guard !isProcessing else { return }
-        lastError = nil
+        guard !isProcessingAnyConversation else { return }
+        run.dismissError()
         processingTask?.cancel()
         if oneShotWebSearch {
             setOneShotIncludeWebTools(true)
@@ -248,8 +281,8 @@ final class AgentCoordinator {
     }
 
     func sendWithoutAppendingUser(conversationID: UUID, oneShotWebSearch: Bool = false) {
-        guard !isProcessing else { return }
-        lastError = nil
+        guard !isProcessingAnyConversation else { return }
+        run.dismissError()
         processingTask?.cancel()
         if oneShotWebSearch {
             setOneShotIncludeWebTools(true)
@@ -269,7 +302,7 @@ final class AgentCoordinator {
 
     /// Clears the last surfaced error. Called when the user dismisses the error banner.
     func dismissError() {
-        lastError = nil
+        run.dismissError()
     }
 
     /// Regenerates the assistant response from an edited user message. Truncates every
@@ -277,8 +310,8 @@ final class AgentCoordinator {
     /// restarts the agent loop. If the coordinator is already processing, the request
     /// is ignored (UI should disable the edit affordance in that state).
     func regenerateFromUserMessage(messageID: UUID, in conversationID: UUID, newContent: String) {
-        guard !isProcessing else { return }
-        lastError = nil
+        guard !isProcessingAnyConversation else { return }
+        run.dismissError()
         processingTask?.cancel()
         // Resolve any dangling approvals before we overwrite the conversation tail.
         Task { await ApprovalGate.shared.rejectAllPending() }
@@ -294,10 +327,7 @@ final class AgentCoordinator {
     func cancel() {
         processingTask?.cancel()
         processingTask = nil
-        isProcessing = false
-        isStreaming = false
-        streamingText = ""
-        activeToolCalls = []
+        run.finish()
         // Belt-and-braces: if the cancelled Task hadn't reached its `defer` yet
         // (e.g. cancel landed before the Task's body started), the per-send web
         // override is still set. Drop it here so the next send isn't poisoned.
@@ -316,15 +346,9 @@ final class AgentCoordinator {
     // Orchestrates the full agent loop: streaming, node output handling, tool result posting, cleanup.
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func runGraph(conversationID: UUID) async {
-        isProcessing = true
-        streamingText = ""
-        isStreaming = false
-        activeToolCalls = []
+        run.begin(conversationID: conversationID)
         defer {
-            isProcessing = false
-            isStreaming = false
-            streamingText = ""
-            activeToolCalls = []
+            run.finish()
             // Reset any per-send web-search override so the next regular send
             // doesn't accidentally inherit it (success, error, and cancellation
             // all flow through this defer).
@@ -386,8 +410,7 @@ final class AgentCoordinator {
         let threadId = conversationID.uuidString
 
         // Set up token-level streaming callback
-        isStreaming = true
-        streamingText = ""
+        run.beginStreaming()
         // Create placeholder for streaming reasoning
         store.appendMessage(AgentMessage(role: .assistant, content: ""), to: conversationID)
 
@@ -395,8 +418,8 @@ final class AgentCoordinator {
             onToken: { [weak self] token in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    streamingText += token
-                    store.updateLastAssistantMessage(in: conversationID, content: streamingText)
+                    run.appendToken(token)
+                    store.updateLastAssistantMessage(in: conversationID, content: run.streamingText)
                 }
             },
             onToolCall: { _ in
@@ -425,12 +448,12 @@ final class AgentCoordinator {
             )
         } catch {
             logger.error("Failed to start agent graph: \(error.localizedDescription)")
-            lastError = "Couldn't start the agent: \(error.localizedDescription)"
+            run.fail("Couldn't start the agent: \(error.localizedDescription)")
             store.updateLastAssistantMessage(
                 in: conversationID,
                 content: "I encountered an error starting the agent. Please try again."
             )
-            isStreaming = false
+            run.endStreaming()
             await AgentChatGraph.shared.clearCallbacks()
             return
         }
@@ -451,9 +474,9 @@ final class AgentCoordinator {
 
                     // Handle errors
                     if !error.isEmpty {
-                        lastError = error
+                        run.fail(error)
                         store.updateLastAssistantMessage(in: conversationID, content: error)
-                        isStreaming = false
+                        run.endStreaming()
                         await AgentChatGraph.shared.clearCallbacks()
                         store.persistConversation(conversationID)
                         return
@@ -461,18 +484,18 @@ final class AgentCoordinator {
 
                     if hasTools {
                         // Finalize the streaming reasoning text (if any) before tool cards
-                        if !streamingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            store.updateLastAssistantMessage(in: conversationID, content: streamingText)
+                        if !run.streamingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            store.updateLastAssistantMessage(in: conversationID, content: run.streamingText)
                         } else {
                             // Remove empty placeholder
                             store.removeLastAssistantMessage(from: conversationID)
                         }
                         // Reset streaming for next round
-                        streamingText = ""
+                        run.resetStreamingText()
                     } else {
                         // No tools — streaming text is the final answer
-                        if !streamingText.isEmpty {
-                            store.updateLastAssistantMessage(in: conversationID, content: streamingText)
+                        if !run.streamingText.isEmpty {
+                            store.updateLastAssistantMessage(in: conversationID, content: run.streamingText)
                         }
                         _ = reasoning // preserved intentionally — kept for future diagnostics
                     }
@@ -488,10 +511,10 @@ final class AgentCoordinator {
                     for result in newResults {
                         postToolResult(result, in: conversationID)
                     }
-                    activeToolCalls = []
+                    run.setActiveToolCalls([])
 
                     // Create new placeholder for next reasoning round
-                    streamingText = ""
+                    run.resetStreamingText()
                     store.appendMessage(AgentMessage(role: .assistant, content: ""), to: conversationID)
 
                 default:
@@ -500,15 +523,15 @@ final class AgentCoordinator {
             }
         } catch {
             logger.error("Agent graph stream error: \(error.localizedDescription)")
-            lastError = "Agent stream failed: \(error.localizedDescription)"
-            if streamingText.isEmpty {
+            run.fail("Agent stream failed: \(error.localizedDescription)")
+            if run.streamingText.isEmpty {
                 store.updateLastAssistantMessage(
                     in: conversationID, content: "I encountered an error. Please try again."
                 )
             }
         }
 
-        isStreaming = false
+        run.endStreaming()
         await AgentChatGraph.shared.clearCallbacks()
 
         // Clean up: if last assistant message is empty (no final answer), remove it
