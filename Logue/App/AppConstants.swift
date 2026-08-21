@@ -325,6 +325,13 @@ enum AppConstants {
         /// Brief pause before auto-advancing onboarding page after model ready
         static let onboardingAutoAdvance: Duration = .milliseconds(800)
 
+        /// How long a sidebar row keeps counting as hovered after the pointer leaves.
+        ///
+        /// Long enough that clicking the row's "⋯" button still reads as a hover by the time
+        /// the menu says it opened — the two events arrive in either order — and short enough
+        /// that the button does not linger once the pointer has genuinely moved on.
+        static let rowHoverOut: Duration = .milliseconds(150)
+
         /// Gap between dismissing one sheet and presenting the next, used when the
         /// feature tour follows onboarding.
         ///

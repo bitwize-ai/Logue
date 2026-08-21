@@ -16,6 +16,12 @@ struct SpaceTreeRow: View {
     @FocusState private var isFieldFocused: Bool
     @State private var isHovered = false
 
+    /// The document or meeting under this space currently being renamed. One at a time, so one
+    /// piece of state covers both kinds.
+    @State private var renamingChildID: UUID?
+    @State private var childRenameText = ""
+    @FocusState private var isChildFieldFocused: Bool
+
     var body: some View {
         if renamingSpaceID == space.id {
             renameField
@@ -66,6 +72,9 @@ struct SpaceTreeRow: View {
                         Text("\(totalCount)")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
+                            // Steps aside for the "⋯" rather than sitting under it.
+                            .opacity(isHovered ? 0 : 1)
+                            .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isHovered)
                     }
                 }
             } icon: {
@@ -89,8 +98,10 @@ struct SpaceTreeRow: View {
                 .animation(.easeInOut(duration: 0.15), value: isHovered)
             }
             .tag(SidebarItem.space(space.id))
-            .onHover { isHovered = $0 }
-            .contextMenu {
+            // `isHovered` also swaps the folder icon for the disclosure chevron, and is now driven
+            // by the menu rather than by its own `onHover`, so the chevron, the count and the
+            // button all move together.
+            .sidebarRowMenu(isSelected: selection == .space(space.id), revealed: $isHovered) {
                 spaceContextMenu
             }
             .accessibilityLabel("\(space.name) space, \(totalCount) items")
@@ -127,70 +138,169 @@ struct SpaceTreeRow: View {
 
                 // Documents in this space
                 ForEach(docs) { doc in
-                    Label {
-                        Text(doc.title)
-                            .lineLimit(1)
-                    } icon: {
-                        Image(systemName: "doc.text")
-                    }
-                    .tag(SidebarItem.document(doc.id))
-                    .padding(.leading, 12)
-                    .contextMenu {
-                        Button {
-                            selection = .document(doc.id)
-                        } label: {
-                            Label("Open", systemImage: "doc.text")
-                        }
-                        Button {
-                            documentStore.togglePin(id: doc.id)
-                        } label: {
-                            Label(
-                                doc.isPinned ? "Unpin" : "Pin",
-                                systemImage: doc.isPinned ? "pin.slash" : "pin"
-                            )
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            documentStore.deleteDocument(id: doc.id)
-                        } label: {
-                            Label("Move to Trash", systemImage: "trash")
-                        }
-                    }
+                    documentRow(doc)
                 }
 
                 // Meetings in this space
                 ForEach(meetings) { meeting in
-                    Label {
-                        Text(meeting.title)
-                            .lineLimit(1)
-                    } icon: {
-                        Image(systemName: meeting.recordingMode.iconName)
-                    }
-                    .tag(SidebarItem.meeting(meeting.id))
-                    .padding(.leading, 12)
-                    .contextMenu {
-                        Button {
-                            selection = .meeting(meeting.id)
-                        } label: {
-                            Label("Open", systemImage: meeting.recordingMode.iconName)
-                        }
-                        Button {
-                            meetingStore.togglePin(id: meeting.id)
-                        } label: {
-                            Label(
-                                meeting.isPinned ? "Unpin" : "Pin",
-                                systemImage: meeting.isPinned ? "pin.slash" : "pin"
-                            )
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            meetingStore.toggleArchive(id: meeting.id)
-                        } label: {
-                            Label("Move to Trash", systemImage: "trash")
-                        }
-                    }
+                    meetingRow(meeting)
                 }
             }
+        }
+    }
+
+    // MARK: - Child Rows
+
+    @ViewBuilder
+    private func documentRow(_ doc: WritingDocument) -> some View {
+        if renamingChildID == doc.id {
+            childRenameField { documentStore.renameDocument(id: doc.id, newTitle: childRenameText) }
+                .padding(.leading, 12)
+        } else {
+            Label {
+                Text(doc.title)
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: "doc.text")
+            }
+            .tag(SidebarItem.document(doc.id))
+            .padding(.leading, 12)
+            .sidebarRowMenu(isSelected: selection == .document(doc.id)) {
+                documentContextMenu(for: doc)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func meetingRow(_ meeting: MeetingNote) -> some View {
+        if renamingChildID == meeting.id {
+            childRenameField { meetingStore.renameMeeting(id: meeting.id, newTitle: childRenameText) }
+                .padding(.leading, 12)
+        } else {
+            Label {
+                Text(meeting.title)
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: meeting.recordingMode.iconName)
+            }
+            .tag(SidebarItem.meeting(meeting.id))
+            .padding(.leading, 12)
+            .sidebarRowMenu(isSelected: selection == .meeting(meeting.id)) {
+                meetingContextMenu(for: meeting)
+            }
+        }
+    }
+
+    /// The inline field a document or meeting row turns into while it is being renamed. One field
+    /// serves both, the same way one `renamingChildID` does.
+    private func childRenameField(commit: @escaping () -> Void) -> some View {
+        TextField("Name", text: $childRenameText, onCommit: {
+            commit()
+            renamingChildID = nil
+        })
+        .textFieldStyle(.plain)
+        .font(.callout)
+        .focused($isChildFieldFocused)
+        .onExitCommand { renamingChildID = nil }
+        .onAppear {
+            Task {
+                try? await Task.sleep(for: AppConstants.Delays.focusActivation)
+                isChildFieldFocused = true
+            }
+        }
+    }
+
+    private func beginRenamingChild(id: UUID, currentTitle: String) {
+        childRenameText = currentTitle
+        renamingChildID = id
+    }
+
+    // MARK: - Child Row Menus
+
+    /// Kept in step with the same document's menu in the content pane
+    /// (`SpaceContentPane+Cards.documentCardContextMenu`) — the sidebar offering a thinner set of
+    /// actions than the grid for the very same document is the whole complaint this fixes.
+    @ViewBuilder
+    private func documentContextMenu(for doc: WritingDocument) -> some View {
+        Button {
+            selection = .document(doc.id)
+        } label: {
+            Label("Open", systemImage: "doc.text")
+        }
+        Button {
+            documentStore.togglePin(id: doc.id)
+        } label: {
+            Label(
+                doc.isPinned ? "Unpin" : "Pin",
+                systemImage: doc.isPinned ? "pin.slash" : "pin"
+            )
+        }
+        Button {
+            beginRenamingChild(id: doc.id, currentTitle: doc.title)
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        if !spaceStore.topLevelSpaces.isEmpty || doc.spaceID != nil {
+            Menu("Move to") {
+                HierarchicalSpaceMenu(currentSpaceID: doc.spaceID) { newSpaceID in
+                    documentStore.moveDocument(id: doc.id, toSpace: newSpaceID)
+                }
+            }
+        }
+        Button {
+            PDFExportService.export(document: doc)
+        } label: {
+            Label("Export as PDF", systemImage: "arrow.down.doc")
+        }
+        Divider()
+        Button(role: .destructive) {
+            documentStore.deleteDocument(id: doc.id)
+        } label: {
+            Label("Move to Trash", systemImage: "trash")
+        }
+    }
+
+    /// Kept in step with `SpaceContentPane+Cards.meetingCardContextMenu`, for the same reason.
+    @ViewBuilder
+    private func meetingContextMenu(for meeting: MeetingNote) -> some View {
+        Button {
+            selection = .meeting(meeting.id)
+        } label: {
+            Label("Open", systemImage: meeting.recordingMode.iconName)
+        }
+        Button {
+            meetingStore.togglePin(id: meeting.id)
+        } label: {
+            Label(
+                meeting.isPinned ? "Unpin" : "Pin",
+                systemImage: meeting.isPinned ? "pin.slash" : "pin"
+            )
+        }
+        Button {
+            beginRenamingChild(id: meeting.id, currentTitle: meeting.title)
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        Button {
+            meetingStore.toggleArchive(id: meeting.id)
+        } label: {
+            Label(
+                meeting.isArchived ? "Unarchive" : "Archive",
+                systemImage: meeting.isArchived ? "tray.and.arrow.up" : "archivebox"
+            )
+        }
+        if !spaceStore.topLevelSpaces.isEmpty || meeting.spaceID != nil {
+            Menu("Move to") {
+                HierarchicalSpaceMenu(currentSpaceID: meeting.spaceID) { newSpaceID in
+                    meetingStore.moveMeeting(id: meeting.id, toSpace: newSpaceID)
+                }
+            }
+        }
+        Divider()
+        Button(role: .destructive) {
+            meetingStore.trashMeeting(id: meeting.id)
+        } label: {
+            Label("Move to Trash", systemImage: "trash")
         }
     }
 

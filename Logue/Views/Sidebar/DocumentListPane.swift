@@ -71,6 +71,7 @@ enum DocFilterMode: String, CaseIterable {
 struct DocumentListPane: View {
     // Extension-visible: +Organise
     @Environment(DocumentStore.self) var store
+    @Environment(SpaceStore.self) private var spaceStore
     @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedItem: ContentListItem?
     // Extension-visible: +Organise
@@ -81,6 +82,8 @@ struct DocumentListPane: View {
     @State var sortOrder: DocSortOrder = .modifiedNewest
     @State private var renamingDocID: UUID?
     @State private var renameText = ""
+    /// Which row is showing its "⋯", so that row's trailing badges can step aside for it.
+    @State private var revealedRowID: UUID?
     @FocusState private var isRenameFieldFocused: Bool
     @State private var hasAutoSelected = false
     // Extension-visible: +Organise
@@ -391,11 +394,16 @@ struct DocumentListPane: View {
                     renameField(for: doc)
                         .tag(ContentListItem.document(doc.id))
                 } else {
-                    DocumentListRow(document: doc)
+                    DocumentListRow(document: doc, isRevealed: revealedRowID == doc.id)
                         .tag(ContentListItem.document(doc.id))
                         .accessibilityLabel("\(doc.title)\(doc.isPinned ? ", pinned" : "")")
                         .accessibilityHint("Opens this document")
-                        .contextMenu { docContextMenu(for: doc) }
+                        .sidebarRowMenu(
+                            isSelected: selectedItem == .document(doc.id),
+                            revealed: $revealedRowID.isRevealed(doc.id)
+                        ) {
+                            docContextMenu(for: doc)
+                        }
                 }
             }
         }
@@ -483,6 +491,13 @@ struct DocumentListPane: View {
             renamingDocID = doc.id
         } label: {
             Label("Rename", systemImage: "pencil")
+        }
+        if !spaceStore.topLevelSpaces.isEmpty || doc.spaceID != nil {
+            Menu("Move to") {
+                HierarchicalSpaceMenu(currentSpaceID: doc.spaceID) { newSpaceID in
+                    store.moveDocument(id: doc.id, toSpace: newSpaceID)
+                }
+            }
         }
         Button {
             PDFExportService.export(document: doc)

@@ -63,6 +63,7 @@ enum MeetingFilterMode: String, CaseIterable {
 /// Shows search, filter/sort/view menus, tag chips, upcoming events, and a selectable meeting list or gallery.
 struct MeetingListPane: View {
     @Environment(MeetingStore.self) private var store
+    @Environment(SpaceStore.self) private var spaceStore
     @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedItem: ContentListItem?
 
@@ -74,6 +75,9 @@ struct MeetingListPane: View {
     @State private var filterMode: MeetingFilterMode = .all
     @State private var sortOrder: MeetingSortOrder = .modifiedNewest
     @State private var selectedTagFilter: String?
+
+    /// Which row is showing its "⋯", so that row's trailing date can step aside for it.
+    @State private var revealedRowID: UUID?
 
     // Rename state
     @State private var renamingMeetingID: UUID?
@@ -395,11 +399,16 @@ struct MeetingListPane: View {
                         renameField(for: meeting)
                             .tag(ContentListItem.meeting(meeting.id))
                     } else {
-                        MeetingListRow(meeting: meeting)
+                        MeetingListRow(meeting: meeting, isRevealed: revealedRowID == meeting.id)
                             .tag(ContentListItem.meeting(meeting.id))
                             .accessibilityLabel("\(meeting.title)\(meeting.isPinned ? ", pinned" : "")")
                             .accessibilityHint("Opens this meeting")
-                            .contextMenu { meetingContextMenu(for: meeting) }
+                            .sidebarRowMenu(
+                                isSelected: selectedItem == .meeting(meeting.id),
+                                revealed: $revealedRowID.isRevealed(meeting.id)
+                            ) {
+                                meetingContextMenu(for: meeting)
+                            }
                     }
                 }
             } header: {
@@ -501,6 +510,13 @@ struct MeetingListPane: View {
                 systemImage: meeting.isArchived ? "tray.and.arrow.up" : "archivebox"
             )
         }
+        if !spaceStore.topLevelSpaces.isEmpty || meeting.spaceID != nil {
+            Menu("Move to") {
+                HierarchicalSpaceMenu(currentSpaceID: meeting.spaceID) { newSpaceID in
+                    store.moveMeeting(id: meeting.id, toSpace: newSpaceID)
+                }
+            }
+        }
         Divider()
         Button(role: .destructive) {
             store.trashMeeting(id: meeting.id)
@@ -514,6 +530,8 @@ struct MeetingListPane: View {
 
 struct MeetingListRow: View {
     let meeting: MeetingNote
+    /// Whether the row's "⋯" button is showing, so the trailing pin and date can step aside for it.
+    var isRevealed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -529,6 +547,7 @@ struct MeetingListRow: View {
                     Image(systemName: "pin.fill")
                         .font(.caption2)
                         .foregroundStyle(AppThemeConstants.pinnedColor)
+                        .opacity(isRevealed ? 0 : 1)
                 }
             }
             HStack(spacing: 6) {
@@ -541,8 +560,10 @@ struct MeetingListRow: View {
                 Text(meeting.createdAt.formatted(.relative(presentation: .named)))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .opacity(isRevealed ? 0 : 1)
             }
         }
         .padding(.vertical, 2)
+        .animation(.easeInOut(duration: AppThemeConstants.hoverDuration), value: isRevealed)
     }
 }

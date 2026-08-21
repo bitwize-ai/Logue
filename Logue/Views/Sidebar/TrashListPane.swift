@@ -219,10 +219,8 @@ struct TrashListPane: View {
                 .stroke(AppThemeConstants.borderColor, lineWidth: 0.5)
         )
         .accessibilityLabel("\(item.title), \(item.typeBadge)")
-        .accessibilityHint("Right-click to restore or permanently delete")
-        .contextMenu {
-            trashItemContextMenu(item)
-        }
+        .accessibilityHint("Opens this item's restore and delete actions")
+        .sidebarRowMenu { trashItemContextMenu(item) }
     }
 
     // MARK: - Trash Grid
@@ -288,10 +286,8 @@ struct TrashListPane: View {
                 .stroke(AppThemeConstants.borderColor, lineWidth: 0.5)
         )
         .accessibilityLabel("\(item.title), \(item.typeBadge)")
-        .accessibilityHint("Right-click to restore or permanently delete")
-        .contextMenu {
-            trashItemContextMenu(item)
-        }
+        .accessibilityHint("Opens this item's restore and delete actions")
+        .sidebarRowMenu { trashItemContextMenu(item) }
     }
 
     // MARK: - Context Menu
