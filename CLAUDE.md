@@ -137,7 +137,16 @@ decided what Logue was.** These rules exist so that cannot happen again.
 - **Live run state belongs to a conversation, not to the app.** `AgentRunState` scopes
   `isProcessing`, `isStreaming`, `streamingText`, `activeToolCalls` and `lastError` to the
   conversation that started the run. A global flag means a run on one surface paints its
-  spinner, its streaming text and its tool cards onto the other's thread.
+  spinner, its streaming text and its tool cards onto the other's thread. This holds for
+  *every* pipeline, not only the agent loop: `DeepResearchCoordinator` runs one at a time
+  app-wide, which is precisely what made a global `isRunning` look sufficient for as long as
+  only one surface could start a run. It owns `runningConversationID` and is read through
+  `isRunning(in:)`.
+- **What the agent did is part of the answer.** Both surfaces render tool calls from
+  `AgentToolTimeline`, which pairs a call with the result that answers it and settles what to
+  show when the stored status and the result disagree. The island hid tool turns entirely,
+  which was fine while it had no tools and became the island claiming credit for work it
+  would not show.
 - **An error outlives its run but never its owner.** `lastError` persists after the run ends,
   so the banner survives until acknowledged — which is why `conversationID` survives
   `finish()` too. An error with no owner paints on every surface.
