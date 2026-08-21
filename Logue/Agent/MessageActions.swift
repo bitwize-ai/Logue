@@ -13,11 +13,17 @@ import UniformTypeIdentifiers
 /// one surface is added to both, by being mounted rather than redrawn.
 @MainActor
 enum MessageActions {
+    /// Puts `text` on the pasteboard.
+    ///
+    /// No toast. `.toastOverlay()` is mounted in exactly one place — the main window's chat
+    /// view — so a toast raised from the Command Center island either showed nothing or
+    /// painted its confirmation in the window *behind* the pill, describing something the
+    /// user did somewhere else. Each surface confirms in its own way instead: the main window
+    /// keeps its toast at the call site, the island ticks the row you pressed.
     static func copyToClipboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         HapticFeedback.copy()
-        ToastCenter.shared.show(UICopy.Toast.copied)
     }
 
     /// Writes the answer to a file the user picks.

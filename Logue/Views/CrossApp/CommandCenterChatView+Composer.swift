@@ -178,11 +178,16 @@ extension CommandCenterChatView {
             }
             ForEach(attachments) { attachment in
                 HStack(spacing: 4) {
-                    Image(systemName: "doc")
+                    // The attachment's own icon, as the main window shows it. Hardcoding
+                    // "doc" here made a PDF and a spreadsheet look identical on the island
+                    // and different in the main window — per-surface drift in a chip that
+                    // was copied rather than shared.
+                    Image(systemName: attachment.iconName)
                         .font(.caption2)
                     Text(attachment.displayName)
                         .font(.caption2)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                     Button {
                         attachments.removeAll { $0.id == attachment.id }
                     } label: {

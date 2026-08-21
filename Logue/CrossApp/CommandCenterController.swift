@@ -117,9 +117,8 @@ class CommandCenterController: ObservableObject {
     private var currentMode: CommandCenterMode?
     private var escMonitor: Any?
     private var escLocalMonitor: Any?
-    private var clickMonitor: Any?
     private var clickLocalMonitor: Any?
-    private var chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
+    private var chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false, hasAttachments: false)
 
     /// The meeting ID of the active recording panel, used to restore the island.
     private(set) var activeRecordingMeetingID: UUID?
@@ -446,10 +445,15 @@ class CommandCenterController: ObservableObject {
                 return nil
             }
 
-            clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let screenPoint = Self.screenPoint(for: event)
-                Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
-            }
+            // Deliberately no *global* mouse-down monitor. A mouse-down outside Logue is
+            // another application being clicked, which is `handleAppResignedActive`'s
+            // question, and it answers it with the real rule — an island holding something
+            // goes behind rather than being destroyed.
+            //
+            // Watching it here as well duplicated that decision with a cruder one, and broke
+            // dragging a file onto the island: the mouse-down that *starts* a drag in Finder
+            // is outside the pill, and the pill is still empty because the drop has not
+            // landed yet, so the island was torn down before the file arrived.
 
             clickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 let screenPoint = Self.screenPoint(for: event)
@@ -466,10 +470,22 @@ class CommandCenterController: ObservableObject {
         return window.convertPoint(toScreen: event.locationInWindow)
     }
 
-    /// Puts an empty chat island away when a click lands anywhere but on it. An
-    /// island holding a conversation or an unsent prompt stays.
+    /// Puts a chat island away when a click inside Logue lands anywhere but on it.
+    ///
+    /// A conversation or a staged file keeps it. A *draft* deliberately does not —
+    /// with no messages there is no close button, so protecting the draft here would
+    /// leave an island with no visible way out. `CommandCenterChatRuleTests` states
+    /// that reasoning; the doc comment used to claim the opposite, and the code was
+    /// right.
+    ///
+    /// Attachments are the exception because they are not recoverable by retyping:
+    /// the user found that file in Finder once and would have to find it again.
     private func dismissIfClickMissedPanel(_ screenPoint: NSPoint) {
-        guard let panel, !chatContent.hasMessages, !panel.frame.contains(screenPoint) else { return }
+        guard let panel,
+              !chatContent.hasMessages,
+              !chatContent.hasAttachments,
+              !panel.frame.contains(screenPoint)
+        else { return }
         dismissPanel()
     }
 
@@ -482,9 +498,6 @@ class CommandCenterController: ObservableObject {
         }
         if let monitor = escLocalMonitor {
             NSEvent.removeMonitor(monitor); escLocalMonitor = nil
-        }
-        if let monitor = clickMonitor {
-            NSEvent.removeMonitor(monitor); clickMonitor = nil
         }
         if let monitor = clickLocalMonitor {
             NSEvent.removeMonitor(monitor); clickLocalMonitor = nil

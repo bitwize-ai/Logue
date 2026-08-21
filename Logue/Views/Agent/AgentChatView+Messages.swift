@@ -1,6 +1,4 @@
-import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 // MARK: - Message List
 
@@ -142,6 +140,7 @@ extension AgentChatView {
                 HStack(spacing: 4) {
                     Button {
                         MessageActions.copyToClipboard(message.content)
+                        ToastCenter.shared.show(UICopy.Toast.copied)
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 11))
@@ -330,7 +329,5 @@ extension AgentChatView {
             // so we render them as invisible to avoid duplication
             EmptyView()
         }
-
-        // MARK: - Clipboard / Export
     }
 }

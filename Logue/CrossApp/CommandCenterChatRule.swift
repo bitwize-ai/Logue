@@ -2,17 +2,30 @@ import Foundation
 
 /// What the chat island is currently holding.
 ///
-/// The two are kept apart because they earn different protection. Deliberately
-/// putting the island away — clicking off it, Esc, the close button, the shortcut
-/// — has always destroyed an unsent prompt, and a conversation is what a click
-/// off the island must not throw away. Switching apps is not a decision about the
-/// island at all, so that leaves either alone.
+/// The three are kept apart because they earn different protection. Deliberately
+/// putting the island away — Esc, the close button, the shortcut — has always
+/// destroyed an unsent prompt, and a conversation is what a click off the island
+/// must not throw away. Switching apps is not a decision about the island at all,
+/// so that leaves everything alone.
+///
+/// `hasAttachments` exists because staged files cost more to replace than typed
+/// text does. A dropped file is not recoverable by retyping it: the user found it
+/// in Finder, and after a dismissal they have to find it again. It was also the
+/// one kind of content the island could hold that nothing here knew about, which
+/// made an empty-looking island with a PDF staged on it disposable.
 struct CommandCenterChatContent: Equatable {
     var hasMessages: Bool
     var hasDraft: Bool
+    var hasAttachments: Bool
+
+    init(hasMessages: Bool, hasDraft: Bool, hasAttachments: Bool = false) {
+        self.hasMessages = hasMessages
+        self.hasDraft = hasDraft
+        self.hasAttachments = hasAttachments
+    }
 
     var isEmpty: Bool {
-        !hasMessages && !hasDraft
+        !hasMessages && !hasDraft && !hasAttachments
     }
 }
 

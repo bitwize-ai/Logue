@@ -626,8 +626,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Brings the main window back, creating nothing but un-minimising and ordering front.
+    ///
+    /// Static and internal so the Command Center island can use it: "Open in Logue" has to
+    /// work with the window closed, and `NSApplication.activate` alone does not un-minimise
+    /// or order anything forward. Named apart from `showMainWindow()` because that one is
+    /// referenced by `#selector` and so cannot be overloaded.
     @objc
-    private func showMainWindow() {
+    static func bringMainWindowForward() {
+        (NSApp.delegate as? AppDelegate)?.showMainWindow()
+    }
+
+    @objc
+    func showMainWindow() {
         activateApp {
             if let window = NSApp.windows.first(where: { self.isMainAppWindow($0) }) {
                 if window.isMiniaturized {

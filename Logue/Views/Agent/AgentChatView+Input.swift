@@ -58,9 +58,6 @@ extension AgentChatView {
             UTType("org.openxmlformats.wordprocessingml.document") ?? .data,
             UTType("org.openxmlformats.presentationml.presentation") ?? .data,
         ]
-        // File-picker allowlist. Same set, but the picker filters more strictly
-        // than the drop target.
-
         var body: some View {
             VStack(spacing: 0) {
                 if !attachments.isEmpty {
