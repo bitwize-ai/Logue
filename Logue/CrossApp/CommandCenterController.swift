@@ -74,6 +74,18 @@ private class TransparentContainerView: NSView {
     /// on turns the transparent region into a dead zone that swallows them.
     var claimsEmptyAreaClicks: (() -> Bool)?
 
+    /// The island's own drawn bounds, in this view's coordinates.
+    ///
+    /// "Empty area" used to mean "no SwiftUI subview claimed this point", which is
+    /// not the same thing at all: the pill's background, its padding, and the gap
+    /// between the transcript and the prompt bar are all inside the island and are
+    /// claimed by nothing. Clicking any of them put the island away, which is the
+    /// reported bug — a click *on* the island closing it.
+    ///
+    /// A click inside these bounds belongs to the island whether or not a control
+    /// wanted it. Only clicks outside them are clicks off the island.
+    var islandBounds: (() -> NSRect)?
+
     override func draw(_ dirtyRect: NSRect) {
         // Fully transparent — do not draw anything.
     }
@@ -94,14 +106,29 @@ private class TransparentContainerView: NSView {
                 return hit
             }
         }
-        // No subview hit — claim it only if we will act on it, otherwise return nil
-        // to let the click pass through entirely.
+        // Inside the island but claimed by no control — its background, its padding,
+        // the gap between the transcript and the pill. That is still the island, so
+        // take the click and do nothing with it rather than letting it fall through
+        // to the app behind (which would activate that app and bury us).
+        if isInsideIsland(localPoint) {
+            return self
+        }
+        // Genuinely off the island: claim it only if we will act on it, otherwise
+        // return nil to let the click pass through entirely.
         return claimsEmptyAreaClicks?() == true ? self : nil
     }
 
     override func mouseDown(with event: NSEvent) {
-        // Only called when hitTest returned self (empty area click).
+        // Reached for two different clicks — one on the island's own inert area, one
+        // beside it — and only the second is a decision about the island.
+        let localPoint = convert(event.locationInWindow, from: nil)
+        guard !isInsideIsland(localPoint) else { return }
         onClickEmptyArea?()
+    }
+
+    private func isInsideIsland(_ localPoint: NSPoint) -> Bool {
+        guard let islandBounds else { return false }
+        return islandBounds().contains(localPoint)
     }
 }
 
@@ -294,6 +321,10 @@ class CommandCenterController: ObservableObject {
                 guard let self else { return false }
                 return CommandCenterChatRule.clickOff(chatContent)
             }
+            // What counts as "on the island" — the hosting view is pinned to the bottom
+            // and is only as tall as the SwiftUI content, so its frame is exactly the
+            // island's drawn bounds.
+            container.islandBounds = { [weak hv] in hv?.frame ?? .zero }
             container.onClickEmptyArea = { [weak self] in self?.dismissPanel(reason: .emptyAreaClick) }
 
             hostingView = container
@@ -555,7 +586,7 @@ class CommandCenterController: ObservableObject {
     }
 
     func dismissPanel(reason: DismissReason) {
-        Self.logger.info("Command Center panel dismissed: \(String(describing: reason), privacy: .public)")
+        Self.logger.notice("Command Center panel dismissed: \(String(describing: reason), privacy: .public)")
         removeMonitors()
         let isRecordingMode = if case .recording = currentMode {
             true
