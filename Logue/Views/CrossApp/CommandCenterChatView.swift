@@ -319,8 +319,9 @@ struct CommandCenterChatView: View {
         let searchThisTurn = isWebSearchOnce
         inputText = ""
         attachments = []
-        // Cleared per send, like the main window's chips. Left set, a mode switched on here
-        // would arm the next send in the other window too.
+        // Cleared per send: a one-shot mode must not survive the question it was set for.
+        // Both flags are this island's own `@State` — see their declarations for why they
+        // stopped being the main window's `UserDefaults` keys.
         isWebSearchOnce = false
         isDeepResearchOnce = false
 
@@ -347,11 +348,19 @@ struct CommandCenterChatView: View {
             // library and the web, and takes no attachments on either surface. Anyone who
             // dropped a file in gets it back on the pill rather than silently losing it.
             attachments = staged
-            deepResearch.start(
+            let started = deepResearch.start(
                 prompt: text,
                 in: conversationID,
                 oneShotWebSearch: searchThisTurn
             )
+            if started == nil {
+                // One run at a time, app-wide — and this one belongs to the other surface, so
+                // none of the island's own indicators would have said anything. Put the
+                // question back rather than losing it.
+                inputText = text
+                isDeepResearchOnce = true
+                ToastCenter.shared.show(UICopy.Status.busyElsewhere, kind: .warning)
+            }
         case let .imagePlayground(concept):
             // ImagePlayground presents a sheet, which a floating pill cannot host. Answer it
             // as a normal turn rather than silently dropping the send.
@@ -372,10 +381,11 @@ struct CommandCenterChatView: View {
     /// `approvalTimeoutSeconds` (five minutes), and then failed. The run looked frozen and
     /// there was no way to say yes.
     ///
-    /// Only calls that need an answer are rendered. Completed tool calls stay filtered out of
-    /// the island — the main window shows those as history, and a pill floating over another
-    /// app has no room for a transcript of everything the agent did. What it must show is
-    /// what it is blocking on.
+    /// This is a *second*, pinned copy of a call that `IslandThread` also emits as a row —
+    /// deliberately, because an answer that scrolls out of reach is an answer the user cannot
+    /// give. The row copy is read-only (`conversationID: nil`); this one carries the buttons.
+    /// `IslandThread` drops a call while it is awaiting approval so the two are never on
+    /// screen at once.
     private var pendingApprovals: [AgentToolCall] {
         guard let conversationID,
               let conversation = store.conversations.first(where: { $0.id == conversationID })
@@ -485,10 +495,20 @@ struct CommandCenterChatView: View {
     /// run going with nothing on screen able to stop it — the button reported success and the
     /// report arrived minutes later.
     private func cancelWhicheverIsRunning() {
-        if let conversationID, deepResearch.isRunning(in: conversationID) {
+        guard let conversationID else { return }
+        switch AskStopTarget.target(
+            isResearchingHere: deepResearch.isRunning(in: conversationID),
+            isAgentRunningHere: coordinator.isProcessing(in: conversationID)
+        ) {
+        case .deepResearch:
             deepResearch.cancel()
-        } else {
+        case .agentLoop:
             coordinator.cancel()
+        case .nothing:
+            // Nothing of ours is running. The `else` here used to call `coordinator.cancel()`
+            // unconditionally, which is unscoped — so pressing "New" on the island stopped an
+            // answer streaming in the main window and rejected whatever it was waiting on.
+            break
         }
     }
 

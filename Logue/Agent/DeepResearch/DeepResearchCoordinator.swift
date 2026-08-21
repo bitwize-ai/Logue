@@ -69,7 +69,10 @@ final class DeepResearchCoordinator {
     /// a finished run's questions stay readable on the surface that asked for them.
     func hasActivity(in conversationID: UUID) -> Bool {
         guard runningConversationID == conversationID else { return false }
-        return isRunning || !clarifyingQuestions.isEmpty || lastError != nil
+        return isRunning
+            || currentStep == .failed
+            || !clarifyingQuestions.isEmpty
+            || lastError != nil
     }
 
     // MARK: - Public API
@@ -82,8 +85,17 @@ final class DeepResearchCoordinator {
     /// that both surfaces mount the same behaviour, so starting a run is one call.
     ///
     /// - Returns: the id of the appended question, so a caller that scrolls can scroll to it.
+    /// - Returns: the id of the appended question, or `nil` when a run was already in flight
+    ///   and this one was refused.
+    ///
+    /// The refusal is checked *before* the question is appended. It used to append first and
+    /// let `run` drop the request, which put the user's question in the thread with nothing
+    /// that would ever answer it: no spinner (run state is per conversation), no progress
+    /// strip (it belongs to the other conversation), no error, and the composer already
+    /// cleared. Returning `nil` is what lets a caller say so instead.
     @discardableResult
-    func start(prompt: String, in conversationID: UUID, oneShotWebSearch: Bool = false) -> UUID {
+    func start(prompt: String, in conversationID: UUID, oneShotWebSearch: Bool = false) -> UUID? {
+        guard !isRunning else { return nil }
         let question = AgentMessage(role: .user, content: prompt)
         AgentConversationStore.shared.appendMessage(question, to: conversationID)
         run(prompt: prompt, conversationID: conversationID, oneShotWebSearch: oneShotWebSearch)

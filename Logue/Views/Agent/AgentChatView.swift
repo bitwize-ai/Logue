@@ -359,7 +359,11 @@ struct AgentChatView: View {
                 }
             },
             onCancel: {
-                if isThisConversationResearching {
+                // Same decision the island makes, from the same place.
+                if AskStopTarget.target(
+                    isResearchingHere: isThisConversationResearching,
+                    isAgentRunningHere: isThisConversationProcessing
+                ) == .deepResearch {
                     deepResearchCoordinator.cancel()
                 } else {
                     coordinator.cancel()
@@ -543,11 +547,21 @@ struct AgentChatView: View {
     private func startDeepResearch(_ text: String, oneShotWebSearch: Bool = false) {
         HapticFeedback.send()
         let conversationID = ensureActiveConversation()
-        scrollTargetID = deepResearchCoordinator.start(
+        guard let questionID = deepResearchCoordinator.start(
             prompt: text,
             in: conversationID,
             oneShotWebSearch: oneShotWebSearch
         )
+        else {
+            // A run is already in flight, and since #74 scoped the indicators it may belong to
+            // the island — in which case nothing on this window would have said so. Put the
+            // question back rather than dropping it.
+            inputText = text
+            isDeepResearch = true
+            ToastCenter.shared.show(UICopy.Status.busyElsewhere, kind: .warning)
+            return
+        }
+        scrollTargetID = questionID
         scrollToTopTrigger += 1
     }
 

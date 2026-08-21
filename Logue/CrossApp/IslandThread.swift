@@ -65,7 +65,13 @@ enum IslandThread {
                 return [.message(chatMessage(message, isUser: false, isStreaming: live))]
 
             case .toolCall:
-                return AgentToolTimeline.entries(in: message, allMessages: messages).map(IslandRow.tool)
+                return AgentToolTimeline.entries(in: message, allMessages: messages)
+                    // A call still waiting on the user is drawn by the pinned approval strip
+                    // above the pill, where it cannot scroll out of reach. Emitting it here
+                    // too put two cards for one call inside a 420pt panel, only one of them
+                    // answerable, which reads as a rendering bug.
+                    .filter { $0.status != .needsConfirmation }
+                    .map(IslandRow.tool)
 
             case .toolResult:
                 // Rendered inside the card for the call it answers, never as a row of its own.
