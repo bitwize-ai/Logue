@@ -49,7 +49,7 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help("Attach files")
+            .islandControl(IslandControlCopy.attach(isBusy: isGenerating))
 
             // Web search for this turn
             Button {
@@ -64,7 +64,7 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help(isWebSearchOnce ? "Web search is on for this message" : "Search the web for this message")
+            .islandControl(IslandControlCopy.webSearch(isOn: isWebSearchOnce))
 
             // Deep Research for this turn
             Button {
@@ -79,13 +79,7 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help(
-                isDeepResearchOnce
-                    ? "Deep Research is on for this message"
-                    : "Research this in depth before answering"
-            )
-            .accessibilityLabel("Deep Research")
-            .accessibilityValue(isDeepResearchOnce ? "On" : "Off")
+            .islandControl(IslandControlCopy.deepResearch(isOn: isDeepResearchOnce))
 
             // Mic button
             Button {
@@ -98,7 +92,7 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help(voiceManager.isRecording ? "Stop voice input" : "Voice input")
+            .islandControl(IslandControlCopy.microphone(isRecording: voiceManager.isRecording))
 
             // What Return will do, once it will do anything.
             //
@@ -124,6 +118,7 @@ extension CommandCenterChatView {
                         .background(Circle().fill(AppThemeConstants.error))
                 }
                 .buttonStyle(.plain)
+                .islandControl(IslandControlCopy.send(canSend: canSend, isGenerating: true))
             } else {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up")
@@ -137,6 +132,7 @@ extension CommandCenterChatView {
                 .buttonStyle(.plain)
                 .disabled(!canSend || LLMEngineStatus.shared.isBusy)
                 .keyboardShortcut(.return, modifiers: .command)
+                .islandControl(IslandControlCopy.send(canSend: canSend, isGenerating: false))
             }
         }
         .animation(.easeOut(duration: 0.12), value: canSend)

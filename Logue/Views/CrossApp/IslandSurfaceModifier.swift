@@ -52,3 +52,17 @@ private struct IslandSurfaceModifier: ViewModifier {
             .shadow(color: .black.opacity(treatment.shadowOpacity), radius: 30, y: 12)
     }
 }
+
+/// Applies a control's name, state and tooltip in one place.
+///
+/// A modifier rather than three lines at each call site: the failure this box is about is a
+/// control that got the tooltip and not the label, which is exactly what happens when the
+/// three are written out separately and one is forgotten.
+extension View {
+    func islandControl(_ control: IslandControlCopy.Control) -> some View {
+        accessibilityLabel(control.label)
+            .accessibilityValue(control.value ?? "")
+            .accessibilityHint(control.hint)
+            .help(control.hint)
+    }
+}

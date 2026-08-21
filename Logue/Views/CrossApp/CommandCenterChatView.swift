@@ -211,6 +211,7 @@ struct CommandCenterChatView: View {
                     .background(Capsule().fill(Color.primary.opacity(0.06)))
                 }
                 .buttonStyle(.plain)
+                .islandControl(IslandControlCopy.newConversation)
 
                 Spacer()
 
@@ -230,7 +231,7 @@ struct CommandCenterChatView: View {
                         .background(Capsule().fill(Color.primary.opacity(0.06)))
                     }
                     .buttonStyle(.plain)
-                    .help("Continue this conversation in the main window")
+                    .islandControl(IslandControlCopy.openInLogue)
                 }
 
                 Button(action: onDismiss) {
@@ -241,6 +242,7 @@ struct CommandCenterChatView: View {
                         .background(Circle().fill(Color.primary.opacity(0.06)))
                 }
                 .buttonStyle(.plain)
+                .islandControl(IslandControlCopy.close)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
