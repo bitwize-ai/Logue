@@ -58,15 +58,6 @@ extension AgentChatView {
             UTType("org.openxmlformats.wordprocessingml.document") ?? .data,
             UTType("org.openxmlformats.presentationml.presentation") ?? .data,
         ]
-        /// File-picker allowlist. Same set, but the picker filters more strictly
-        /// than the drop target.
-        static let acceptedPickerTypes: [UTType] = [
-            .pdf, .plainText, .text, .image,
-            UTType("org.openxmlformats.spreadsheetml.sheet") ?? .data,
-            UTType("org.openxmlformats.wordprocessingml.document") ?? .data,
-            UTType("org.openxmlformats.presentationml.presentation") ?? .data,
-        ]
-
         var body: some View {
             VStack(spacing: 0) {
                 if !attachments.isEmpty {
@@ -166,7 +157,7 @@ extension AgentChatView {
         private var activeModeChips: some View {
             HStack(spacing: 6) {
                 if isWebSearchOnce {
-                    modeChip(
+                    ModeChip(
                         title: "Search",
                         systemImage: "globe",
                         tint: AppThemeConstants.brandPrimary
@@ -175,7 +166,7 @@ extension AgentChatView {
                     }
                 }
                 if isDeepResearch {
-                    modeChip(
+                    ModeChip(
                         title: "Deep research",
                         systemImage: "sparkle.magnifyingglass",
                         tint: AppThemeConstants.brandPrimary
@@ -185,38 +176,6 @@ extension AgentChatView {
                 }
                 Spacer(minLength: 0)
             }
-        }
-
-        private func modeChip(
-            title: String,
-            systemImage: String,
-            tint: Color,
-            onDismiss: @escaping () -> Void
-        ) -> some View {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(.caption)
-                Text(title)
-                    .font(.caption.weight(.medium))
-                Button {
-                    onDismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption2)
-                }
-                .buttonStyle(.plain)
-                .help("Turn off \(title)")
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(tint)
-            .background(
-                Capsule().fill(tint.opacity(0.14))
-            )
-            .overlay(
-                Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 0.5)
-            )
-            .transition(.scale.combined(with: .opacity))
         }
 
         // MARK: - Card Chrome
@@ -387,50 +346,19 @@ extension AgentChatView {
         /// same `TempAttachmentLoader` as drag-and-drop so the resulting chips and
         /// extracted text use one code path. De-duplicates by display name.
         private func openFilePicker() {
-            let panel = NSOpenPanel()
-            panel.allowsMultipleSelection = true
-            panel.canChooseFiles = true
-            panel.canChooseDirectories = false
-            panel.allowedContentTypes = Self.acceptedPickerTypes
-            panel.prompt = "Attach"
-            panel.message = "Select files to attach to your message"
-            panel.begin { response in
-                guard response == .OK else { return }
-                let urls = panel.urls
-                Task { @MainActor in
-                    for url in urls {
-                        guard let attachment = await TempAttachmentLoader.load(from: url) else { continue }
-                        if !attachments.contains(where: { $0.displayName == attachment.displayName }) {
-                            attachments.append(attachment)
-                        }
-                    }
-                }
+            Task { @MainActor in
+                let picked = await AttachmentIntake.pickFiles()
+                attachments = AttachmentIntake.merging(picked, into: attachments)
             }
         }
 
         // MARK: - Drop handling
 
         private func handleDrop(providers: [NSItemProvider]) {
-            for provider in providers {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
-                    let url: URL? = switch item {
-                    case let dataURL as URL:
-                        dataURL
-                    case let data as Data:
-                        URL(dataRepresentation: data, relativeTo: nil)
-                    default:
-                        nil
-                    }
-                    guard let url else { return }
-                    Task { @MainActor in
-                        if let attachment = await TempAttachmentLoader.load(from: url) {
-                            // De-dupe by URL filename — dragging the same file twice is a no-op.
-                            if !attachments.contains(where: { $0.displayName == attachment.displayName }) {
-                                attachments.append(attachment)
-                            }
-                        }
-                    }
-                }
+            Task { @MainActor in
+                let urls = await AttachmentIntake.urls(from: providers)
+                let loaded = await AttachmentIntake.load(urls: urls)
+                attachments = AttachmentIntake.merging(loaded, into: attachments)
             }
         }
 

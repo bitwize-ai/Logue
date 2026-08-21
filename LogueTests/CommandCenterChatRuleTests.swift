@@ -99,12 +99,37 @@ struct CommandCenterChatRuleTests {
 
     // MARK: - What the island is holding
 
-    @Test("An island is empty only with neither a conversation nor a draft")
-    func contentIsEmptyOnlyWhenBothAreAbsent() {
+    @Test("An island is empty only with no conversation, no draft and nothing staged")
+    func contentIsEmptyOnlyWhenAllAreAbsent() {
         #expect(CommandCenterChatContent(hasMessages: false, hasDraft: false).isEmpty)
         #expect(!CommandCenterChatContent(hasMessages: true, hasDraft: false).isEmpty)
         #expect(!CommandCenterChatContent(hasMessages: false, hasDraft: true).isEmpty)
         #expect(!CommandCenterChatContent(hasMessages: true, hasDraft: true).isEmpty)
+    }
+
+    @Test("A staged file makes an island non-empty")
+    func stagedFilesCount() {
+        // Attachments were the one kind of content the island could hold that nothing here
+        // knew about, so an island holding a PDF and nothing else reported itself disposable
+        // and was torn down by the next click or app switch.
+        let staged = CommandCenterChatContent(hasMessages: false, hasDraft: false, hasAttachments: true)
+        #expect(!staged.isEmpty)
+    }
+
+    @Test("A staged file survives an app switch")
+    func stagedFilesSurviveFocusLoss() {
+        // The rule reads `isEmpty`, so this follows from the case above — which is the point:
+        // teaching the struct about attachments is what fixes every reader at once.
+        let staged = CommandCenterChatContent(hasMessages: false, hasDraft: false, hasAttachments: true)
+        #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasContent: !staged.isEmpty)
+            == .sendBehindOtherApps)
+    }
+
+    @Test("An island with nothing staged is still disposable on an app switch")
+    func emptyIslandStillGoesAway() {
+        // The other direction, so the fix above cannot turn into "the island never closes".
+        let empty = CommandCenterChatContent(hasMessages: false, hasDraft: false)
+        #expect(CommandCenterChatRule.focusLoss(mode: .chat, chatHasContent: !empty.isEmpty) == .dismiss)
     }
 
     @Test("A draft survives an app switch but not a deliberate dismissal")
@@ -118,6 +143,11 @@ struct CommandCenterChatRuleTests {
         // Clicking off it is such a decision, and has always discarded an unsent
         // prompt. Protecting the draft here would leave an island with no visible
         // way out — the close button only exists once there are messages.
+        //
+        // Staged files are the deliberate exception: a dropped file cannot be recovered
+        // by retyping it, so `dismissIfClickMissedPanel` checks `hasAttachments` while
+        // still ignoring `hasDraft`. Esc remains the way out in both cases.
         #expect(!draftOnly.hasMessages)
+        #expect(!draftOnly.hasAttachments)
     }
 }
