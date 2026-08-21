@@ -33,9 +33,12 @@ struct CommandCenterChatView: View {
     @State private var store = AgentConversationStore.shared
     @State private var coordinator = AgentCoordinator.shared
     @State private var inputText: String = ""
-    @State private var copiedMessageID: UUID?
-    @State private var savedMessageID: UUID?
-    @State private var speakingMessageID: UUID?
+    // Extension-visible: +Bubbles
+    @State var copiedMessageID: UUID?
+    // Extension-visible: +Bubbles
+    @State var savedMessageID: UUID?
+    // Extension-visible: +Bubbles
+    @State var speakingMessageID: UUID?
     @State private var synthesizer = AVSpeechSynthesizer()
     @FocusState private var isInputFocused: Bool
 
@@ -167,6 +170,25 @@ struct CommandCenterChatView: View {
 
                 Spacer()
 
+                if conversationID != nil {
+                    Button {
+                        openInLogue()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.forward")
+                                .font(.caption2.weight(.semibold))
+                            Text("Open in Logue")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Continue this conversation in the main window")
+                }
+
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.caption2.weight(.bold))
@@ -199,6 +221,26 @@ struct CommandCenterChatView: View {
                     }
                 }
             }
+
+            if !pendingApprovals.isEmpty, let conversationID {
+                VStack(spacing: 8) {
+                    ForEach(pendingApprovals) { call in
+                        ToolExecutionCard(
+                            toolCall: call,
+                            result: nil,
+                            conversationID: conversationID
+                        )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if let error = currentError {
+                errorBanner(error)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .frame(width: pillWidth)
         .frame(maxHeight: 420)
@@ -210,106 +252,6 @@ struct CommandCenterChatView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
         )
-    }
-
-    // MARK: - Message Bubbles
-
-    private func messageBubble(_ message: EphemeralChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            if message.isUser {
-                Spacer(minLength: 120)
-            }
-
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 5) {
-                if message.isUser {
-                    Text(message.content)
-                        .font(AppThemeConstants.chatMessageFont)
-                        .foregroundStyle(.white)
-                        .textSelection(.enabled)
-                        .lineSpacing(3)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(AppThemeConstants.brandPrimary)
-                        )
-                } else {
-                    markdownContent(message)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color.primary.opacity(0.06))
-                        )
-                }
-
-                if !message.isUser, !message.isStreaming, !message.content.isEmpty {
-                    actionButtons(message)
-                }
-            }
-
-            if !message.isUser {
-                Spacer(minLength: 120)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func markdownContent(_ message: EphemeralChatMessage) -> some View {
-        let displayText = message.content.isEmpty && message.isStreaming ? "..." : message.content
-        StructuredText(markdown: displayText)
-            .font(AppThemeConstants.chatMessageFont)
-            .textual.structuredTextStyle(.gitHub)
-            .textual.inlineStyle(.gitHub)
-            .foregroundStyle(.primary)
-            .textSelection(.enabled)
-    }
-
-    private func actionButtons(_ message: EphemeralChatMessage) -> some View {
-        HStack(spacing: 4) {
-            Button { copyToClipboard(message) } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: copiedMessageID == message.id ? "checkmark" : "doc.on.doc")
-                        .font(.caption2.weight(.medium))
-                    Text(copiedMessageID == message.id ? "Copied" : "Copy")
-                        .font(.caption2.weight(.medium))
-                }
-                .foregroundStyle(copiedMessageID == message.id ? AppThemeConstants.success : Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-
-            Button { saveMessageAsNote(message) } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: savedMessageID == message.id ? "checkmark" : "square.and.arrow.down")
-                        .font(.caption2.weight(.medium))
-                    Text(savedMessageID == message.id ? "Saved" : "Save")
-                        .font(.caption2.weight(.medium))
-                }
-                .foregroundStyle(savedMessageID == message.id ? AppThemeConstants.success : Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-
-            Button { speakMessage(message) } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: speakingMessageID == message.id ? "stop.fill" : "speaker.wave.2")
-                        .font(.caption2.weight(.medium))
-                    Text(speakingMessageID == message.id ? "Stop" : "Speak")
-                        .font(.caption2.weight(.medium))
-                }
-                .foregroundStyle(speakingMessageID == message.id ? AppThemeConstants.error : Color.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.leading, 2)
     }
 
     // MARK: - Prompt Pill
@@ -434,6 +376,98 @@ struct CommandCenterChatView: View {
         }
     }
 
+    /// Tool calls from this thread that are waiting on the user.
+    ///
+    /// The island runs the full agent loop as of #61, which means it runs the approval gate
+    /// too — and the gate blocks the run until someone answers. With no prompt here, a
+    /// destructive tool asked for from the island showed nothing, sat for
+    /// `approvalTimeoutSeconds` (five minutes), and then failed. The run looked frozen and
+    /// there was no way to say yes.
+    ///
+    /// Only calls that need an answer are rendered. Completed tool calls stay filtered out of
+    /// the island — the main window shows those as history, and a pill floating over another
+    /// app has no room for a transcript of everything the agent did. What it must show is
+    /// what it is blocking on.
+    private var pendingApprovals: [AgentToolCall] {
+        guard let conversationID,
+              let conversation = store.conversations.first(where: { $0.id == conversationID })
+        else { return [] }
+        return conversation.messages
+            .flatMap(\.toolCalls)
+            .filter { $0.status == .needsConfirmation }
+    }
+
+    /// The error for this thread, if the last run left one.
+    ///
+    /// Scoped like every other read: an error from a run the main window started is that
+    /// window's to report, and showing it here would blame the island for something it did
+    /// not do.
+    private var currentError: String? {
+        guard let conversationID else { return nil }
+        return coordinator.lastError(in: conversationID)
+    }
+
+    /// Says when a send failed.
+    ///
+    /// The island had this and lost it when it moved onto the coordinator: the old bare
+    /// completion caught its own error and wrote "No AI model loaded" into the bubble, and
+    /// that path went away with the `chatStream` call. Without this the most likely failure
+    /// a first-time user hits — no model set up yet — makes the send appear to vanish.
+    ///
+    /// Narrower than the main window's banner because the pill is narrow: the same
+    /// dismissable shape, without the second line of detail there is no room for.
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(AppThemeConstants.error)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 0)
+
+            Button {
+                withAnimation { coordinator.dismissError() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(3)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(AppThemeConstants.error.opacity(AppThemeConstants.hoverOpacity))
+    }
+
+    /// Hands the island's thread to the main window and steps out of the way.
+    ///
+    /// Only reachable once a thread exists — before the first send there is nothing to carry,
+    /// and selecting a conversation that does not exist would leave the main window on an
+    /// empty landing state that looks like the send was lost.
+    ///
+    /// `chatFocusInput` rather than `chatNewConversation`: the latter *creates* a
+    /// conversation, which is the opposite of what this does. This one surfaces Home and
+    /// focuses the input, leaving the selected thread alone — which is what "continue this
+    /// conversation over there" means.
+    private func openInLogue() {
+        guard let conversationID else { return }
+        // Selecting before activating, so the window is already showing the right thread when
+        // it comes forward rather than visibly switching to it afterwards.
+        store.selectedConversationID = conversationID
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .chatFocusInput, object: nil)
+        onDismiss()
+    }
+
     /// The island's thread, made on first use.
     ///
     /// Deliberately not selected — see `conversationID`. Titled so it is identifiable in the
@@ -467,7 +501,8 @@ struct CommandCenterChatView: View {
         isInputFocused = true
     }
 
-    private func speakMessage(_ message: EphemeralChatMessage) {
+    // Extension-visible: +Bubbles
+    func speakMessage(_ message: EphemeralChatMessage) {
         if speakingMessageID == message.id {
             synthesizer.stopSpeaking(at: .immediate)
             speakingMessageID = nil
@@ -486,12 +521,9 @@ struct CommandCenterChatView: View {
         synthesizer.speak(utterance)
     }
 
-    private func saveMessageAsNote(_ message: EphemeralChatMessage) {
-        let doc = DocumentStore.shared.createDocument(title: "Chat Note")
-        var updated = doc
-        updated.body = message.content
-        DocumentStore.shared.updateDocument(updated)
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    // Extension-visible: +Bubbles
+    func saveMessageAsNote(_ message: EphemeralChatMessage) {
+        MessageActions.saveAsNote(message.content)
         savedMessageID = message.id
         Task {
             try? await Task.sleep(for: AppConstants.Delays.toastDismiss)
@@ -501,10 +533,9 @@ struct CommandCenterChatView: View {
         }
     }
 
-    private func copyToClipboard(_ message: EphemeralChatMessage) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(message.content, forType: .string)
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    // Extension-visible: +Bubbles
+    func copyToClipboard(_ message: EphemeralChatMessage) {
+        MessageActions.copyToClipboard(message.content)
         copiedMessageID = message.id
         Task {
             try? await Task.sleep(for: AppConstants.Delays.toastDismiss)
