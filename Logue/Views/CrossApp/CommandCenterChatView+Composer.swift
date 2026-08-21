@@ -66,6 +66,27 @@ extension CommandCenterChatView {
             .disabled(isGenerating)
             .help(isWebSearchOnce ? "Web search is on for this message" : "Search the web for this message")
 
+            // Deep Research for this turn
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { isDeepResearchOnce.toggle() }
+            } label: {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(
+                        isDeepResearchOnce ? AppThemeConstants.brandPrimary : .white.opacity(0.4)
+                    )
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .disabled(isGenerating)
+            .help(
+                isDeepResearchOnce
+                    ? "Deep Research is on for this message"
+                    : "Research this in depth before answering"
+            )
+            .accessibilityLabel("Deep Research")
+            .accessibilityValue(isDeepResearchOnce ? "On" : "Off")
+
             // Mic button
             Button {
                 voiceManager.toggle()
@@ -117,7 +138,7 @@ extension CommandCenterChatView {
         )
         .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
         .overlay(alignment: .top) {
-            if !attachments.isEmpty || isWebSearchOnce {
+            if !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce {
                 attachmentChips
                     .offset(y: -34)
             }
@@ -137,6 +158,15 @@ extension CommandCenterChatView {
     /// What is staged for the next send, with a way to take each one back off.
     private var attachmentChips: some View {
         HStack(spacing: 6) {
+            if isDeepResearchOnce {
+                ModeChip(
+                    title: "Deep Research",
+                    systemImage: "sparkle.magnifyingglass",
+                    tint: AppThemeConstants.brandPrimary
+                ) {
+                    isDeepResearchOnce = false
+                }
+            }
             if isWebSearchOnce {
                 ModeChip(
                     title: "Search",

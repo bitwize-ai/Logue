@@ -30,6 +30,16 @@ struct CommandCenterChatView: View {
     /// on here silently arms the next send over there.
     @AppStorage(AppConstants.UserDefaultsKeys.oneShotWebSearch)
     var isWebSearchOnce: Bool = false
+    // Extension-visible: +Composer
+    /// Deep Research for the next send.
+    ///
+    /// The same key the main window's toggle binds, for the same reason as the web-search
+    /// one above: one value with several readers rather than a copy per surface. It follows
+    /// that the island must clear it after a send exactly as the main window does.
+    @AppStorage(AppConstants.UserDefaultsKeys.oneShotDeepResearch)
+    var isDeepResearchOnce: Bool = false
+    // Extension-visible: +Composer
+    @State var deepResearch = DeepResearchCoordinator.shared
     // Extension-visible: +Bubbles
     @State var copiedMessageID: UUID?
     // Extension-visible: +Bubbles
@@ -77,6 +87,7 @@ struct CommandCenterChatView: View {
     var isGenerating: Bool {
         guard let conversationID else { return false }
         return coordinator.isProcessing(in: conversationID)
+            || deepResearch.isRunning(in: conversationID)
     }
 
     private let pillWidth: CGFloat = 740
@@ -234,6 +245,11 @@ struct CommandCenterChatView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
+            // Mounted, not redrawn: the island shows the same seven-step strip the main
+            // window does, scoped to its own thread so a run started over there stays over
+            // there.
+            DeepResearchProgressView(conversationID: conversationID)
+
             if let error = currentError {
                 errorBanner(error)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -263,13 +279,14 @@ struct CommandCenterChatView: View {
     func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // The same routing decision the main window makes. The island has no Deep Research
-        // chip and no attachments yet, so those inputs are false — but it asks the one
-        // router rather than carrying a second opinion that can drift from it.
+        // The same routing decision the main window makes, on the same inputs. Every one of
+        // them is now reachable from here, so the island asks the one router and gets the one
+        // answer rather than carrying a second opinion that can drift from it.
         let route = AskRouter.route(
             for: AskRouter.Request(
                 text: text,
                 hasAttachments: !attachments.isEmpty,
+                deepResearchRequested: isDeepResearchOnce,
                 imageIntentFires: PromptIntentClassifier.shared.shouldPresentImagePlayground(for: text)
             )
         )
@@ -280,9 +297,10 @@ struct CommandCenterChatView: View {
         let searchThisTurn = isWebSearchOnce
         inputText = ""
         attachments = []
-        // Cleared per send, like the main window's chip. Left set, a search switched on here
+        // Cleared per send, like the main window's chips. Left set, a mode switched on here
         // would arm the next send in the other window too.
         isWebSearchOnce = false
+        isDeepResearchOnce = false
 
         // Re-focus input after state update
         Task {
@@ -291,13 +309,25 @@ struct CommandCenterChatView: View {
         }
 
         switch route {
-        case .agentLoop, .deepResearch:
-            // Deep Research is unreachable from here — no chip lights it — and if it ever
-            // becomes reachable it belongs on the same coordinator, not a second pipeline.
+        case .agentLoop:
             coordinator.send(
                 message: text,
                 conversationID: conversationID,
                 attachments: staged,
+                oneShotWebSearch: searchThisTurn
+            )
+        case .deepResearch:
+            // The same launch the main window uses, on the island's own thread — so the
+            // report lands in the conversation `Open in Logue` carries across, rather than
+            // somewhere the island cannot show.
+            //
+            // Staged files are deliberately not passed: the research pipeline reads from the
+            // library and the web, and takes no attachments on either surface. Anyone who
+            // dropped a file in gets it back on the pill rather than silently losing it.
+            attachments = staged
+            deepResearch.start(
+                prompt: text,
+                in: conversationID,
                 oneShotWebSearch: searchThisTurn
             )
         case let .imagePlayground(concept):
@@ -418,8 +448,22 @@ struct CommandCenterChatView: View {
 
     // Extension-visible: +Composer
     func stopStreaming() {
-        coordinator.cancel()
+        cancelWhicheverIsRunning()
         isInputFocused = true
+    }
+
+    /// Stops the pipeline that is actually answering.
+    ///
+    /// Two coordinators can be behind the Stop button now, and they do not know about each
+    /// other. Cancelling only the agent loop while Deep Research was the one running left the
+    /// run going with nothing on screen able to stop it — the button reported success and the
+    /// report arrived minutes later.
+    private func cancelWhicheverIsRunning() {
+        if let conversationID, deepResearch.isRunning(in: conversationID) {
+            deepResearch.cancel()
+        } else {
+            coordinator.cancel()
+        }
     }
 
     /// Starts a fresh thread rather than erasing one.
@@ -428,7 +472,7 @@ struct CommandCenterChatView: View {
     /// real conversation now, so "clear" means the island stops pointing at it — deleting it
     /// would throw away something the user can still open from the main window.
     private func clearSession() {
-        coordinator.cancel()
+        cancelWhicheverIsRunning()
         synthesizer.stopSpeaking(at: .immediate)
         speakingMessageID = nil
         conversationID = nil
