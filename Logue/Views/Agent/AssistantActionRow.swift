@@ -1,15 +1,19 @@
-import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
-/// Action row shown beneath each settled assistant message. Provides Copy,
-/// Export-as-Markdown, Read-Aloud (Phase 9), and Visualize-Table (Phase 8).
-/// Owns its own sheet state for the chart visualizer.
+/// Action row shown beneath each settled assistant message: Copy, Save as note,
+/// Export as Markdown, Read aloud, and Visualize table.
+///
+/// Owns its own sheet state for the chart visualizer. The actions themselves live in
+/// `MessageActions`, so the island offers the same set.
 struct AssistantActionRow: View {
     let content: String
     @State private var chartTable: ChartTable?
     /// Ticks the save button for a moment, so the action confirms itself where it happened
     /// rather than only in a toast the user may be looking away from.
+    /// Bumped on every save so a reset only clears the tick it was scheduled for. Without
+    /// it, saving twice in quick succession let the first timer clear the second save's
+    /// checkmark, which reads as the second save not having happened.
+    @State private var saveGeneration = 0
     @State private var savedNote = false
 
     @State private var readAloud = AgentReadAloudService.shared
@@ -22,6 +26,7 @@ struct AssistantActionRow: View {
         HStack(spacing: 4) {
             Button {
                 MessageActions.copyToClipboard(content)
+                ToastCenter.shared.show(UICopy.Toast.copied)
             } label: {
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 11))
@@ -34,10 +39,16 @@ struct AssistantActionRow: View {
 
             Button {
                 MessageActions.saveAsNote(content)
+                saveGeneration += 1
+                let generation = saveGeneration
                 savedNote = true
                 Task {
                     try? await Task.sleep(for: AppConstants.Delays.toastDismiss)
-                    savedNote = false
+                    // Only clear the tick this task lit. The island guards its equivalent the
+                    // same way; this copy was the one that lost the guard.
+                    if saveGeneration == generation {
+                        savedNote = false
+                    }
                 }
             } label: {
                 Image(systemName: savedNote ? "checkmark" : "square.and.arrow.down")
