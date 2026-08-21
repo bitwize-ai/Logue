@@ -5,10 +5,22 @@ import SwiftUI
 /// a spinner for in-progress, and an empty circle for pending. Includes a Cancel
 /// button so the user isn't stranded.
 struct DeepResearchProgressView: View {
+    /// The thread this strip is reporting on.
+    ///
+    /// Read globally, the strip appeared on whatever thread happened to be on screen — which
+    /// only ever looked right while the main window was the sole place a run could start.
+    /// Both surfaces can start one now, so the strip belongs to the conversation that asked.
+    let conversationID: UUID?
+
     @State private var coordinator = DeepResearchCoordinator.shared
 
+    private var isMine: Bool {
+        guard let conversationID else { return false }
+        return coordinator.runningConversationID == conversationID
+    }
+
     var body: some View {
-        if coordinator.isRunning || coordinator.currentStep == .failed {
+        if isMine, coordinator.isRunning || coordinator.currentStep == .failed {
             VStack(alignment: .leading, spacing: 10) {
                 header
                 stepList

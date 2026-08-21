@@ -26,6 +26,15 @@ final class DeepResearchCoordinator {
     // MARK: - State
 
     private(set) var isRunning: Bool = false
+    /// The conversation this run belongs to, and it outlives the run.
+    ///
+    /// Deep Research is one-at-a-time app-wide, which made a single global `isRunning` look
+    /// sufficient while only the main window could start a run. The island can now start one
+    /// too, and a global flag means a run started in one window paints its progress — and
+    /// then its clarifying questions and its error — onto the other's thread. Same rule as
+    /// `AgentRunState`: live run state belongs to a conversation, not to the app, and the
+    /// owner survives the run because `lastError` and `clarifyingQuestions` do.
+    private(set) var runningConversationID: UUID?
     private(set) var currentStep: DeepResearchStep = .idle
     private(set) var sections: [ResearchSection] = []
     private(set) var currentSectionIdx: Int = 0
@@ -48,16 +57,48 @@ final class DeepResearchCoordinator {
 
     private init() {}
 
+    // MARK: - Scoped reads
+
+    /// Whether *this* conversation has a run in flight.
+    func isRunning(in conversationID: UUID) -> Bool {
+        isRunning && runningConversationID == conversationID
+    }
+
+    /// Whether this conversation has anything to show — a run, questions it came back with,
+    /// or how it failed. The progress panel is mounted on this rather than on `isRunning`, so
+    /// a finished run's questions stay readable on the surface that asked for them.
+    func hasActivity(in conversationID: UUID) -> Bool {
+        guard runningConversationID == conversationID else { return false }
+        return isRunning || !clarifyingQuestions.isEmpty || lastError != nil
+    }
+
     // MARK: - Public API
+
+    /// Puts the question in the conversation and starts a run on it.
+    ///
+    /// `run` expects the user message to be there already, which left each surface appending
+    /// it themselves — and the island, arriving second, would have had to rediscover that
+    /// contract by finding a run whose question was missing from the thread. #61's rule is
+    /// that both surfaces mount the same behaviour, so starting a run is one call.
+    ///
+    /// - Returns: the id of the appended question, so a caller that scrolls can scroll to it.
+    @discardableResult
+    func start(prompt: String, in conversationID: UUID, oneShotWebSearch: Bool = false) -> UUID {
+        let question = AgentMessage(role: .user, content: prompt)
+        AgentConversationStore.shared.appendMessage(question, to: conversationID)
+        run(prompt: prompt, conversationID: conversationID, oneShotWebSearch: oneShotWebSearch)
+        return question.id
+    }
 
     /// Kicks off a Deep Research run for `prompt` and posts the final report to
     /// `conversationID`. The user message is expected to already be in the
-    /// conversation (the chat view appends it before calling).
+    /// conversation — prefer `start(prompt:in:oneShotWebSearch:)`, which does both.
     func run(prompt: String, conversationID: UUID, oneShotWebSearch: Bool = false) {
         guard !isRunning else { return }
         task?.cancel()
         resetState()
         isRunning = true
+        runningConversationID = conversationID
         // Mirror the per-send override into AgentCoordinator's tool registry so
         // `constrainedToolSpecs()` (which reads from there) sees web tools for
         // this run only. Cleanup happens in `execute()`'s defer block.
@@ -85,6 +126,7 @@ final class DeepResearchCoordinator {
     func dismiss() {
         guard !isRunning else { return }
         resetState()
+        runningConversationID = nil
     }
 
     // MARK: - Pipeline
