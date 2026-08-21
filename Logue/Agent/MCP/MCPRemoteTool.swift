@@ -92,6 +92,13 @@ struct MCPRemoteTool: AgentTool {
         if error is MCPCallError {
             return "it did not respond in time"
         }
+        if let wire = error as? MCPWireFormat.WireError {
+            switch wire {
+            case .tooLarge: return "it sent more than Logue will read"
+            case .notJSON, .missingResult: return "its reply could not be understood"
+            case let .server(message): return message
+            }
+        }
         if let urlError = error as? URLError {
             return urlError.localizedDescription
         }
@@ -101,6 +108,4 @@ struct MCPRemoteTool: AgentTool {
 
 enum MCPCallError: Error, Equatable {
     case timedOut
-    /// The transport is not built yet. Takes the same path as a server that is down.
-    case notImplemented
 }

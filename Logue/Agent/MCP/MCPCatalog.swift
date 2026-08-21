@@ -88,6 +88,13 @@ final class MCPCatalog {
         if error is MCPCallError {
             return "It did not respond in time."
         }
+        if let wire = error as? MCPWireFormat.WireError {
+            switch wire {
+            case .tooLarge: return "It sent more than Logue will read."
+            case .notJSON, .missingResult: return "Its reply could not be understood."
+            case let .server(message): return message
+            }
+        }
         if let urlError = error as? URLError {
             return urlError.localizedDescription
         }

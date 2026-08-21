@@ -171,6 +171,7 @@
 		32250FA08C8D190532365E94 /* CodeBlockLanguageMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6253F68F7BEF5952530CDA76 /* CodeBlockLanguageMemory.swift */; };
 		323E15A51D95328EFA95C6CB /* TableBlockView+Drawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661DE2C2CA1ADD02979BC042 /* TableBlockView+Drawing.swift */; };
 		32B43BE16C729F35B4FF8F9E /* DocumentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309F1230B70C14F8E80EDC10 /* DocumentStorage.swift */; };
+		32F4E241050F113E21222AA8 /* MCPWireFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13D8E299A128DA50DCB2D95 /* MCPWireFormatTests.swift */; };
 		33038EADE390EBB10FDF2642 /* PromptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB78AC5932FC825A08DD0EBB /* PromptBuilder.swift */; };
 		330E0913F834295E3AF08E40 /* SpaceTreeRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6908921C4944C7BF243B8509 /* SpaceTreeRow.swift */; };
 		3323132CAC627887271FF6F6 /* RetryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70684260B4C198545C4A6AC2 /* RetryHelper.swift */; };
@@ -694,6 +695,7 @@
 		F03DFC8FEA5C718830082743 /* CategoryGradeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 453FB30A414ED333A0858FF2 /* CategoryGradeCard.swift */; };
 		F053A26C2884CFFBEC437EC3 /* WritingNSTextView+ListContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBCD9FE533E01D4D082FF3EC /* WritingNSTextView+ListContinuation.swift */; };
 		F0748FF2335353754CEB0FD4 /* MainWindowView+LibraryPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 576A020F53230B1DD2C5EAAB /* MainWindowView+LibraryPanels.swift */; };
+		F0B1340E16D753CEF685A1C0 /* MCPWireFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6440E04631318411820648E /* MCPWireFormat.swift */; };
 		F0FD6417BF3BCDDC3743C2C9 /* NavigationHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0BF5A44A0E44AB02552063 /* NavigationHistory.swift */; };
 		F1591DB7295521396AAF5219 /* SourcesPanelContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4D1E7321156F10B8D61510B /* SourcesPanelContent.swift */; };
 		F16FF72771443A303172EF56 /* LogoBrandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF540C94525BF2C21BA389BF /* LogoBrandView.swift */; };
@@ -1216,6 +1218,7 @@
 		A4ADE45DAEF548E410D5FEB6 /* SpaceFolderAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceFolderAdoptionTests.swift; sourceTree = "<group>"; };
 		A4DB5AD462B4A863201D5D61 /* ToolApprovalButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolApprovalButtons.swift; sourceTree = "<group>"; };
 		A62566632EE8FA6DAD6713DB /* DocumentWidthMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentWidthMode.swift; sourceTree = "<group>"; };
+		A6440E04631318411820648E /* MCPWireFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPWireFormat.swift; sourceTree = "<group>"; };
 		A6BFFF957D5FFFEB3DD160BF /* MeetingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingListView.swift; sourceTree = "<group>"; };
 		A7BB6836738E8815F0F59EBE /* WriteDocumentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteDocumentTools.swift; sourceTree = "<group>"; };
 		A81080B89B0F0AC01017D6D7 /* ModelManager+HuggingFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ModelManager+HuggingFace.swift"; sourceTree = "<group>"; };
@@ -1384,6 +1387,7 @@
 		E03BE160D3C8583F4640D3AD /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		E0D22DE9B734882F5550D444 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		E12A64F34E4BB90D4A6AD325 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		E13D8E299A128DA50DCB2D95 /* MCPWireFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPWireFormatTests.swift; sourceTree = "<group>"; };
 		E188450986288699B1B8A252 /* ScoreRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreRingView.swift; sourceTree = "<group>"; };
 		E1C8C014AA23FE44D9ED97AE /* DiagramMathBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagramMathBlockView.swift; sourceTree = "<group>"; };
 		E20D8AB097118E507520863A /* GrammarClarityLLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrammarClarityLLMTests.swift; sourceTree = "<group>"; };
@@ -1543,6 +1547,7 @@
 				7143686DB5B3B484D154622C /* MCPToolDescriptor.swift */,
 				DEE5C9E9F248DF7D863E8D6E /* MCPToolNaming.swift */,
 				A2F69CEE6615FC5BD5C1AA1A /* MCPToolOutput.swift */,
+				A6440E04631318411820648E /* MCPWireFormat.swift */,
 			);
 			path = MCP;
 			sourceTree = "<group>";
@@ -1619,6 +1624,7 @@
 				FA7C233F1363CFCDD985A945 /* MCPRegistryPlanTests.swift */,
 				83D720B453351470C9880F85 /* MCPRemoteToolTests.swift */,
 				DE406D9272F3FF522E26024E /* MCPServerStoreTests.swift */,
+				E13D8E299A128DA50DCB2D95 /* MCPWireFormatTests.swift */,
 				46D5AD1551B13733D986BC37 /* NavigationHistoryTests.swift */,
 				D417341CA0E1725E2C8FB9BA /* NeighborhoodTests.swift */,
 				DA91866185B2C46BE60A76CB /* PreRollBufferTests.swift */,
@@ -2860,6 +2866,7 @@
 				B4BD1DFE81C73B14923168E1 /* MCPRegistryPlanTests.swift in Sources */,
 				957B3BD059A37354FC76CD38 /* MCPRemoteToolTests.swift in Sources */,
 				064E60464AEBFC09535CABB0 /* MCPServerStoreTests.swift in Sources */,
+				32F4E241050F113E21222AA8 /* MCPWireFormatTests.swift in Sources */,
 				A138EE66F6C6808592F6F945 /* MarkdownDocumentFileTests.swift in Sources */,
 				6A6FB00CC9B84B601E7889AC /* MarkdownFolderMisreadTests.swift in Sources */,
 				81F33077B0CC294E4D554D91 /* MarkdownFolderScanTests.swift in Sources */,
@@ -3207,6 +3214,7 @@
 				6B6624468938CD6ADDA5781E /* MCPToolDescriptor.swift in Sources */,
 				43898343C424D0AAF75C9950 /* MCPToolNaming.swift in Sources */,
 				8749D7B4B33106238D10C12D /* MCPToolOutput.swift in Sources */,
+				F0B1340E16D753CEF685A1C0 /* MCPWireFormat.swift in Sources */,
 				1E0BE4E6485A761F37F40924 /* MLXToolDefinitions.swift in Sources */,
 				F0748FF2335353754CEB0FD4 /* MainWindowView+LibraryPanels.swift in Sources */,
 				88BC537A69AFA0F6062E168D /* MainWindowView+Navigation.swift in Sources */,
