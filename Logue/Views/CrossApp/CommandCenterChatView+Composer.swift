@@ -17,6 +17,22 @@ extension CommandCenterChatView {
                 .frame(width: 28, height: 28)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
+            // Everything that arms or attaches, in one menu — the same one the main
+            // window mounts. It used to be three separate glyphs here, which is the
+            // per-surface redraw #61 exists to stop, and left no way to reach tool
+            // settings from the island at all.
+            ComposerPlusMenu(
+                surface: .island,
+                isDisabled: isGenerating,
+                style: .island,
+                onAttach: {
+                    Task { @MainActor in
+                        let picked = await AttachmentIntake.pickFiles()
+                        attachments = AttachmentIntake.merging(picked, into: attachments)
+                    }
+                }
+            )
+
             // Input field
             TextField("What can I help you with?", text: $inputText, axis: .vertical)
                 .font(.body)
@@ -28,43 +44,15 @@ extension CommandCenterChatView {
                     if NSEvent.modifierFlags.contains(.shift) {
                         inputText += "\n"
                         return .handled
-                    } else if canSend {
+                    } else if canSend, !LLMEngineStatus.shared.isBusy {
+                        // The same condition the Send button is disabled on. Without it
+                        // Return sent while the button beside it refused to, which reads as
+                        // the button being broken.
                         sendMessage()
                         return .handled
                     }
                     return .handled
                 }
-
-            // Attach
-            Button {
-                Task { @MainActor in
-                    let picked = await AttachmentIntake.pickFiles()
-                    attachments = AttachmentIntake.merging(picked, into: attachments)
-                }
-            } label: {
-                Image(systemName: "paperclip")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .help("Attach files")
-
-            // Web search for this turn
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) { isWebSearchOnce.toggle() }
-            } label: {
-                Image(systemName: "globe")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        isWebSearchOnce ? AppThemeConstants.brandPrimary : .white.opacity(0.4)
-                    )
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .help(isWebSearchOnce ? "Web search is on for this message" : "Search the web for this message")
 
             // Mic button
             Button {
@@ -93,10 +81,14 @@ extension CommandCenterChatView {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(canSend ? .white : .white.opacity(0.25))
+                        .foregroundStyle(canSend && !LLMEngineStatus.shared.isBusy ? .white : .white.opacity(0.25))
                         .frame(width: 32, height: 32)
                         .background(
-                            Circle().fill(canSend ? AppThemeConstants.brandPrimary : Color.white.opacity(0.08))
+                            Circle().fill(
+                                canSend && !LLMEngineStatus.shared.isBusy
+                                    ? AppThemeConstants.brandPrimary
+                                    : Color.white.opacity(0.08)
+                            )
                         )
                 }
                 .buttonStyle(.plain)
@@ -116,12 +108,6 @@ extension CommandCenterChatView {
                 .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
-        .overlay(alignment: .top) {
-            if !attachments.isEmpty || isWebSearchOnce {
-                attachmentChips
-                    .offset(y: -34)
-            }
-        }
         // Dropping onto the pill is the same intake as the picker, so a file arrives the
         // same way whichever route the user takes.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -135,11 +121,20 @@ extension CommandCenterChatView {
     }
 
     /// What is staged for the next send, with a way to take each one back off.
-    private var attachmentChips: some View {
+    var attachmentChips: some View {
         HStack(spacing: 6) {
+            if isDeepResearchOnce {
+                ModeChip(
+                    title: UICopy.Input.deepResearch,
+                    systemImage: "sparkle.magnifyingglass",
+                    tint: AppThemeConstants.brandPrimary
+                ) {
+                    isDeepResearchOnce = false
+                }
+            }
             if isWebSearchOnce {
                 ModeChip(
-                    title: "Search",
+                    title: UICopy.Input.webSearch,
                     systemImage: "globe",
                     tint: AppThemeConstants.brandPrimary
                 ) {

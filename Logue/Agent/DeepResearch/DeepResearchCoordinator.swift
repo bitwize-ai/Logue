@@ -26,6 +26,27 @@ final class DeepResearchCoordinator {
     // MARK: - State
 
     private(set) var isRunning: Bool = false
+    /// The conversation this run belongs to, and it outlives the run.
+    ///
+    /// Deep Research is one-at-a-time app-wide, which made a single global `isRunning` look
+    /// sufficient while only the main window could start a run. The island can now start one
+    /// too, and a global flag means a run started in one window paints its progress — and
+    /// then its clarifying questions and its error — onto the other's thread. Same rule as
+    /// `AgentRunState`: live run state belongs to a conversation, not to the app, and the
+    /// owner survives the run because `lastError` and `clarifyingQuestions` do.
+    private(set) var runningConversationID: UUID?
+
+    /// Which run the coordinator's state currently describes.
+    ///
+    /// `cancel()` releases `isRunning` synchronously, but the cancelled task does not unwind
+    /// until whatever it is awaiting returns — and MLX generation is not preemptible, so that
+    /// can be tens of seconds. In that window a second run legitimately starts, and then the
+    /// first one finally throws `CancellationError` and writes *its* terminal state over the
+    /// live run's: the strip reads "Cancelled", `isRunning` goes false while the second run is
+    /// still working, its web-tool override is cleared underneath it, and nothing can stop it.
+    ///
+    /// Every write from inside `execute` is therefore gated on still owning this.
+    private var runGeneration = 0
     private(set) var currentStep: DeepResearchStep = .idle
     private(set) var sections: [ResearchSection] = []
     private(set) var currentSectionIdx: Int = 0
@@ -48,31 +69,80 @@ final class DeepResearchCoordinator {
 
     private init() {}
 
+    // MARK: - Scoped reads
+
+    /// Whether *this* conversation has a run in flight.
+    func isRunning(in conversationID: UUID) -> Bool {
+        isRunning && runningConversationID == conversationID
+    }
+
+    /// Whether this conversation has anything to show — a run, questions it came back with,
+    /// or how it failed. The progress panel is mounted on this rather than on `isRunning`, so
+    /// a finished run's questions stay readable on the surface that asked for them.
+    func hasActivity(in conversationID: UUID) -> Bool {
+        guard runningConversationID == conversationID else { return false }
+        return isRunning
+            || currentStep == .failed
+            || !clarifyingQuestions.isEmpty
+            || lastError != nil
+    }
+
     // MARK: - Public API
+
+    /// Puts the question in the conversation and starts a run on it.
+    ///
+    /// `run` expects the user message to be there already, which left each surface appending
+    /// it themselves — and the island, arriving second, would have had to rediscover that
+    /// contract by finding a run whose question was missing from the thread. #61's rule is
+    /// that both surfaces mount the same behaviour, so starting a run is one call.
+    ///
+    /// - Returns: the id of the appended question, so a caller that scrolls can scroll to it.
+    /// - Returns: the id of the appended question, or `nil` when a run was already in flight
+    ///   and this one was refused.
+    ///
+    /// The refusal is checked *before* the question is appended. It used to append first and
+    /// let `run` drop the request, which put the user's question in the thread with nothing
+    /// that would ever answer it: no spinner (run state is per conversation), no progress
+    /// strip (it belongs to the other conversation), no error, and the composer already
+    /// cleared. Returning `nil` is what lets a caller say so instead.
+    @discardableResult
+    func start(prompt: String, in conversationID: UUID, oneShotWebSearch: Bool = false) -> UUID? {
+        guard !isRunning else { return nil }
+        let question = AgentMessage(role: .user, content: prompt)
+        AgentConversationStore.shared.appendMessage(question, to: conversationID)
+        run(prompt: prompt, conversationID: conversationID, oneShotWebSearch: oneShotWebSearch)
+        return question.id
+    }
 
     /// Kicks off a Deep Research run for `prompt` and posts the final report to
     /// `conversationID`. The user message is expected to already be in the
-    /// conversation (the chat view appends it before calling).
+    /// conversation — prefer `start(prompt:in:oneShotWebSearch:)`, which does both.
     func run(prompt: String, conversationID: UUID, oneShotWebSearch: Bool = false) {
         guard !isRunning else { return }
         task?.cancel()
         resetState()
         isRunning = true
+        runningConversationID = conversationID
         // Mirror the per-send override into AgentCoordinator's tool registry so
         // `constrainedToolSpecs()` (which reads from there) sees web tools for
         // this run only. Cleanup happens in `execute()`'s defer block.
         if oneShotWebSearch {
             AgentCoordinator.shared.setOneShotIncludeWebTools(true)
         }
+        runGeneration += 1
+        let generation = runGeneration
         task = Task { [weak self] in
             guard let self else { return }
-            await execute(prompt: prompt, conversationID: conversationID)
+            await execute(prompt: prompt, conversationID: conversationID, generation: generation)
         }
     }
 
     func cancel() {
         task?.cancel()
         task = nil
+        // The cancelled task may still be unwinding; bumping the generation makes anything
+        // it writes afterwards a no-op, including its own "Cancelled." bookkeeping.
+        runGeneration += 1
         if isRunning {
             currentStep = .failed
             lastError = "Cancelled."
@@ -85,18 +155,24 @@ final class DeepResearchCoordinator {
     func dismiss() {
         guard !isRunning else { return }
         resetState()
+        runningConversationID = nil
     }
 
     // MARK: - Pipeline
 
     // swiftlint:disable:next function_body_length
-    private func execute(prompt: String, conversationID: UUID) async {
+    private func execute(prompt: String, conversationID: UUID, generation: Int) async {
         defer {
-            isRunning = false
-            // Match the AgentCoordinator cleanup contract — clear any per-run
-            // web-search override regardless of success/error/cancellation.
-            if AgentCoordinator.shared.oneShotIncludeWebTools {
-                AgentCoordinator.shared.setOneShotIncludeWebTools(false)
+            // Only if this is still the run the coordinator is describing. A cancelled run
+            // unwinding late must not release a *newer* run's `isRunning`, nor strip its
+            // web-tool override.
+            if generation == runGeneration {
+                isRunning = false
+                // Match the AgentCoordinator cleanup contract — clear any per-run
+                // web-search override regardless of success/error/cancellation.
+                if AgentCoordinator.shared.oneShotIncludeWebTools {
+                    AgentCoordinator.shared.setOneShotIncludeWebTools(false)
+                }
             }
         }
 
@@ -110,6 +186,7 @@ final class DeepResearchCoordinator {
             case .sufficient:
                 break
             case let .insufficient(questions):
+                guard generation == runGeneration else { return }
                 clarifyingQuestions = questions
                 currentStep = .failed
                 lastError = "Need more detail."
@@ -167,14 +244,18 @@ final class DeepResearchCoordinator {
             // posting throws (future refactor), we don't want the UI to claim
             // success while the conversation store has nothing.
             postReport(to: conversationID, report: finalReport)
+            guard generation == runGeneration else { return }
             currentStep = .completed
         } catch is CancellationError {
-            currentStep = .failed
-            lastError = "Cancelled."
+            // A cancelled run says nothing. `cancel()` already wrote the message, and by now
+            // a newer run may own the coordinator — repeating it here is how "Cancelled."
+            // landed on top of a run that was still going.
+            return
         } catch {
+            logger.error("Deep Research failed: \(error.localizedDescription, privacy: .public)")
+            guard generation == runGeneration else { return }
             currentStep = .failed
             lastError = error.localizedDescription
-            logger.error("Deep Research failed: \(error.localizedDescription, privacy: .public)")
             postFailure(to: conversationID, error: error.localizedDescription)
         }
     }

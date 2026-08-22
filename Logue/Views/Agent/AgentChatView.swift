@@ -300,7 +300,7 @@ struct AgentChatView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
 
-        DeepResearchProgressView()
+        DeepResearchProgressView(conversationID: conversation.id)
 
         inputBar
             .matchedGeometryEffect(id: "inputBar", in: inputBarNamespace)
@@ -318,7 +318,7 @@ struct AgentChatView: View {
             inputText: $inputText,
             focusRequest: focusRequest,
             attachments: $inputAttachments,
-            isProcessing: isThisConversationProcessing || deepResearchCoordinator.isRunning,
+            isProcessing: isThisConversationProcessing || isThisConversationResearching,
             isBusy: isBusy,
             onSend: {
                 let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -359,7 +359,11 @@ struct AgentChatView: View {
                 }
             },
             onCancel: {
-                if deepResearchCoordinator.isRunning {
+                // Same decision the island makes, from the same place.
+                if AskStopTarget.target(
+                    isResearchingHere: isThisConversationResearching,
+                    isAgentRunningHere: isThisConversationProcessing
+                ) == .deepResearch {
                     deepResearchCoordinator.cancel()
                 } else {
                     coordinator.cancel()
@@ -424,6 +428,13 @@ struct AgentChatView: View {
     private var isThisConversationProcessing: Bool {
         guard let id = activeConversation?.id else { return false }
         return coordinator.isProcessing(in: id)
+    }
+
+    /// Scoped like `isThisConversationProcessing`: a Deep Research run started from the island
+    /// must not make this window's input bar look busy.
+    private var isThisConversationResearching: Bool {
+        guard let id = activeConversation?.id else { return false }
+        return deepResearchCoordinator.isRunning(in: id)
     }
 
     private var isThisConversationStreaming: Bool {
@@ -536,15 +547,22 @@ struct AgentChatView: View {
     private func startDeepResearch(_ text: String, oneShotWebSearch: Bool = false) {
         HapticFeedback.send()
         let conversationID = ensureActiveConversation()
-        let userMsg = AgentMessage(role: .user, content: text)
-        AgentConversationStore.shared.appendMessage(userMsg, to: conversationID)
-        scrollTargetID = userMsg.id
-        scrollToTopTrigger += 1
-        deepResearchCoordinator.run(
+        guard let questionID = deepResearchCoordinator.start(
             prompt: text,
-            conversationID: conversationID,
+            in: conversationID,
             oneShotWebSearch: oneShotWebSearch
         )
+        else {
+            // A run is already in flight, and since #74 scoped the indicators it may belong to
+            // the island — in which case nothing on this window would have said so. Put the
+            // question back rather than dropping it.
+            inputText = text
+            isDeepResearch = true
+            ToastCenter.shared.show(UICopy.Status.busyElsewhere, kind: .warning)
+            return
+        }
+        scrollTargetID = questionID
+        scrollToTopTrigger += 1
     }
 
     private func regenerateFromEditedMessage(messageID: UUID, newContent: String, conversationID: UUID) {

@@ -142,7 +142,8 @@ extension AgentCoordinator {
             )
         }
 
-        // Append the result message (invisible in UI; read by findResult in ToolExecutionCard)
+        // The result is its own message rather than a field on the call, so it is paired
+        // back up on read — see `AgentToolTimeline`. Never rendered as a row itself.
         let toolResult = AgentToolResult(toolCallID: toolCallID, output: output, isError: isError)
         store.appendMessage(
             AgentMessage(role: .toolResult, content: output, toolResult: toolResult),

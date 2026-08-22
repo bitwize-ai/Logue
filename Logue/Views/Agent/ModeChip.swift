@@ -3,9 +3,10 @@ import SwiftUI
 /// A mode that is on for the next send, with a way to turn it off.
 ///
 /// Lifted out of `InputBarView` so the Command Center island shows the same chip rather than
-/// drawing its own. The modes are stored in `UserDefaults` and read by both surfaces *and* by
-/// the coordinator, so a chip that looked different on one of them would be describing the
-/// same state in two voices.
+/// drawing its own. Each surface owns its own one-shot keys and hands the value to the
+/// coordinator at send time, so this is the only thing keeping the two from describing the
+/// same mode in two voices — which is why the titles come from `UICopy` rather than being
+/// typed at each call site.
 struct ModeChip: View {
     let title: String
     let systemImage: String
