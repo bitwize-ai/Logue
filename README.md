@@ -12,6 +12,10 @@
 </p>
 
 <p align="center">
+  <a href="https://trendshift.io/repositories/90137" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/90137/daily?language=Swift" alt="bitwize-ai/Logue | Trendshift" width="250" height="55"/></a>
+</p>
+
+<p align="center">
   <a aria-label="License: MIT" href="https://github.com/bitwize-ai/Logue/blob/main/LICENSE" target="_blank">
     <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-4630EB.svg?style=flat-square&labelColor=000000" />
   </a>
