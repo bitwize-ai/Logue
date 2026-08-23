@@ -5,10 +5,26 @@ All notable changes to Logue are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-08-23
+
+The release Ask Logue became one assistant, wherever you ask it from — and the one that
+puts Logue in your browser.
 
 ### Added
 
+- **A Logue extension for Chrome.** The same chat and writing tools, in any tab. Ask about
+  the page you are on and it is answered by the model running on this Mac — the page never
+  leaves your machine, and there is no account and no server in the loop. Install it from
+  the [Chrome Web Store](https://chromewebstore.google.com/detail/logue/gaegipceeccdchdffamdphfiegfeenhc);
+  What's New links to it, and Help → Get the Chrome Extension keeps the link afterwards.
+  If you try it, a review on the store genuinely helps.
+- **Ask Logue is the same assistant in both windows.** The Command Center island — the pill
+  you summon over whatever app you are in — used to be a bare question-and-answer box: no
+  tools, no memory, no files, and it threw the conversation away when it closed. It now runs
+  the same agent as the main window. It uses tools and shows you which ones it used, asks
+  before anything destructive, takes dropped files, does web search and Deep Research, keeps
+  the thread, and hands it to the main window with **Open in Logue**. Which window you asked
+  from no longer decides what Logue can do.
 - **One place to start.** Home and Ask Logue were two screens doing one job; they are now a
   single landing surface — your day, what to pick back up, and a prompt bar that becomes the
   conversation without navigating away.
@@ -18,9 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recordings that survive the worst.** Unplug a headset mid-call, mute for ten minutes, or
   quit the app outright — the recording keeps its place on the meeting's timeline and the
   transcript is rebuilt when Logue reopens, instead of ending where the trouble started.
-- **A Logue extension for Chrome.** Puts the same chat and writing tools in any tab — ask
-  about the page you are on, answered by the model on this Mac rather than someone's server. Install it from the Chrome Web Store; What's New links to
-  it, and Help → Get the Chrome Extension keeps the link afterwards.
+- **A row's actions without the right-click.** Hovering a sidebar row now reveals what you
+  can do with it, rather than hiding every action behind a context menu.
 
 ### Changed
 
@@ -35,12 +50,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has ever been announced in-app, this first one covers everything shipped so far. A fresh
   install gets a short tour of what Logue does instead, after the setup wizard rather than
   inside it. Both are reachable any time from Help → What's New and from Settings → General.
-
-### Changed
-
+- **The Privacy tab now lists what leaves this Mac, route by route** — including the ones you
+  cannot turn off — rather than describing encryption and stopping there.
 - Update prompts now say what the update contains. Sparkle's release-notes pane had been
   empty since 1.0.0 because the appcast carried no description; it and the GitHub Release
   body are now both generated from this file at tag time.
+- The editor's panes follow the window instead of fixed widths.
+
+### Fixed
+
+- **The Ask Logue island stopped closing itself.** Clicking it — including its own Send
+  button — could put it away, and switching apps buried it behind the app you switched to
+  with no way back. An island holding a conversation now stays in front and closes only when
+  you ask it to: its ✕, Esc while it is focused, or the shortcut. An empty one still gets out
+  of your way.
+- Dragging a file onto the island works. The click that *started* the drag was closing the
+  island before the file landed.
+- A staged file is no longer thrown away by a stray click, and "New" no longer keeps the
+  previous question's attachment.
+- Read aloud, copy, save-as-note and export now behave the same in both windows, and a mode
+  armed in one window is no longer silently disarmed by a question asked in the other.
+
+### For the curious
+
+Everything above, and the reasoning behind it, is in these pull requests.
+
+- [#38](https://github.com/bitwize-ai/Logue/pull/38) — Loopback bridge for the browser extension, by [@shanforge](https://github.com/shanforge)
+- [#45](https://github.com/bitwize-ai/Logue/pull/45) — Tell people what a release changed, by [@shanforge](https://github.com/shanforge)
+- [#52](https://github.com/bitwize-ai/Logue/pull/52) — Panes follow the window instead of fixed numbers, by [@westerosweb](https://github.com/westerosweb)
+- [#53](https://github.com/bitwize-ai/Logue/pull/53) — Pin every CI runner to macOS 26, by [@shanforge](https://github.com/shanforge)
+- [#54](https://github.com/bitwize-ai/Logue/pull/54) — Sidebar row actions on hover, by [@shanforge](https://github.com/shanforge)
+- [#57](https://github.com/bitwize-ai/Logue/pull/57) — Tasks, action-item triage and library panels, by [@westerosweb](https://github.com/westerosweb)
+- [#58](https://github.com/bitwize-ai/Logue/pull/58) — Automatic capture and recording resilience, by [@westerosweb](https://github.com/westerosweb)
+- [#65](https://github.com/bitwize-ai/Logue/pull/65) — Home and Ask Logue become one surface, by [@westerosweb](https://github.com/westerosweb)
+- [#66](https://github.com/bitwize-ai/Logue/pull/66) — Ask Logue 1 — one routing decision, by [@shanforge](https://github.com/shanforge)
+- [#67](https://github.com/bitwize-ai/Logue/pull/67) — Keep pre-release tags out of the appcast, by [@shanforge](https://github.com/shanforge)
+- [#68](https://github.com/bitwize-ai/Logue/pull/68) — Announce the Chrome extension in What's New, by [@shanforge](https://github.com/shanforge)
+- [#69](https://github.com/bitwize-ai/Logue/pull/69) — Ask Logue 2 — the island on the shared agent loop, by [@shanforge](https://github.com/shanforge)
+- [#70](https://github.com/bitwize-ai/Logue/pull/70) — Run CI on every pull request, by [@shanforge](https://github.com/shanforge)
+- [#71](https://github.com/bitwize-ai/Logue/pull/71) — Ask Logue 3 — hand-off, message actions, error banner, by [@shanforge](https://github.com/shanforge)
+- [#72](https://github.com/bitwize-ai/Logue/pull/72) — Ask Logue 4 — attachment intake, mode chips, composer, by [@shanforge](https://github.com/shanforge)
+- [#73](https://github.com/bitwize-ai/Logue/pull/73) — Land the stranded Ask Logue stack on main, by [@shanforge](https://github.com/shanforge)
+- [#74](https://github.com/bitwize-ai/Logue/pull/74) — Ask Logue 5 — tool history and Deep Research on the island, by [@shanforge](https://github.com/shanforge)
+
+#71 and #72 were merged into branches that had already been consumed by the merge below
+them, so their commits never reached `main` and GitHub still showed them green. #73 is the
+recovery; the story is written up there.
+
+Thanks to [@westerosweb](https://github.com/westerosweb) and
+[@shanforge](https://github.com/shanforge).
 
 ## [1.0.1] - 2026-08-02
 
