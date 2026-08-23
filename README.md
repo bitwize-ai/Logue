@@ -13,6 +13,8 @@
 
 <p align="center">
   <a href="https://trendshift.io/repositories/90137" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/90137/daily?language=Swift" alt="bitwize-ai/Logue | Trendshift" width="250" height="55"/></a>
+  <br/>
+  <sub>First reached July 28, 2026</sub>
 </p>
 
 <p align="center">
