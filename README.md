@@ -1,7 +1,7 @@
 <a href="https://bitwize.ai/logue">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/header-banner-dark.png">
-    <img alt="Logue, by Bitwize.ai" width="100%" src="docs/images/header-banner.png">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/header-banner-dark.81af7f8b.png">
+    <img alt="Logue, by Bitwize.ai" width="100%" src="docs/images/header-banner.9612e216.png">
   </picture>
 </a>
 
@@ -42,7 +42,7 @@
 </p>
 
 <p align="center">
-  <img alt="The Logue home surface on macOS — the prompt bar, what needs attention, and what to pick back up" src="docs/images/home-dashboard.png" width="900">
+  <img alt="The Logue home surface on macOS — the prompt bar, what needs attention, and what to pick back up" src="docs/images/home-dashboard.393d5e51.png" width="900">
 </p>
 
 ## Introduction
@@ -161,19 +161,19 @@ every pull request follows.
 
 | Ask Logue — the agent, its tools and its sources | Tasks, triaged out of a meeting |
 | :---: | :---: |
-| ![Ask Logue answering with tool calls and a sources panel](docs/images/ask-logue.png) | ![Action items from a meeting triaged into the task list](docs/images/tasks.png) |
+| ![Ask Logue answering with tool calls and a sources panel](docs/images/ask-logue.24b8b595.png) | ![Action items from a meeting triaged into the task list](docs/images/tasks.1f22d716.png) |
 
 | Meeting transcription + Ask Logue | Smart Minutes |
 | :---: | :---: |
-| ![Meeting transcription with speaker labels and AI chat](docs/images/meeting-transcription.png) | ![Smart Minutes with key decisions and action items](docs/images/smart-minutes.png) |
+| ![Meeting transcription with speaker labels and AI chat](docs/images/meeting-transcription.a3e12056.png) | ![Smart Minutes with key decisions and action items](docs/images/smart-minutes.075b55f4.png) |
 
 | AI writing editor with fact-checking | On-device PII detection |
 | :---: | :---: |
-| ![Writing a legal document with claims flagged for a source](docs/images/writing-editor.png) | ![PII detection flagging patient identifiers in a document](docs/images/pii-detection.png) |
+| ![Writing a legal document with claims flagged for a source](docs/images/writing-editor.26cb777b.png) | ![PII detection flagging patient identifiers in a document](docs/images/pii-detection.cd7654fd.png) |
 
 | The Chrome extension — the same assistant, answered by the model on this Mac |
 | :---: |
-| ![The Logue Chrome extension answering a question about the open tab](docs/images/chrome-extension.png) |
+| ![The Logue Chrome extension answering a question about the open tab](docs/images/chrome-extension.51b98785.png) |
 
 ## 📥 Install (users)
 
