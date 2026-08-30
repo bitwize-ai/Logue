@@ -13,7 +13,7 @@ extension CommandCenterChatView {
             // App logo
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                .scaledToFit()
                 .frame(width: 28, height: 28)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
