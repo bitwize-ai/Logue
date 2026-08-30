@@ -113,3 +113,5 @@ docs/*
 !docs/WHATS_NEW.md
 # Design and spec documents are reviewed on their pull request, so they are tracked.
 !docs/specs/
+# README artwork — logos and product screenshots the README renders.
+!docs/images/
