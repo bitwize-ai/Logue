@@ -1,14 +1,13 @@
-<p align="center">
-  <a href="https://bitwize.ai">
-    <img alt="Logue" height="72" src="docs/images/logo.png">
-  </a>
-</p>
-
-<h1 align="center">Logue</h1>
+<a href="https://bitwize.ai/logue">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/header-banner-dark.png">
+    <img alt="Logue, by Bitwize.ai" width="100%" src="docs/images/header-banner.png">
+  </picture>
+</a>
 
 <p align="center">
   <b>Privacy-first AI meeting notes & writing assistant for macOS.</b><br/>
-  On-device transcription, Smart Minutes, and 60+ writing modes — all powered by Apple Silicon. Nothing leaves your Mac.
+  On-device transcription, Smart Minutes, agentic chat and 60+ writing modes — all powered by Apple Silicon. Nothing leaves your Mac.
 </p>
 
 <p align="center">
@@ -43,7 +42,7 @@
 </p>
 
 <p align="center">
-  <img alt="Logue home dashboard on macOS" src="docs/images/home-dashboard.png" width="900">
+  <img alt="The Logue home surface on macOS — the prompt bar, what needs attention, and what to pick back up" src="docs/images/home-dashboard.png" width="900">
 </p>
 
 ## Introduction
@@ -78,16 +77,55 @@ every pull request follows.
 
 ## ✨ Features
 
+### 🏠 One Place to Start
+
+- **Home is the assistant** — Home and Ask Logue used to be two screens doing one job; they are now a single landing surface. Your day, what needs attention, what to pick back up, and a prompt bar that becomes the conversation without navigating away
+- **Needs Attention** — overdue tasks and loose ends from recent meetings, surfaced before you go looking for them
+- **Continue where you left off** — recent documents and meetings as cards, each able to hand its own question straight to the prompt bar
+- **Suggestion chips drawn from your workspace** — the starter questions are built from what is actually in your library, not a canned list
+
 ### 🎙 Meeting Intelligence
 
 - **Real-time transcription** — powered by Apple's `SpeechTranscriber` (macOS 26+), streaming audio directly with no buffering delays
 - **Speaker diarization** — identifies and labels individual speakers using FluidAudio's Sortformer model, with a batch fallback for accuracy
 - **System audio capture** — records mic and system audio simultaneously via ScreenCaptureKit; no meeting bot joins your call
+- **Recordings that survive the worst** — unplug a headset mid-call, mute for ten minutes, or quit the app outright: the recording keeps its place on the meeting's timeline and the transcript is rebuilt when Logue reopens, instead of ending where the trouble started
 - **Smart Minutes** — generates structured summaries with key decisions, themes, and follow-ups
 - **Smart transcript highlights** — AI automatically extracts the most important moments; manual bookmarks are always preserved
 - **Action item extraction** — pulls tasks, owners, and due dates from the transcript automatically
 - **Meeting prep briefing** — AI-generated context brief before a meeting starts, based on linked documents and prior notes
 - **Meeting ↔ Document links** — bidirectional links between meetings and related documents with back-link chips in the editor
+
+### 🤖 Ask Logue — Agentic AI Chat
+
+- **The same assistant in every window** — the Command Center island you summon over whatever app you are in runs the same agent as the main window: the same tools, the same memory, the same attachments, web search and Deep Research. Which window you asked from no longer decides what Logue can do, and **Open in Logue** hands the thread to the main window whenever you want the room to think in
+- **Multi-step agentic reasoning** — powered by LangGraph-Swift; plans, reasons, and executes multi-step workflows
+- **A real toolbox** — documents and spaces, meetings, semantic search, Calendar, Reminders, Contacts, files, email, web search, diagrams, slides and exports, with an approval gate in front of anything destructive
+- **Streaming responses** — live token-by-token output with animated indicators
+- **Inline diagrams & LaTeX** — renders Mermaid diagrams and math expressions directly in the chat thread
+- **Deep research mode** — progress tracking for long-running multi-source research tasks, on either surface
+- **Tool execution UI** — shows exactly what actions the agent took, paired with the results that answered them
+- **Sources panel** — lists every document and meeting the agent consulted
+- **Persistent memory & history** — the agent remembers context across conversations, all searchable
+
+### 🌐 Logue in Your Browser
+
+- **A Logue extension for Chrome** — the same chat and writing tools, in any tab. Ask about the page you are on and it is answered by the model running on this Mac. Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/logue/gaegipceeccdchdffamdphfiegfeenhc)
+- **The page never leaves your machine** — the extension talks to Logue over a bridge bound to your Mac's loopback address only, so nothing off the machine can reach it. There is no account and no server in the loop
+- **Visible and revocable** — Home says plainly when the bridge is listening and carries the switch to stop it; the same switch lives in Settings → Privacy
+
+### ⌨️ Beyond the App Window
+
+- **Inline assistant (⌘⌃I)** — rewrite, fix or continue text in whatever app you are typing in, via the Accessibility API
+- **Command Center island** — a global hotkey summons the assistant as a floating pill over any app; drop files onto it, and it stays in front while it holds a conversation
+- **Menu bar companion** — start an online or in-person meeting, or open Ask Logue, without switching to the app
+
+### ✅ Tasks & Action Items
+
+- **A real task list** — action items Logue finds in a meeting land in Tasks with due dates, priorities and tags, alongside anything you add yourself
+- **Natural-language entry** — typing `Send the deck tomorrow #launch !` files itself: due date, tag and priority parsed out of the sentence
+- **Triage, not a second list** — a meeting's extracted action items are triaged into tasks you can actually work, and the meeting shows which of its items became one
+- **Filters, search and an overdue badge** — All / Pending / Overdue / Today / This Week / Completed, searchable by title, tag and notes, with a live overdue count in the sidebar
 
 ### ✍️ AI Writing Editor
 
@@ -102,32 +140,28 @@ every pull request follows.
 - **Wiki links & backlinks** — type `[[Document Name]]` to link documents; links show the target's real name, are clickable, survive renames, and every document lists what links back to it
 - **Properties & relationships** — give documents typed fields (text, number, date, select, checkbox) and named links to other documents, all editable in a side panel
 - **Saved views & inbox** — save any filter as a sidebar entry, and triage unfiled documents from an inbox with keyboard-driven bulk actions
+- **Import markdown files and whole vaults** — right-click a space → Import…; a vault arrives as a tree, with subfolders becoming sub-spaces and frontmatter surviving as document properties
 - **Plain markdown storage (opt-in)** — store documents as ordinary `.md` files in `~/Logue` instead of encrypted storage, and edit them in any editor, track them in git, or point an agent at them. The folder is the storage, not a copy: edits, new files, renames, moves and deletions flow both ways, and folders map to spaces including nested ones. Off by default, and Logue explains the encryption you give up before turning it on
 
-### 🤖 Ask Logue — Agentic AI Chat
-
-- **Multi-step agentic reasoning** — powered by LangGraph-Swift; plans, reasons, and executes multi-step workflows
-- **Streaming responses** — live token-by-token output with animated indicators
-- **Inline diagrams & LaTeX** — renders Mermaid diagrams and math expressions directly in the chat thread
-- **Deep research mode** — progress tracking for long-running multi-source research tasks
-- **Tool execution UI** — shows exactly what actions the agent is taking, with approval controls
-- **Sources panel** — lists every document and meeting the agent consulted
-- **Persistent memory & history** — the agent remembers context across conversations, all searchable
-
-### 🔍 Search, Tasks & Discovery
+### 🔍 Search & Discovery
 
 - **Unified ⌘K search** — searches across documents, meetings, and action items in one keystroke, with keyword-centered snippets
+- **Quick open (⌘P / ⌘O)** — a flat, title-ranked list filtered on every keystroke, separate from the ⌘K command palette
 - **Full-text search (FTS5)** — fast, ranked full-text search across all meeting transcripts and document bodies
-- **Action item dashboard** — every task from every meeting in one place, with smart filters (All / Pending / Overdue / Today / This Week / Completed), sort, search, and a live sidebar overdue badge
 
 ### 🔒 Privacy & Security
 
 - **On-device AI by default** — inference, transcription, and diarization run locally via MLX on Apple Silicon; no content is sent to any cloud service unless you opt into web search or an external AI provider
 - **AES-256-GCM encryption at rest** — meetings, transcripts, audio and documents are encrypted on disk. Documents are the one thing you can opt out of, by turning on plain markdown storage; meeting data is always encrypted
+- **The Privacy tab lists what leaves this Mac, route by route** — including the routes you cannot turn off, rather than describing encryption and stopping there
 - **No account required** — download and start working; there's no sign-up, no telemetry gate, no cloud dependency
 - **Hardened Runtime, notarized, not sandboxed** — Logue ships Developer ID signed and notarized with the Hardened Runtime on. It is deliberately **not** sandboxed: a sandboxed process cannot be an Accessibility API client, so macOS never lists it under Privacy & Security → Accessibility, which silently disables the inline assistant, global hotkeys and Command Center. Every entitlement exception is documented in the entitlements files
 
 ## 🖼 Screenshots
+
+| Ask Logue — the agent, its tools and its sources | Tasks, triaged out of a meeting |
+| :---: | :---: |
+| ![Ask Logue answering with tool calls and a sources panel](docs/images/ask-logue.png) | ![Action items from a meeting triaged into the task list](docs/images/tasks.png) |
 
 | Meeting transcription + Ask Logue | Smart Minutes |
 | :---: | :---: |
@@ -135,7 +169,11 @@ every pull request follows.
 
 | AI writing editor with fact-checking | On-device PII detection |
 | :---: | :---: |
-| ![Writing a compliance document with fact-checking](docs/images/writing-editor.png) | ![PII detection flagging SSN, address, and phone numbers](docs/images/pii-detection.png) |
+| ![Writing a legal document with claims flagged for a source](docs/images/writing-editor.png) | ![PII detection flagging patient identifiers in a document](docs/images/pii-detection.png) |
+
+| The Chrome extension — the same assistant, answered by the model on this Mac |
+| :---: |
+| ![The Logue Chrome extension answering a question about the open tab](docs/images/chrome-extension.png) |
 
 ## 📥 Install (users)
 
@@ -144,6 +182,10 @@ every pull request follows.
 1. Download the latest `Logue-<version>.dmg` from the [**Releases**](https://github.com/bitwize-ai/Logue/releases/latest) page.
 2. Open the DMG and drag **Logue** into your **Applications** folder.
 3. Launch it. On first run, macOS Gatekeeper may prompt — right-click the app → **Open**.
+
+**Browser extension (optional).** Install [Logue for Chrome](https://chromewebstore.google.com/detail/logue/gaegipceeccdchdffamdphfiegfeenhc)
+to ask about the page you are on. It talks to the Logue app over your Mac's loopback
+address — the page never leaves your machine, and there is no account or server involved.
 
 **Updates** are delivered in-app via Sparkle: Logue checks the GitHub-hosted feed on
 launch and prompts you to install new versions. Updating only replaces the app —
@@ -240,7 +282,9 @@ Building and running unsigned dev builds needs none of the above. See
 
 - [`Logue/`](/Logue) — Main Swift source; SwiftUI + AppKit application target.
 - [`Logue/Engine/`](/Logue/Engine) — LLM inference actor, prompt builders, and retry helpers. All AI logic lives here.
-- [`Logue/Services/`](/Logue/Services) — Recording pipeline, transcription, speaker diarization, encryption, document storage, and scheduling services.
+- [`Logue/Agent/`](/Logue/Agent) — Ask Logue: the agent graph, run state, routing, Deep Research, and the tools the agent can call.
+- [`Logue/CrossApp/`](/Logue/CrossApp) — Everything outside the app window: the Command Center island, inline assistant, global shortcuts, and menu bar companion.
+- [`Logue/Services/`](/Logue/Services) — Recording pipeline, transcription, speaker diarization, encryption, document storage, the browser bridge, and scheduling services.
 - [`Logue/Views/`](/Logue/Views) — All SwiftUI views: Meeting workspace, Writing editor, Ask Logue chat, Action items, Settings, and more.
 - [`LogueTests/`](/LogueTests) — Swift Testing suites (`@Suite`, `@Test`), including real-inference LLM integration tests.
 - [`Vendor/`](/Vendor) — Vendored git submodule dependencies — no remote access required at build time.
