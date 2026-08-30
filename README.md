@@ -6,8 +6,8 @@
 </a>
 
 <p align="center">
-  <b>Privacy-first AI meeting notes & writing assistant for macOS.</b><br/>
-  On-device transcription, Smart Minutes, agentic chat and 60+ writing modes — all powered by Apple Silicon. Nothing leaves your Mac.
+  <b>A local-first workspace for documents, tasks and meetings on macOS.</b><br/>
+  Nested spaces, typed properties, relations and saved views — with on-device transcription, Smart Minutes and an agent across all of it. Nothing leaves your Mac.
 </p>
 
 <p align="center">
@@ -47,17 +47,26 @@
 
 ## Introduction
 
-Logue is a privacy-first AI meeting-notes and writing assistant for macOS. It combines
-real-time audio transcription, speaker diarization, and intelligent document editing —
-all powered entirely **on-device via MLX on Apple Silicon**. By default your meetings,
-notes, and conversations stay on your Mac — the only network calls are on-device model
-downloads, update checks, and the opt-in features you explicitly enable (web search and
-external AI providers).
+Logue is a workspace. Nested spaces, a block editor, typed properties on any document,
+relations that compute their own inverses, `[[wiki links]]` with backlinks and a graph,
+saved views with nested filter groups, and 55 templates. If you have used Notion or
+Obsidian, you know the shape.
 
-This repository contains the full Logue app source: the LLM engine, recording pipeline,
-agentic AI chat, writing editor, and test suites. [Bitwize](https://bitwize.ai) builds
-Logue for professionals and students who want the full power of AI without sacrificing
-privacy.
+It also records your meetings — transcribing them, separating the speakers, writing the
+minutes, and turning what people committed to into tasks that live in the same workspace
+as everything else. And an agent runs across all of it, able to reach your documents,
+meetings, calendar, reminders and files, from the app, from a floating panel over whatever
+you are using, or from a Chrome extension.
+
+All of it runs **on-device via MLX on Apple Silicon** — transcription, diarization,
+summarization and the agent alike. The only network calls are model downloads, update
+checks, and the opt-in features you explicitly enable (web search and external AI
+providers). Documents are encrypted on disk, or you can keep them as plain `.md` files in
+a folder you own and edit them in anything else.
+
+This repository contains the full app source: the LLM engine, the recording pipeline, the
+agent and its tools, the editor, and the test suites. [Bitwize](https://bitwize.ai) builds
+Logue for people who want the full power of AI without handing over their work.
 
 New here? Read [CONTRIBUTING.md](CONTRIBUTING.md) to get set up and learn the standards
 every pull request follows.
@@ -84,6 +93,29 @@ every pull request follows.
 - **Continue where you left off** — recent documents and meetings as cards, each able to hand its own question straight to the prompt bar
 - **Suggestion chips drawn from your workspace** — the starter questions are built from what is actually in your library, not a canned list
 
+### 📁 Documents & Workspace
+
+- **Nested spaces** — organise documents into spaces and sub-spaces, each with its own icon and colour
+- **Block editor** — headings, lists, quotes, callouts, code blocks, tables, dividers, Mermaid diagrams and LaTeX equations, built on `NSTextView` with full SwiftUI integration
+- **Typed properties** — give any document fields of type text, number, date, checkbox or list, editable in a side panel
+- **Relations between documents** — named links (`belongs to`, `has`, `related to`) that compute their own inverses, so declaring one side is enough
+- **Wiki links & backlinks** — type `[[Document Name]]` to link documents; links show the target's real name, are clickable, survive renames, and every document lists what links back to it
+- **Document graph** — a Connect panel showing a document's neighbourhood, grouped by how each item connects
+- **Saved views** — filter on title, body, tag, created/modified date, any property, pinned or unfiled, with six comparators, nested all/any groups, relative dates and regex; save any filter as a sidebar entry
+- **Inbox** — triage unfiled documents with keyboard-driven bulk actions
+- **55 built-in templates** — meeting notes, PRDs, project plans, retrospectives, post-mortems, technical design docs and more, plus your own
+- **Import markdown files and whole vaults** — right-click a space → Import…; a vault arrives as a tree, with subfolders becoming sub-spaces and frontmatter surviving as document properties
+- **Plain markdown storage (opt-in)** — store documents as ordinary `.md` files in `~/Logue` instead of encrypted storage, and edit them in any editor, track them in git, or point an agent at them. The folder is the storage, not a copy: edits, new files, renames, moves and deletions flow both ways, and folders map to spaces including nested ones. Off by default, and Logue explains the encryption you give up before turning it on
+
+### ✍️ AI Writing Tools
+
+- **Grammar & clarity suggestions** — inline AI-powered suggestions with one-tap acceptance
+- **Tone analysis** — detects and adjusts the tone of selected text
+- **Vocabulary enhancement** — suggests richer alternatives, validated against the actual document content
+- **Rewrite & review panels** — rewrite selected passages or get structural feedback on the whole document
+- **Fact verification** — flags claims that may need a source
+- **Writing goals** — set and track word count, reading level, and tone targets
+
 ### 🎙 Meeting Intelligence
 
 - **Real-time transcription** — powered by Apple's `SpeechTranscriber` (macOS 26+), streaming audio directly with no buffering delays
@@ -95,6 +127,13 @@ every pull request follows.
 - **Action item extraction** — pulls tasks, owners, and due dates from the transcript automatically
 - **Meeting prep briefing** — AI-generated context brief before a meeting starts, based on linked documents and prior notes
 - **Meeting ↔ Document links** — bidirectional links between meetings and related documents with back-link chips in the editor
+
+### ✅ Tasks & Action Items
+
+- **A real task list** — action items Logue finds in a meeting land in Tasks with due dates, priorities and tags, alongside anything you add yourself
+- **Natural-language entry** — typing `Send the deck tomorrow #launch !` files itself: due date, tag and priority parsed out of the sentence
+- **Triage, not a second list** — a meeting's extracted action items are triaged into tasks you can actually work, and the meeting shows which of its items became one
+- **Filters, search and an overdue badge** — All / Pending / Overdue / Today / This Week / Completed, searchable by title, tag and notes, with a live overdue count in the sidebar
 
 ### 🤖 Ask Logue — Agentic AI Chat
 
@@ -119,29 +158,6 @@ every pull request follows.
 - **Inline assistant (⌘⌃I)** — rewrite, fix or continue text in whatever app you are typing in, via the Accessibility API
 - **Command Center island** — a global hotkey summons the assistant as a floating pill over any app; drop files onto it, and it stays in front while it holds a conversation
 - **Menu bar companion** — start an online or in-person meeting, or open Ask Logue, without switching to the app
-
-### ✅ Tasks & Action Items
-
-- **A real task list** — action items Logue finds in a meeting land in Tasks with due dates, priorities and tags, alongside anything you add yourself
-- **Natural-language entry** — typing `Send the deck tomorrow #launch !` files itself: due date, tag and priority parsed out of the sentence
-- **Triage, not a second list** — a meeting's extracted action items are triaged into tasks you can actually work, and the meeting shows which of its items became one
-- **Filters, search and an overdue badge** — All / Pending / Overdue / Today / This Week / Completed, searchable by title, tag and notes, with a live overdue count in the sidebar
-
-### ✍️ AI Writing Editor
-
-- **Block-based rich text editor** — built on `NSTextView` with full SwiftUI integration
-- **Grammar & clarity suggestions** — inline AI-powered suggestions with one-tap acceptance
-- **Tone analysis** — detects and adjusts the tone of selected text
-- **Vocabulary enhancement** — suggests richer alternatives, validated against the actual document content
-- **Rewrite & review panels** — rewrite selected passages or get structural feedback on the whole document
-- **Fact verification** — flags claims that may need a source
-- **Table support** — full table creation, editing, and context menus inside the editor
-- **Writing goals** — set and track word count, reading level, and tone targets
-- **Wiki links & backlinks** — type `[[Document Name]]` to link documents; links show the target's real name, are clickable, survive renames, and every document lists what links back to it
-- **Properties & relationships** — give documents typed fields (text, number, date, select, checkbox) and named links to other documents, all editable in a side panel
-- **Saved views & inbox** — save any filter as a sidebar entry, and triage unfiled documents from an inbox with keyboard-driven bulk actions
-- **Import markdown files and whole vaults** — right-click a space → Import…; a vault arrives as a tree, with subfolders becoming sub-spaces and frontmatter surviving as document properties
-- **Plain markdown storage (opt-in)** — store documents as ordinary `.md` files in `~/Logue` instead of encrypted storage, and edit them in any editor, track them in git, or point an agent at them. The folder is the storage, not a copy: edits, new files, renames, moves and deletions flow both ways, and folders map to spaces including nested ones. Off by default, and Logue explains the encryption you give up before turning it on
 
 ### 🔍 Search & Discovery
 
@@ -285,7 +301,7 @@ Building and running unsigned dev builds needs none of the above. See
 - [`Logue/Agent/`](/Logue/Agent) — Ask Logue: the agent graph, run state, routing, Deep Research, and the tools the agent can call.
 - [`Logue/CrossApp/`](/Logue/CrossApp) — Everything outside the app window: the Command Center island, inline assistant, global shortcuts, and menu bar companion.
 - [`Logue/Services/`](/Logue/Services) — Recording pipeline, transcription, speaker diarization, encryption, document storage, the browser bridge, and scheduling services.
-- [`Logue/Views/`](/Logue/Views) — All SwiftUI views: Meeting workspace, Writing editor, Ask Logue chat, Action items, Settings, and more.
+- [`Logue/Views/`](/Logue/Views) — All SwiftUI views: the document workspace and block editor, meetings, Ask Logue, Tasks, Templates, Settings, and more.
 - [`LogueTests/`](/LogueTests) — Swift Testing suites (`@Suite`, `@Test`), including real-inference LLM integration tests.
 - [`Vendor/`](/Vendor) — Vendored git submodule dependencies — no remote access required at build time.
 - [`docs/`](/docs) — Developer setup and release documentation.
