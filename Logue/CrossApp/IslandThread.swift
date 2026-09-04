@@ -1,5 +1,15 @@
 import Foundation
 
+/// Why the island is putting itself away.
+///
+/// The view knows the difference; the controller only knows a closure fired. Without this
+/// the dismissal log attributed "Open in Logue" to the close button, which is the one thing
+/// the log exists to tell apart.
+enum CommandCenterChatDismissal: Equatable {
+    case closeButton
+    case openInLogue
+}
+
 /// One turn as the island draws it.
 ///
 /// Named for what it was — a view model over messages the island kept in its own array and
@@ -65,7 +75,13 @@ enum IslandThread {
                 return [.message(chatMessage(message, isUser: false, isStreaming: live))]
 
             case .toolCall:
-                return AgentToolTimeline.entries(in: message, allMessages: messages).map(IslandRow.tool)
+                return AgentToolTimeline.entries(in: message, allMessages: messages)
+                    // A call still waiting on the user is drawn by the pinned approval strip
+                    // above the pill, where it cannot scroll out of reach. Emitting it here
+                    // too put two cards for one call inside a 420pt panel, only one of them
+                    // answerable, which reads as a rendering bug.
+                    .filter { $0.status != .needsConfirmation }
+                    .map(IslandRow.tool)
 
             case .toolResult:
                 // Rendered inside the card for the call it answers, never as a row of its own.

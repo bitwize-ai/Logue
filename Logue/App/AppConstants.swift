@@ -71,6 +71,15 @@ enum AppConstants {
         static let oneShotWebSearch = "agent.oneShotWebSearch"
         /// Same idea for the per-send Deep Research toggle.
         static let oneShotDeepResearch = "agent.oneShotDeepResearch"
+        /// The island's own one-shot modes.
+        ///
+        /// Deliberately *not* the two keys above. The island clears its flags after every
+        /// send, so sharing the main window's keys meant a quick question here disarmed a
+        /// chip the user had armed over there and left on an unsent prompt — it then ran
+        /// without web tools and never said so. Separate keys keep the `@AppStorage`
+        /// binding a SwiftUI `Menu` needs without sharing the value.
+        static let islandOneShotWebSearch = "island.oneShotWebSearch"
+        static let islandOneShotDeepResearch = "island.oneShotDeepResearch"
         /// Optional override for the agent system prompt. Empty string = use the
         /// built-in default in `PromptRegistry.Agent`.
         static let agentSystemPromptOverride = "agent.systemPromptOverride"

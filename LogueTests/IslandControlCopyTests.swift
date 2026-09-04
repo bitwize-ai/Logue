@@ -13,12 +13,6 @@ struct IslandControlCopyTests {
     /// Every control, in every state it has.
     private var allControls: [IslandControlCopy.Control] {
         [
-            IslandControlCopy.attach(isBusy: false),
-            IslandControlCopy.attach(isBusy: true),
-            IslandControlCopy.webSearch(isOn: false),
-            IslandControlCopy.webSearch(isOn: true),
-            IslandControlCopy.deepResearch(isOn: false),
-            IslandControlCopy.deepResearch(isOn: true),
             IslandControlCopy.microphone(isRecording: false),
             IslandControlCopy.microphone(isRecording: true),
             IslandControlCopy.send(canSend: false, isGenerating: false),
@@ -51,20 +45,9 @@ struct IslandControlCopyTests {
 
     // MARK: - State
 
-    @Test("A toggle announces which way it is set")
-    func togglesCarryTheirState() {
-        // The single thing a toggle exists to convey, and the thing `.help` could not say.
-        #expect(IslandControlCopy.webSearch(isOn: true).value == IslandControlCopy.on)
-        #expect(IslandControlCopy.webSearch(isOn: false).value == IslandControlCopy.off)
-        #expect(IslandControlCopy.deepResearch(isOn: true).value == IslandControlCopy.on)
-        #expect(IslandControlCopy.deepResearch(isOn: false).value == IslandControlCopy.off)
-    }
-
     @Test("The two states of a toggle are told apart")
     func toggleStatesDiffer() {
         for pair in [
-            (IslandControlCopy.webSearch(isOn: true), IslandControlCopy.webSearch(isOn: false)),
-            (IslandControlCopy.deepResearch(isOn: true), IslandControlCopy.deepResearch(isOn: false)),
             (IslandControlCopy.microphone(isRecording: true), IslandControlCopy.microphone(isRecording: false)),
         ] {
             #expect(pair.0 != pair.1)
@@ -87,10 +70,5 @@ struct IslandControlCopyTests {
         let idle = IslandControlCopy.send(canSend: false, isGenerating: false)
         let ready = IslandControlCopy.send(canSend: true, isGenerating: false)
         #expect(idle.hint != ready.hint)
-    }
-
-    @Test("Attach says why it is unavailable mid-run")
-    func busyAttachExplainsItself() {
-        #expect(IslandControlCopy.attach(isBusy: true).hint != IslandControlCopy.attach(isBusy: false).hint)
     }
 }

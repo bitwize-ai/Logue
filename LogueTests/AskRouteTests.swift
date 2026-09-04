@@ -126,4 +126,38 @@ struct AskRouteTests {
         let request = AskRouter.Request(text: "summarise my last meeting")
         #expect(AskRouter.route(for: request) == .agentLoop)
     }
+
+    // MARK: - Deep Research needs a question
+
+    @Test("The Deep Research chip alone is not a question")
+    func deepResearchNeedsText() {
+        // A send carrying only attachments is valid, so it passes the empty check — and
+        // routing that to Deep Research appended an empty user bubble and ran the whole
+        // seven-step pipeline on "". The files are handed back either way, because research
+        // takes no attachments on either surface.
+        let route = AskRouter.route(
+            for: AskRouter.Request(text: "   ", hasAttachments: true, deepResearchRequested: true)
+        )
+        #expect(route == .agentLoop)
+    }
+
+    @Test("Deep Research with a question still routes to Deep Research")
+    func deepResearchWithTextIsUnchanged() {
+        let route = AskRouter.route(
+            for: AskRouter.Request(text: "compare A and B", deepResearchRequested: true)
+        )
+        #expect(route == .deepResearch)
+    }
+
+    @Test("Deep Research with a question and attachments still routes to Deep Research")
+    func deepResearchWithTextAndFiles() {
+        let route = AskRouter.route(
+            for: AskRouter.Request(
+                text: "compare these",
+                hasAttachments: true,
+                deepResearchRequested: true
+            )
+        )
+        #expect(route == .deepResearch)
+    }
 }

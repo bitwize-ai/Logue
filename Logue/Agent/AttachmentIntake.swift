@@ -42,9 +42,16 @@ enum AttachmentIntake {
         return result
     }
 
-    /// Loads whatever of `urls` can be read. Unreadable files are dropped rather than
-    /// failing the batch: attaching four files and getting none because one was a broken
-    /// alias is worse than attaching three.
+    /// Loads `urls` into attachments, in the order given.
+    ///
+    /// The `if let` is a contract rather than a filter: `TempAttachmentLoader.load` returns
+    /// an attachment for every URL today — an unreadable file becomes a chip carrying no
+    /// text rather than being dropped. This is written to tolerate a `nil` anyway, because
+    /// the alternative reading (fail the batch) is the wrong one: attaching four files and
+    /// getting none because one was a broken alias is worse than attaching three.
+    ///
+    /// `AttachmentIntakeTests` pins the ordering and the every-URL-yields-one contract, so
+    /// changing the loader to drop files is a decision that has to be made deliberately.
     static func load(urls: [URL]) async -> [TempAttachment] {
         var loaded: [TempAttachment] = []
         for url in urls {

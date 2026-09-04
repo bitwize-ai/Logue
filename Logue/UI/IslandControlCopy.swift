@@ -25,31 +25,10 @@ enum IslandControlCopy {
     static let on = "On"
     static let off = "Off"
 
-    static func attach(isBusy: Bool) -> Control {
-        Control(
-            label: "Attach files",
-            value: nil,
-            hint: isBusy ? "Not available while Logue is answering" : "Attach files to this message"
-        )
-    }
-
-    static func webSearch(isOn: Bool) -> Control {
-        Control(
-            label: "Web search",
-            value: isOn ? on : off,
-            hint: isOn ? "Web search is on for this message" : "Search the web for this message"
-        )
-    }
-
-    static func deepResearch(isOn: Bool) -> Control {
-        Control(
-            label: "Deep Research",
-            value: isOn ? on : off,
-            hint: isOn
-                ? "Deep Research is on for this message"
-                : "Research this in depth before answering"
-        )
-    }
+    // Attach, web search and Deep Research are deliberately absent. They were three glyphs
+    // in the island's pill until the shared `ComposerPlusMenu` replaced them, and a menu
+    // item built from a `Label` is already named for VoiceOver — so copy for them here
+    // would name controls that no longer exist, and a test walking it would prove nothing.
 
     static func microphone(isRecording: Bool) -> Control {
         Control(

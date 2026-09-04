@@ -32,8 +32,19 @@ enum UICopy {
         static let voice = "Dictate"
         static let send = "Send"
         static let stop = "Stop"
+        /// Chip titles. Shared because the island and the main window render the same
+        /// `ModeChip` for the same mode, and were spelling it two ways.
         static let webSearch = "Search"
-        static let deepResearch = "Deep Research"
+        static let deepResearch = "Deep research"
+        /// The `+` menu's items. One definition, because both composers mount the same
+        /// menu and two copies of a label is how the surfaces start naming one action
+        /// two different things.
+        static let addFiles = "Add photos & files"
+        static let searchTheWeb = "Search the web"
+        static let deepResearchMenu = "Deep research"
+        static let toolSettings = "Tool settings…"
+        static let composerMenuHelp = "Attach, search, deep research…"
+        static let composerMenuLabel = "More actions"
         static let reasoning = "Reasoning"
         static let footerPrivacy = "Local model · Offline-capable · No data leaves this Mac"
         static let charLimitNear = "Approaching context limit"
@@ -51,6 +62,8 @@ enum UICopy {
         static let researching = "Researching…"
         static let summarizing = "Summarizing…"
         static let executing = "Running tool…"
+        /// Shown when a send is refused because another conversation holds the engine.
+        static let busyElsewhere = "Logue is busy with another conversation"
 
         /// Pick a status string based on what the agent is currently doing.
         /// Falls back to "Thinking…" when no signal is available.

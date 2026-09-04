@@ -626,8 +626,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Brings the main window back, creating nothing but un-minimising and ordering front.
+    ///
+    /// Static and internal so the Command Center island can use it: "Open in Logue" has to
+    /// work with the window closed, and `NSApplication.activate` alone does not un-minimise
+    /// or order anything forward. Named apart from `showMainWindow()` because that one is
+    /// referenced by `#selector` and so cannot be overloaded.
     @objc
-    private func showMainWindow() {
+    static func bringMainWindowForward() {
+        (NSApp.delegate as? AppDelegate)?.showMainWindow()
+    }
+
+    @objc
+    func showMainWindow() {
         activateApp {
             if let window = NSApp.windows.first(where: { self.isMainAppWindow($0) }) {
                 if window.isMiniaturized {
@@ -639,8 +650,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Opens Settings on the AI tab, from either composer's `+` menu.
+    ///
+    /// Goes through `activateApp` because the island floats over another application:
+    /// posting the notification alone opens the Settings window *behind* whatever is
+    /// frontmost, which reads as the menu item doing nothing. From the main window the
+    /// activation is a no-op.
     @objc
-    private func showSettings() {
+    static func openToolSettings() {
+        SettingsNavigator.shared.pendingTab = .ai
+        (NSApp.delegate as? AppDelegate)?.showSettings()
+    }
+
+    @objc
+    fileprivate func showSettings() {
         activateApp {
             NotificationCenter.default.post(name: .openSettingsGeneral, object: nil)
         }
