@@ -354,26 +354,22 @@ struct AgentChatView: View {
                 )
                 guard let route else { return }
 
-                // The same reading the island makes, from the same pure place. A name that
-                // matched nothing stops the send: someone who typed `/weekly-reveiw` meant to
-                // run something, and answering it as an ordinary message gives them a
-                // confident reply to a question they did not ask.
-                let invocation = SkillInvocation.resolve(text, against: SkillStore.shared.skills)
-                if case let .unknown(name) = invocation {
-                    localError = SkillInvocation.unknownMessage(name: name)
+                // The same decision the island makes, from the same pure place — including
+                // which of a typed name and an armed chip wins, and whether a skill applies
+                // to this route at all.
+                let skillThisTurn: AgentSkill?
+                let messageThisTurn: String
+                switch SkillInvocation.turn(
+                    for: text,
+                    armed: armedSkill,
+                    route: route,
+                    in: SkillStore.shared.skills
+                ) {
+                case let .refuse(reason):
+                    localError = reason
                     return
-                }
-                // A typed name wins over an armed chip — it is the more specific instruction,
-                // and the one under the user's cursor as they press Return.
-                let skillThisTurn: AgentSkill? = if case let .invoked(skill, _) = invocation {
-                    skill
-                } else {
-                    armedSkill
-                }
-                let messageThisTurn: String = if case let .invoked(_, remainder) = invocation {
-                    remainder
-                } else {
-                    text
+                case let .send(skill, message):
+                    (skillThisTurn, messageThisTurn) = (skill, message)
                 }
 
                 localError = nil
@@ -387,7 +383,7 @@ struct AgentChatView: View {
 
                 switch route {
                 case .deepResearch:
-                    startDeepResearch(text, oneShotWebSearch: oneShotWeb)
+                    startDeepResearch(messageThisTurn, oneShotWebSearch: oneShotWeb)
                 case let .imagePlayground(concept):
                     HapticFeedback.send()
                     imagePlaygroundConcept = concept

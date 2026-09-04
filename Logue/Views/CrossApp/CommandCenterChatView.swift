@@ -117,11 +117,6 @@ struct CommandCenterChatView: View {
         !rows.isEmpty
     }
 
-    /// Whether anything is staged for the next send.
-    private var hasStagedChips: Bool {
-        !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce || armedSkill != nil
-    }
-
     /// Whether this island owns a thread — drawn or not.
     ///
     /// The close button lives in `messagesPanel`, and the rules that refuse to dismiss the
@@ -393,7 +388,7 @@ struct CommandCenterChatView: View {
         )
         guard let route, !isGenerating else { return }
 
-        guard let turn = resolvedTurn(for: text) else { return }
+        guard let turn = resolvedTurn(for: text, route: route) else { return }
 
         // A new attempt supersedes the last refusal. Without this the "busy elsewhere"
         // banner outlives the condition that raised it and sits over a send that worked.
@@ -452,7 +447,7 @@ struct CommandCenterChatView: View {
             // dropped a file in gets it back on the pill rather than silently losing it.
             attachments = staged
             let started = deepResearch.start(
-                prompt: text,
+                prompt: messageThisTurn,
                 in: conversationID,
                 oneShotWebSearch: searchThisTurn
             )
@@ -695,17 +690,18 @@ struct CommandCenterChatView: View {
     /// someone who typed `/weekly-reveiw` meant to run something, and passing it on as an
     /// ordinary message answers a question they did not ask while nothing anywhere says the
     /// skill never ran.
-    private func resolvedTurn(for text: String) -> (skill: AgentSkill?, message: String)? {
-        switch SkillInvocation.resolve(text, against: SkillStore.shared.skills) {
-        case let .unknown(name):
-            localError = SkillInvocation.unknownMessage(name: name)
+    private func resolvedTurn(for text: String, route: AskRoute) -> (skill: AgentSkill?, message: String)? {
+        switch SkillInvocation.turn(
+            for: text,
+            armed: armedSkill,
+            route: route,
+            in: SkillStore.shared.skills
+        ) {
+        case let .refuse(reason):
+            localError = reason
             return nil
-        case let .invoked(skill, remainder):
-            // A typed name wins over an armed chip: it is the more specific instruction, and
-            // the one under the user's cursor as they press Return.
-            return (skill, remainder)
-        case let .none(text):
-            return (armedSkill, text)
+        case let .send(skill, message):
+            return (skill, message)
         }
     }
 

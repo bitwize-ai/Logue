@@ -117,3 +117,81 @@ struct SkillInvocationTests {
         #expect(SkillInvocation.completions(for: "zzz", in: skills).isEmpty)
     }
 }
+
+/// The whole composer decision, in the one place both surfaces call.
+@Suite("Skill turn")
+struct SkillTurnTests {
+    private let review = AgentSkill(title: "Weekly Review", instructions: "i")
+    private var skills: [AgentSkill] { [review] }
+
+    private func turn(_ text: String, armed: AgentSkill? = nil, route: AskRoute = .agentLoop) -> SkillInvocation.Turn {
+        SkillInvocation.turn(for: text, armed: armed, route: route, in: skills)
+    }
+
+    @Test("A typed name beats an armed chip")
+    func typedNameWins() {
+        let other = AgentSkill(title: "Tighten this", instructions: "i")
+        #expect(turn("/weekly-review go", armed: other) == .send(skill: review, message: "go"))
+    }
+
+    @Test("An armed chip is used when nothing is typed")
+    func armedChipIsUsed() {
+        #expect(turn("do the week", armed: review) == .send(skill: review, message: "do the week"))
+    }
+
+    @Test("No skill anywhere sends the text unchanged")
+    func plainSend() {
+        #expect(turn("do the week") == .send(skill: nil, message: "do the week"))
+    }
+
+    @Test("An unknown name refuses rather than sending")
+    func unknownRefuses() {
+        guard case let .refuse(reason) = turn("/nope go") else {
+            Issue.record("an unknown name was sent anyway")
+            return
+        }
+        #expect(reason.contains("nope"))
+    }
+
+    @Test("A skill is refused rather than silently dropped on Deep Research")
+    func skillAndDeepResearchConflict() {
+        // A skill layers onto the agent's prompt and narrows the agent's tools, and a Deep
+        // Research run has neither. Dropping it quietly is the same failure as answering an
+        // unknown name as a plain message: the user asked for one thing and got another.
+        guard case let .refuse(reason) = turn("do the week", armed: review, route: .deepResearch) else {
+            Issue.record("the skill was silently dropped")
+            return
+        }
+        #expect(reason.contains("Weekly Review"))
+        #expect(reason.contains("Deep Research"))
+    }
+
+    @Test("A typed name is refused on Deep Research too")
+    func typedNameAndDeepResearchConflict() {
+        guard case .refuse = turn("/weekly-review go", route: .deepResearch) else {
+            Issue.record("the skill was silently dropped")
+            return
+        }
+    }
+
+    @Test("Image generation is the same answer")
+    func skillAndImageConflict() {
+        guard case .refuse = turn("a cat", armed: review, route: .imagePlayground(concept: "a cat")) else {
+            Issue.record("the skill was silently dropped")
+            return
+        }
+    }
+
+    @Test("Without a skill, another route sends normally")
+    func otherRoutesAreFineWithoutASkill() {
+        #expect(turn("research this", route: .deepResearch) == .send(skill: nil, message: "research this"))
+    }
+
+    @Test("The marker is stripped even when the skill does not apply to the route")
+    func markerNeverLeaksIntoAnotherRoute() {
+        // The refusal is what the user sees, but the reason this matters is the case above
+        // it: a `/name` that reaches a research prompt is a research run on a question with
+        // a stray token glued to the front of it.
+        #expect(turn("/weekly-review go") == .send(skill: review, message: "go"))
+    }
+}

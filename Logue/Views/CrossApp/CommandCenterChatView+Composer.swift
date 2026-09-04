@@ -169,6 +169,15 @@ extension CommandCenterChatView {
         )
     }
 
+    /// Whether anything is staged for the next send.
+    ///
+    /// Extension-visible: read by the view's `body`, which is in the core file. It lives here
+    /// because everything it asks about — the attachments, the modes, the armed skill — is
+    /// drawn by `stagedChips` just below.
+    var hasStagedChips: Bool {
+        !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce || armedSkill != nil
+    }
+
     /// What is staged for the next send, with a way to take each one back off.
     ///
     /// Part of the island's layout rather than an overlay floating above the pill. As an

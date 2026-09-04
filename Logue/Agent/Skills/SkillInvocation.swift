@@ -52,6 +52,64 @@ enum SkillInvocation {
         return .invoked(skill: skill, text: remainder.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// What a composer should actually do with what was typed.
+    ///
+    /// The whole decision in one place: read the name, pick between a typed name and an
+    /// armed chip, and settle whether a skill applies to this route at all. Both composers
+    /// call this and neither re-derives any of it — the precedence rule written twice is the
+    /// per-surface drift the rest of #61 exists to stop.
+    enum Turn: Equatable {
+        /// Send it. `skill` is nil when none applies.
+        case send(skill: AgentSkill?, message: String)
+        /// Do not send. Show this.
+        case refuse(reason: String)
+    }
+
+    /// - Parameters:
+    ///   - armed: the skill armed by the chip, if any.
+    ///   - route: where this send is going. A skill only applies to the agent loop.
+    static func turn(
+        for text: String,
+        armed: AgentSkill?,
+        route: AskRoute,
+        in skills: [AgentSkill]
+    ) -> Turn {
+        let message: String
+        let skill: AgentSkill?
+
+        switch resolve(text, against: skills) {
+        case let .unknown(name):
+            return .refuse(reason: unknownMessage(name: name))
+        case let .invoked(found, remainder):
+            // A typed name wins over an armed chip: it is the more specific instruction, and
+            // the one under the cursor as Return is pressed.
+            (skill, message) = (found, remainder)
+        case let .none(plain):
+            (skill, message) = (armed, plain)
+        }
+
+        // A skill layers onto the agent's system prompt and narrows the agent's tools —
+        // neither of which a Deep Research run or an image generation has. Dropping it
+        // silently would be the same failure as answering an unknown name as a plain
+        // message: the user asked for something and got something else, with nothing saying
+        // so. Refused, and named.
+        if let skill, route != .agentLoop {
+            return .refuse(reason: doesNotApplyMessage(skill: skill, route: route))
+        }
+        return .send(skill: skill, message: message)
+    }
+
+    /// Why a skill was not run for this send.
+    static func doesNotApplyMessage(skill: AgentSkill, route: AskRoute) -> String {
+        let what = switch route {
+        case .deepResearch: "Deep Research"
+        case .imagePlayground: "image generation"
+        case .agentLoop: "this"
+        }
+        return "“\(SkillName.title(from: skill.title))” can't be used with \(what). "
+            + "Turn one of them off and send again."
+    }
+
     /// What to say when a name matched nothing.
     ///
     /// Names the thing that was tried. "No such skill" leaves the user checking whether they
