@@ -600,6 +600,12 @@ final class DeepResearchCoordinator {
 
     // MARK: - Tool helpers
 
+    /// Deliberately the full registry rather than `toolsForThisRun`.
+    ///
+    /// Deep Research is its own route — `AskRouter` sends a question to this pipeline *or*
+    /// to the agent loop, never both — so no skill is ever active during one of these runs.
+    /// It narrows to its own fixed list below, which is a stricter constraint than a skill's
+    /// and is the one this pipeline is designed around.
     private func constrainedToolSpecs() -> [ToolSpec] {
         AgentCoordinator.shared.registeredTools
             .filter { Self.constrainedToolNames.contains($0.name) }

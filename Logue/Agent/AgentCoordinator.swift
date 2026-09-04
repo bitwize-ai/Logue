@@ -74,6 +74,48 @@ final class AgentCoordinator {
     /// reset in the `runGraph` `defer` block so the next regular send is unaffected.
     private(set) var oneShotIncludeWebTools = false
 
+    /// The skill invoked for the current run, if any.
+    ///
+    /// Per-send like `oneShotIncludeWebTools`, and cleared the same way — a skill is chosen
+    /// for one question, not switched on. It deliberately does **not** rebuild
+    /// `registeredTools`: a skill narrows what one run may use, and rewriting the registry
+    /// would make one conversation's choice visible to every other reader of it, including
+    /// the other surface.
+    private(set) var activeSkill: AgentSkill?
+
+    /// The tools this run may actually use.
+    ///
+    /// Everything model-facing reads this rather than `registeredTools`: what the model is
+    /// offered, what it is allowed to execute, and the clearances it is judged against. If
+    /// only the offered list were scoped, scoping would be advice — a model that had seen a
+    /// tool name earlier in the conversation could still call it.
+    var toolsForThisRun: [any AgentTool] {
+        SkillToolScope.scoped(registeredTools, to: activeSkill, name: \.name)
+    }
+
+    /// Which run owns the current skill.
+    ///
+    /// A counter rather than a bare clear, for the reason `CLAUDE.md` gives: the clear
+    /// happens in a `Task { @MainActor }` inside a `defer`, so it lands *after* the run
+    /// finishes — and a second send can begin in that gap, because the guard it passes reads
+    /// processing state that is already false. The late clear would then wipe the skill the
+    /// new run had just set, and that run would answer with no skill and no sign of why.
+    private var skillGeneration = 0
+
+    /// Sets the skill for a run, and returns the token that run must present to clear it.
+    @discardableResult
+    func setActiveSkill(_ skill: AgentSkill?) -> Int {
+        skillGeneration += 1
+        activeSkill = skill
+        return skillGeneration
+    }
+
+    /// Clears the skill only if it is still the one this run set.
+    func clearActiveSkill(generation: Int) {
+        guard generation == skillGeneration else { return }
+        activeSkill = nil
+    }
+
     private init() {
         registerDefaultTools()
         // Re-register on toggle changes so Settings can flip web tools live.
@@ -169,114 +211,14 @@ final class AgentCoordinator {
         [WebSearchTool(), FetchWebPageTool()]
     }
 
-    // MARK: - Tool registry shards
-
-    //
-    // The full registry is composed from these helpers in `buildToolRegistry`.
-    // Splitting keeps each function under SwiftLint's body-length cap and
-    // gives a single place to look up which tools exist in each category.
-
-    private static func readOnlyTools() -> [any AgentTool] {
-        [
-            ListMeetingsTool(),
-            SearchMeetingsTool(),
-            SemanticSearchMeetingsTool(),
-            GetMeetingDetailsTool(),
-            GetTranscriptTool(),
-            GetActionItemsTool(),
-            GetDailyDigestTool(),
-            ListDocumentsTool(),
-            SearchDocumentsTool(),
-            SemanticSearchDocumentsTool(),
-            GetDocumentTool(),
-            GetUpcomingEventsTool(),
-        ]
-    }
-
-    private static func writeTools() -> [any AgentTool] {
-        [
-            CreateDocumentTool(),
-            UpdateDocumentTool(),
-            DeleteDocumentTool(),
-            MoveDocumentTool(),
-            AddDocumentTagTool(),
-            CreateSpaceTool(),
-            RenameSpaceTool(),
-            DeleteSpaceTool(),
-            CreateCalendarEventTool(),
-            UpdateCalendarEventTool(),
-            DeleteCalendarEventTool(),
-            ListTemplatesTool(),
-            CreateDocumentFromTemplateTool(),
-            ExportDocumentPDFTool(),
-        ]
-    }
-
-    private static func aiContentTools() -> [any AgentTool] {
-        [
-            SummarizeDocumentTool(),
-            RephraseTextTool(),
-            GrammarCheckTool(),
-            ClarityCheckTool(),
-            ToneDetectTool(),
-            FactCheckDocumentTool(),
-            DetectPIITool(),
-            RenderDiagramTool(),
-            GenerateSlideDeckTool(),
-        ]
-    }
-
-    private static func appleNativeTools() -> [any AgentTool] {
-        [
-            DraftEmailTool(),
-            FetchContactsTool(),
-            GetRemindersTool(),
-            AddReminderTool(),
-            UpdateReminderTool(),
-            DeleteReminderTool(),
-            GetLocationTool(),
-        ]
-    }
-
-    private static func computeAndDialogTools() -> [any AgentTool] {
-        [
-            RunJavaScriptTool(),
-            GetConfirmationTool(),
-            GetTextInputTool(),
-            GetUserSelectionTool(),
-        ]
-    }
-
-    /// Phase G: external filesystem access. Sandbox-safe via
-    /// `FileAccessGate` — first call to a new folder prompts the user
-    /// via `NSOpenPanel` for an explicit grant.
-    private static func fileSystemTools() -> [any AgentTool] {
-        [
-            ListDirectoryTool(),
-            ReadFileAtPathTool(),
-            WriteTextToFileTool(),
-            DeleteFileAtPathTool(),
-        ]
-    }
-
-    /// Per-tool disable set. Persisted by `AISettingsTab` as a comma-separated
-    /// list of tool names. The registry rebuilds on every send (via the
-    /// observer in `AISettingsTab`), so toggling is effectively immediate.
-    static func disabledToolNames() -> Set<String> {
-        let raw = UserDefaults.standard.string(forKey: AppConstants.UserDefaultsKeys.disabledAgentTools) ?? ""
-        return Set(raw
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty })
-    }
-
     // MARK: - Public API
 
     func send(
         message: String,
         conversationID: UUID,
         attachments: [TempAttachment] = [],
-        oneShotWebSearch: Bool = false
+        oneShotWebSearch: Bool = false,
+        skill: AgentSkill? = nil
     ) {
         guard !isProcessingAnyConversation else { return }
         run.dismissError()
@@ -284,6 +226,7 @@ final class AgentCoordinator {
         if oneShotWebSearch {
             setOneShotIncludeWebTools(true)
         }
+        let skillRun = setActiveSkill(skill)
         let userMessage = AgentMessage(role: .user, content: message, attachments: attachments)
         // Defer cleanup of the per-send override into the Task body so it fires
         // even if the Task is cancelled before `runGraph` is awaited (the
@@ -292,10 +235,14 @@ final class AgentCoordinator {
         processingTask = Task { [weak self] in
             guard let self else { return }
             defer {
-                if oneShotWebSearch {
-                    Task { @MainActor [weak self] in
+                Task { @MainActor [weak self] in
+                    if oneShotWebSearch {
                         self?.setOneShotIncludeWebTools(false)
                     }
+                    // Always cleared, even when no skill was set: a skill left behind by a
+                    // cancelled run would silently steer the next question. Only if this run
+                    // still owns it — see `skillGeneration`.
+                    self?.clearActiveSkill(generation: skillRun)
                 }
             }
             AgentConversationStore.shared.appendMessage(userMessage, to: conversationID)
@@ -597,13 +544,16 @@ final class AgentCoordinator {
         // tools as off-limits even when they're registered. Worse: when the
         // user toggles the per-message "Search" pill, a generic prompt gives
         // the model no signal to actually call web_search.
-        let webSearchAvailable = registeredTools.contains { tool in
+        let webSearchAvailable = toolsForThisRun.contains { tool in
             tool.name == "web_search" || tool.name == "fetch_web_page"
         }
-        let systemContent = PromptRegistry.Agent.systemPrompt(
-            webSearchAvailable: webSearchAvailable,
-            oneShotWebSearch: oneShotIncludeWebTools
-        ) + PromptRegistry.Memory.recallBlock(memories: memories)
+        let systemContent = SkillLayering.compose(
+            appPrompt: PromptRegistry.Agent.systemPrompt(
+                webSearchAvailable: webSearchAvailable,
+                oneShotWebSearch: oneShotIncludeWebTools
+            ) + PromptRegistry.Memory.recallBlock(memories: memories),
+            skill: activeSkill
+        )
         let maxChars = LLMEngine.maxInputChars(
             reservedTokens: AppConstants.AgentDefaults.reservedTokens + AppConstants.AgentDefaults.maxResponseTokens
         )

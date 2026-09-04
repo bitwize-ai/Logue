@@ -11,7 +11,7 @@ enum MLXToolDefinitions {
     /// Builds all tool specs from the currently registered agent tools.
     @MainActor
     static func buildToolSpecs() -> [ToolSpec] {
-        AgentCoordinator.shared.registeredTools.map(\.spec)
+        AgentCoordinator.shared.toolsForThisRun.map(\.spec)
     }
 
     /// Dispatches a `ToolCall` from the model to the matching `AgentTool` and returns the result.
@@ -20,7 +20,10 @@ enum MLXToolDefinitions {
         let args = toolCall.function.arguments.mapValues { $0.anyValue }
 
         let tool = await MainActor.run {
-            AgentCoordinator.shared.registeredTools.first(where: { $0.name == name })
+            // Scoped, not the whole registry. Offering a narrowed list and dispatching
+            // against the full one would make scoping advice: a model that saw a tool name
+            // earlier in the conversation could still call it.
+            AgentCoordinator.shared.toolsForThisRun.first(where: { $0.name == name })
         }
         guard let tool else {
             return (output: "Unknown tool: \(name)", isError: true)

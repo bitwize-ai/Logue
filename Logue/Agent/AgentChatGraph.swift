@@ -180,7 +180,7 @@ actor AgentChatGraph {
             let toolsMeta: [String: ToolClearance] = await MainActor.run {
                 let oneShot = AgentCoordinator.shared.oneShotIncludeWebTools
                 return Dictionary(
-                    uniqueKeysWithValues: AgentCoordinator.shared.registeredTools.map { tool in
+                    uniqueKeysWithValues: AgentCoordinator.shared.toolsForThisRun.map { tool in
                         let isWebTool = tool.name == "web_search" || tool.name == "fetch_web_page"
                         let effective: ToolClearance = (oneShot && isWebTool) ? .regular : tool.clearance
                         return (tool.name, effective)
