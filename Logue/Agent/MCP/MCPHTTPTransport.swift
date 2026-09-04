@@ -57,8 +57,10 @@ struct MCPHTTPTransport: MCPTransport {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (stream, response) = try await Self.session.bytes(for: request)
-        let data = try await Self.read(stream, declaring: response.expectedContentLength)
 
+        // The status is in the headers, which have arrived; the body has not. Checking it
+        // first means a server answering 500 with a megabyte of HTML costs us the headers
+        // and nothing else — there is no reason to read a body we are going to discard.
         if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
             // Host only, never the address — the project rule, and it applies to error paths
             // as much as to success ones.
@@ -67,6 +69,8 @@ struct MCPHTTPTransport: MCPTransport {
             )
             throw MCPWireFormat.WireError.server("HTTP \(http.statusCode)")
         }
+
+        let data = try await Self.read(stream, declaring: response.expectedContentLength)
         return try MCPWireFormat.result(from: data)
     }
 
