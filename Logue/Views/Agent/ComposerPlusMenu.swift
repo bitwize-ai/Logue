@@ -63,6 +63,16 @@ struct ComposerPlusMenu: View {
     let onAttach: () -> Void
     let style: Style
 
+    /// Arms a skill for the next send.
+    ///
+    /// A closure rather than a binding to the store, because the *armed* skill is per
+    /// composer — the island and the main window each hold their own, the same way they hold
+    /// their own one-shot modes. Sharing it would arm a skill in one window by choosing it in
+    /// the other.
+    let onPickSkill: (AgentSkill) -> Void
+
+    @State private var skills = SkillStore.shared
+
     @AppStorage private var isWebSearchOnce: Bool
     @AppStorage private var isDeepResearchOnce: Bool
 
@@ -70,11 +80,13 @@ struct ComposerPlusMenu: View {
         surface: Surface,
         isDisabled: Bool,
         style: Style = .mainWindow,
-        onAttach: @escaping () -> Void
+        onAttach: @escaping () -> Void,
+        onPickSkill: @escaping (AgentSkill) -> Void = { _ in }
     ) {
         self.isDisabled = isDisabled
         self.style = style
         self.onAttach = onAttach
+        self.onPickSkill = onPickSkill
         let keys = Self.keys(for: surface)
         _isWebSearchOnce = AppStorage(wrappedValue: false, keys.webSearch)
         _isDeepResearchOnce = AppStorage(wrappedValue: false, keys.deepResearch)
@@ -96,6 +108,23 @@ struct ComposerPlusMenu: View {
             Toggle(isOn: $isDeepResearchOnce) {
                 Label(UICopy.Input.deepResearchMenu, systemImage: "sparkle.magnifyingglass")
             }
+
+            Divider()
+
+            // Mounted here rather than drawn per surface, which is the whole of #61's rule
+            // and the reason the island gets skills for free. The names double as what you
+            // can type: the menu is the discoverable half, `/name` the fast half.
+            Menu(UICopy.Input.skills) {
+                ForEach(skills.skills) { skill in
+                    Button {
+                        onPickSkill(skill)
+                    } label: {
+                        Text("\(skill.title)  /\(skill.invocation)")
+                    }
+                    .help(skill.summary)
+                }
+            }
+            .disabled(skills.skills.isEmpty)
 
             Divider()
 

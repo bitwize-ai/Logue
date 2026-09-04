@@ -42,6 +42,7 @@ enum UICopy {
         static let addFiles = "Add photos & files"
         static let searchTheWeb = "Search the web"
         static let deepResearchMenu = "Deep research"
+        static let skills = "Skills"
         static let toolSettings = "Tool settings…"
         static let composerMenuHelp = "Attach, search, deep research…"
         static let composerMenuLabel = "More actions"

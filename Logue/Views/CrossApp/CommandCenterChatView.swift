@@ -52,6 +52,12 @@ struct CommandCenterChatView: View {
     @AppStorage(AppConstants.UserDefaultsKeys.islandOneShotDeepResearch)
     var isDeepResearchOnce: Bool = false
     // Extension-visible: +Composer
+    /// The skill armed for the next send, if any.
+    ///
+    /// The island's own, not the store's and not the main window's — arming a skill here must
+    /// not arm it over there, exactly as the one-shot modes are per surface.
+    @State var armedSkill: AgentSkill?
+
     @State var deepResearch = DeepResearchCoordinator.shared
     // Extension-visible: +Composer
     /// Built the way `MainWindowView` builds its own, off the same singletons. The island is
@@ -109,11 +115,6 @@ struct CommandCenterChatView: View {
     /// Whether there is anything in the thread at all — the pill stands alone until there is.
     private var hasContent: Bool {
         !rows.isEmpty
-    }
-
-    /// Whether anything is staged for the next send.
-    private var hasStagedChips: Bool {
-        !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce
     }
 
     /// Whether this island owns a thread — drawn or not.
@@ -387,6 +388,8 @@ struct CommandCenterChatView: View {
         )
         guard let route, !isGenerating else { return }
 
+        guard let turn = resolvedTurn(for: text, route: route) else { return }
+
         // A new attempt supersedes the last refusal. Without this the "busy elsewhere"
         // banner outlives the condition that raised it and sits over a send that worked.
         localError = nil
@@ -404,6 +407,9 @@ struct CommandCenterChatView: View {
             return
         }
 
+        let skillThisTurn = turn.skill
+        let messageThisTurn = turn.message
+
         let conversationID = ensureConversation()
         let staged = attachments
         let searchThisTurn = isWebSearchOnce
@@ -414,6 +420,7 @@ struct CommandCenterChatView: View {
         // for why they are not the main window's — and are cleared again in `.onAppear`.
         isWebSearchOnce = false
         isDeepResearchOnce = false
+        armedSkill = nil
 
         // Re-focus input after state update
         Task {
@@ -424,10 +431,11 @@ struct CommandCenterChatView: View {
         switch route {
         case .agentLoop:
             coordinator.send(
-                message: text,
+                message: messageThisTurn,
                 conversationID: conversationID,
                 attachments: staged,
-                oneShotWebSearch: searchThisTurn
+                oneShotWebSearch: searchThisTurn,
+                skill: skillThisTurn
             )
         case .deepResearch:
             // The same launch the main window uses, on the island's own thread — so the
@@ -439,7 +447,7 @@ struct CommandCenterChatView: View {
             // dropped a file in gets it back on the pill rather than silently losing it.
             attachments = staged
             let started = deepResearch.start(
-                prompt: text,
+                prompt: messageThisTurn,
                 in: conversationID,
                 oneShotWebSearch: searchThisTurn
             )
@@ -458,7 +466,8 @@ struct CommandCenterChatView: View {
                 message: concept,
                 conversationID: conversationID,
                 attachments: staged,
-                oneShotWebSearch: searchThisTurn
+                oneShotWebSearch: searchThisTurn,
+                skill: skillThisTurn
             )
         }
     }
@@ -673,6 +682,27 @@ struct CommandCenterChatView: View {
         attachments = []
         localError = nil
         isInputFocused = true
+    }
+
+    /// What this send is actually asking, once a typed `/name` has been read out of it.
+    ///
+    /// Returns `nil` when the send must not go ahead. A name that matched nothing stops here:
+    /// someone who typed `/weekly-reveiw` meant to run something, and passing it on as an
+    /// ordinary message answers a question they did not ask while nothing anywhere says the
+    /// skill never ran.
+    private func resolvedTurn(for text: String, route: AskRoute) -> (skill: AgentSkill?, message: String)? {
+        switch SkillInvocation.turn(
+            for: text,
+            armed: armedSkill,
+            route: route,
+            in: SkillStore.shared.skills
+        ) {
+        case let .refuse(reason):
+            localError = reason
+            return nil
+        case let .send(skill, message):
+            return (skill, message)
+        }
     }
 
     /// Puts a refused send back exactly as it was.
