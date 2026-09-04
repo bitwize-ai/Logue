@@ -13,6 +13,20 @@ struct AgentChatView: View {
     /// Incremented to pull focus into the input after a card fills it.
     @State private var focusRequest = 0
 
+    /// The skill armed for the next send in this window.
+    ///
+    /// The main window's own — the island holds a separate one, so choosing a skill in one
+    /// does not arm it in the other, exactly as the one-shot modes behave.
+    @State private var armedSkill: AgentSkill?
+
+    /// An error this window raised itself, as opposed to one a run left behind.
+    ///
+    /// The same shape the island uses, and for the same reason: a refused send never reaches
+    /// a coordinator, so there is no run to own the message and `lastError(in:)` — which is
+    /// scoped to a conversation — can only answer nil. Both surfaces show a refusal the same
+    /// way rather than one getting a banner and the other a toast.
+    @State private var localError: String?
+
     // Injected by `MainWindowView`. Both are per-window state rather than a global rule,
     // which is why they stay in the environment: `insights` is derived and each surface
     // owns its own, and `modelManager` is read for what this window is showing.
@@ -294,7 +308,7 @@ struct AgentChatView: View {
             }
         )
 
-        if let error = coordinator.lastError(in: conversation.id) {
+        if let error = localError ?? coordinator.lastError(in: conversation.id) {
             errorBanner(error)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
@@ -319,6 +333,7 @@ struct AgentChatView: View {
             attachments: $inputAttachments,
             isProcessing: isThisConversationProcessing || isThisConversationResearching,
             isBusy: isBusy,
+            armedSkill: $armedSkill,
             onSend: {
                 let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
                 let attachments = inputAttachments
@@ -339,12 +354,36 @@ struct AgentChatView: View {
                 )
                 guard let route else { return }
 
+                // The same reading the island makes, from the same pure place. A name that
+                // matched nothing stops the send: someone who typed `/weekly-reveiw` meant to
+                // run something, and answering it as an ordinary message gives them a
+                // confident reply to a question they did not ask.
+                let invocation = SkillInvocation.resolve(text, against: SkillStore.shared.skills)
+                if case let .unknown(name) = invocation {
+                    localError = SkillInvocation.unknownMessage(name: name)
+                    return
+                }
+                // A typed name wins over an armed chip — it is the more specific instruction,
+                // and the one under the user's cursor as they press Return.
+                let skillThisTurn: AgentSkill? = if case let .invoked(skill, _) = invocation {
+                    skill
+                } else {
+                    armedSkill
+                }
+                let messageThisTurn: String = if case let .invoked(_, remainder) = invocation {
+                    remainder
+                } else {
+                    text
+                }
+
+                localError = nil
                 inputText = ""
                 inputAttachments = []
                 // Reset the per-send AppStorage flags so the next turn starts
                 // clean. These mirror the chip state in the input pill.
                 isDeepResearch = false
                 isWebSearchOnce = false
+                armedSkill = nil
 
                 switch route {
                 case .deepResearch:
@@ -354,7 +393,12 @@ struct AgentChatView: View {
                     imagePlaygroundConcept = concept
                     showImagePlayground = true
                 case .agentLoop:
-                    sendMessage(text, attachments: attachments, oneShotWebSearch: oneShotWeb)
+                    sendMessage(
+                        messageThisTurn,
+                        attachments: attachments,
+                        oneShotWebSearch: oneShotWeb,
+                        skill: skillThisTurn
+                    )
                 }
             },
             onCancel: {
@@ -478,6 +522,9 @@ struct AgentChatView: View {
 
             Button {
                 withAnimation {
+                    // Both, because the banner shows either — dismissing one and leaving the
+                    // other means the banner reappears the moment the view redraws.
+                    localError = nil
                     coordinator.dismissError()
                 }
             } label: {
@@ -511,7 +558,8 @@ struct AgentChatView: View {
     private func sendMessage(
         _ text: String,
         attachments: [TempAttachment] = [],
-        oneShotWebSearch: Bool = false
+        oneShotWebSearch: Bool = false,
+        skill: AgentSkill? = nil
     ) {
         // Routing happens at the send site, in `AskRouter`. This used to re-ask the
         // ImagePlayground question here, which meant two places could answer it
@@ -535,7 +583,8 @@ struct AgentChatView: View {
         // `runGraph` so we don't need to pass them again here.
         coordinator.sendWithoutAppendingUser(
             conversationID: conversationID,
-            oneShotWebSearch: oneShotWebSearch
+            oneShotWebSearch: oneShotWebSearch,
+            skill: skill
         )
     }
 

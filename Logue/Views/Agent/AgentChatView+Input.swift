@@ -36,6 +36,10 @@ extension AgentChatView {
         var isDeepResearch: Bool = false
         let isProcessing: Bool
         let isBusy: Bool
+        /// The skill armed for the next send. The parent owns it, because the parent is what
+        /// hands it to the coordinator — and because the island holds its own, so this must
+        /// not be shared state.
+        @Binding var armedSkill: AgentSkill?
         var onSend: () -> Void
         var onCancel: () -> Void
 
@@ -148,13 +152,24 @@ extension AgentChatView {
         /// True when any per-send mode is on. Drives whether the chip row
         /// renders (turning the pill into a 2-row card).
         private var hasActiveModes: Bool {
-            isWebSearchOnce || isDeepResearch
+            isWebSearchOnce || isDeepResearch || armedSkill != nil
         }
 
         /// Horizontal row of chips for the modes currently on. Each chip has
         /// an `×` to turn that mode off without opening the + menu.
         private var activeModeChips: some View {
             HStack(spacing: 6) {
+                // Same category as a mode: what the send is about to *do*, so it is visible
+                // before it happens rather than discovered afterwards.
+                if let armedSkill {
+                    ModeChip(
+                        title: armedSkill.title,
+                        systemImage: "wand.and.stars",
+                        tint: AppThemeConstants.brandPrimary
+                    ) {
+                        self.armedSkill = nil
+                    }
+                }
                 if isWebSearchOnce {
                     ModeChip(
                         title: UICopy.Input.webSearch,
@@ -207,7 +222,8 @@ extension AgentChatView {
             ComposerPlusMenu(
                 surface: .mainWindow,
                 isDisabled: isProcessing || isBusy,
-                onAttach: { openFilePicker() }
+                onAttach: { openFilePicker() },
+                onPickSkill: { armedSkill = $0 }
             )
         }
 

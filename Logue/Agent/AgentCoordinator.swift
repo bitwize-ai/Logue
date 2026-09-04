@@ -250,20 +250,26 @@ final class AgentCoordinator {
         }
     }
 
-    func sendWithoutAppendingUser(conversationID: UUID, oneShotWebSearch: Bool = false) {
+    func sendWithoutAppendingUser(
+        conversationID: UUID,
+        oneShotWebSearch: Bool = false,
+        skill: AgentSkill? = nil
+    ) {
         guard !isProcessingAnyConversation else { return }
         run.dismissError()
         processingTask?.cancel()
         if oneShotWebSearch {
             setOneShotIncludeWebTools(true)
         }
+        let skillRun = setActiveSkill(skill)
         processingTask = Task { [weak self] in
             guard let self else { return }
             defer {
-                if oneShotWebSearch {
-                    Task { @MainActor [weak self] in
+                Task { @MainActor [weak self] in
+                    if oneShotWebSearch {
                         self?.setOneShotIncludeWebTools(false)
                     }
+                    self?.clearActiveSkill(generation: skillRun)
                 }
             }
             await runGraph(conversationID: conversationID)
