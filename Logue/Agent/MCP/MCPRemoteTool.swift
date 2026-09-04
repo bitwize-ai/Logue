@@ -45,7 +45,12 @@ struct MCPRemoteTool: AgentTool {
             .filter { !$0.isEmpty }
             .joined(separator: " ")
         let bounded = String(claim.prefix(300))
-        return "[from the \"\(server.name)\" MCP server] \(bounded)"
+        // The *name* is attacker-influenced too, not just the description. Server configs are
+        // routinely copy-pasted from a README or a registry listing, so the name is
+        // third-party text in practice — and interpolated raw, a name carrying a quote and a
+        // bracket closes this attribution and continues as instruction in the system prompt.
+        // `attributable` is what stops it saying anything but its own name.
+        return "[from the \"\(MCPServerHealth.attributable(server.name))\" MCP server] \(bounded)"
     }
 
     var clearance: ToolClearance {
@@ -77,9 +82,18 @@ struct MCPRemoteTool: AgentTool {
         } catch {
             // Returned, not thrown: a server that is down should cost the model a tool, not
             // cost the user the turn it was in the middle of.
-            return MCPServerHealth.callFailureMessage(
-                serverName: server.name,
-                reason: reason(for: error)
+            //
+            // Wrapped like any other output from this server, and for the same reason. The
+            // failure message ends by telling the model what to do next, and `reason` can be
+            // the server's *own* 200-character error string spliced into the middle of that
+            // sentence — so unwrapped, a server that merely fails gets to put text in a
+            // position that reads as Logue's own words. The success path was careful and this
+            // branch was not, which is the only difference that mattered.
+            return MCPToolOutput.prepare(
+                MCPServerHealth.callFailureMessage(
+                    serverName: MCPServerHealth.attributable(server.name),
+                    reason: reason(for: error)
+                )
             )
         }
     }

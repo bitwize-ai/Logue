@@ -51,20 +51,50 @@ final class MCPServerStore {
     // MARK: - Writing
 
     /// Adds a server. New servers are disabled — see `MCPServer`.
-    func add(name: String, endpoint: URL) {
+    ///
+    /// Returns false, and stores nothing, if the address does not meet `MCPEndpoint`'s rule.
+    @discardableResult
+    func add(name: String, endpoint: URL) -> Bool {
+        guard isAcceptable(endpoint) else { return false }
         servers.append(MCPServer(name: sanitize(name), endpoint: endpoint))
         persist()
+        return true
     }
 
     /// Renames or re-points a server, keeping its identity and its enabled state.
     ///
     /// Deliberately does not touch `isEnabled`: editing an address is not consent to start
     /// talking to the new one, and a server that was off must stay off through an edit.
-    func update(id: UUID, name: String, endpoint: URL) {
-        guard let index = servers.firstIndex(where: { $0.id == id }) else { return }
+    ///
+    /// A rejected address changes nothing at all — in particular it does not leave the server
+    /// pointing at half an edit, with the new name and the old address.
+    @discardableResult
+    func update(id: UUID, name: String, endpoint: URL) -> Bool {
+        guard isAcceptable(endpoint) else { return false }
+        guard let index = servers.firstIndex(where: { $0.id == id }) else { return false }
         servers[index].name = sanitize(name)
         servers[index].endpoint = endpoint
         persist()
+        return true
+    }
+
+    /// The endpoint rule, applied where the decision is actually made.
+    ///
+    /// `MCPEndpoint.validate` existed and had no caller outside the tests: the HTTPS-except-
+    /// loopback rule was going to be enforced by a Settings field that has not been written
+    /// yet. A rule that lives only in a view is a rule the next caller does not get — the same
+    /// reason `AskRouter` is a pure function rather than a decision inside a `View` — and here
+    /// the next caller is whatever eventually adds a server programmatically.
+    ///
+    /// The address is never logged whole; the host only, per the project rule.
+    private func isAcceptable(_ endpoint: URL) -> Bool {
+        if case let .failure(rejection) = MCPEndpoint.validate(endpoint.absoluteString) {
+            logger.error(
+                "Refused an MCP endpoint on host \(endpoint.host ?? "none", privacy: .public): \(rejection.message, privacy: .public)"
+            )
+            return false
+        }
+        return true
     }
 
     func setEnabled(_ isEnabled: Bool, for id: UUID) {
@@ -92,7 +122,23 @@ final class MCPServerStore {
     private static func load(from defaults: UserDefaults, key: String, logger: Logger) -> [MCPServer] {
         guard let data = defaults.data(forKey: key) else { return [] }
         do {
-            return try JSONDecoder().decode([MCPServer].self, from: data)
+            let stored = try JSONDecoder().decode([MCPServer].self, from: data)
+            // Re-checked on the way in, not merely on the way out. Everything else in this
+            // feature is built on the endpoint rule holding, and a stored list is the one
+            // route into it that no UI ever touched: a defaults file written by hand, synced
+            // from another machine, or restored from a backup would otherwise hand us an
+            // enabled server on plaintext `http://` that every later stage trusts.
+            let (acceptable, refused) = stored.reduce(into: ([MCPServer](), 0)) { result, server in
+                if case .success = MCPEndpoint.validate(server.endpoint.absoluteString) {
+                    result.0.append(server)
+                } else {
+                    result.1 += 1
+                }
+            }
+            if refused > 0 {
+                logger.error("Dropped \(refused, privacy: .public) stored MCP server(s) whose address is not allowed")
+            }
+            return acceptable
         } catch {
             // Answering with an empty list is the safe failure: no servers means no egress.
             // Losing the list is recoverable by re-adding; silently enabling something we

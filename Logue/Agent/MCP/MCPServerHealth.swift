@@ -57,6 +57,26 @@ enum MCPServerHealth {
     /// The server's *name* is used rather than its address, because a URL in a message is a
     /// URL in a log the moment someone pastes it, and the project rule is that URLs are never
     /// logged whole.
+    /// A server's name, as it may appear inside a sentence Logue wrote.
+    ///
+    /// Two places put the name into text the model reads: the attribution on every tool
+    /// description, and the failure message below. Both wrap it in quotes inside a longer
+    /// sentence, so a name carrying a quote or a bracket closes the construct it is sitting
+    /// in and everything after it reads as Logue's own words rather than as a label.
+    ///
+    /// Server configs are copy-pasted from READMEs and registry listings, so the name is
+    /// third-party text in practice even though a person typed the paste. Quotes and brackets
+    /// become spaces rather than being deleted, so `A"B` cannot silently become the different
+    /// name `AB`; `DisplayText.singleLine` then takes the control and format characters — the
+    /// same strip the approval card uses — and the result is bounded.
+    static func attributable(_ serverName: String) -> String {
+        let neutralised = serverName.map { character -> Character in
+            "\"'`<>[]{}".contains(character) ? " " : character
+        }
+        let cleaned = DisplayText.singleLine(String(neutralised))
+        return cleaned.isEmpty ? "unnamed" : String(cleaned.prefix(60))
+    }
+
     static func callFailureMessage(serverName: String, reason: String) -> String {
         "Could not reach the \"\(serverName)\" server: \(reason). Its tools are unavailable "
             + "until it responds. Answer without them, and tell the user the server is unreachable."
