@@ -9,11 +9,7 @@ struct SkillStoreTests {
     private func scratch(_ name: String) -> SkillStore {
         let suite = UserDefaults(suiteName: name)
         suite?.removePersistentDomain(forName: name)
-        return SkillStore(
-            defaults: suite ?? .standard,
-            key: "\(name).skills",
-            overrideKey: "\(name).overrides"
-        )
+        return SkillStore(defaults: suite ?? .standard, key: "\(name).skills")
     }
 
     // MARK: - Built-ins
@@ -56,6 +52,36 @@ struct SkillStoreTests {
 
         store.restore(id: original.id)
         #expect(store.skill(invokedBy: original.invocation)?.instructions == originalInstructions)
+    }
+
+    @Test("An edited built-in keeps the original's place in the list")
+    func editedBuiltInStaysPut() throws {
+        // Editing a summary should not send a skill to the bottom of the picker.
+        let store = scratch("skills.order")
+        let originalOrder = store.skills.map(\.id)
+        var first = try #require(store.skills.first)
+        first.summary = "Changed"
+        #expect(store.update(first).isSuccess)
+        #expect(store.skills.map(\.id) == originalOrder)
+    }
+
+    @Test("A built-in is never hidden with nothing standing in for it")
+    func noBuiltInVanishes() {
+        // The failure this rules out: the override list was stored separately from the
+        // skills, and the two are read separately — so a corrupt skills blob read as empty
+        // while the override blob read fine would hide a built-in and put nothing in its
+        // place. The skill would simply be gone. Derived from `userSkills`, the pair cannot
+        // disagree, because there is no pair.
+        let name = "skills.novanish"
+        let defaults = UserDefaults(suiteName: name)
+        defaults?.removePersistentDomain(forName: name)
+        defaults?.set(Data("not json".utf8), forKey: "\(name).skills")
+
+        let store = SkillStore(defaults: defaults ?? .standard, key: "\(name).skills")
+        #expect(store.skills.count == SkillCatalog.builtIns.count)
+        for builtIn in SkillCatalog.builtIns {
+            #expect(store.skill(invokedBy: builtIn.invocation) != nil, "\(builtIn.title) vanished")
+        }
     }
 
     @Test("An edited built-in appears once, not twice")
@@ -133,8 +159,7 @@ struct SkillStoreTests {
 
         let reopened = SkillStore(
             defaults: UserDefaults(suiteName: name) ?? .standard,
-            key: "\(name).skills",
-            overrideKey: "\(name).overrides"
+            key: "\(name).skills"
         )
         #expect(reopened.skill(invokedBy: "kept") != nil)
     }
@@ -149,8 +174,7 @@ struct SkillStoreTests {
 
         let reopened = SkillStore(
             defaults: UserDefaults(suiteName: name) ?? .standard,
-            key: "\(name).skills",
-            overrideKey: "\(name).overrides"
+            key: "\(name).skills"
         )
         #expect(reopened.skills.count { $0.id == original.id } == 1)
         #expect(reopened.skill(invokedBy: original.invocation)?.instructions == "Mine.")
@@ -163,11 +187,7 @@ struct SkillStoreTests {
         defaults?.removePersistentDomain(forName: name)
         defaults?.set(Data("not json".utf8), forKey: "\(name).skills")
 
-        let store = SkillStore(
-            defaults: defaults ?? .standard,
-            key: "\(name).skills",
-            overrideKey: "\(name).overrides"
-        )
+        let store = SkillStore(defaults: defaults ?? .standard, key: "\(name).skills")
         #expect(store.userSkills.isEmpty)
         #expect(store.skills.isEmpty == false, "the built-ins are still there")
     }
