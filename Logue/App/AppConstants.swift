@@ -86,6 +86,9 @@ enum AppConstants {
         /// Comma-separated list of tool names the user has disabled in Settings.
         /// The registry strips these on every rebuild.
         static let disabledAgentTools = "agent.disabledTools"
+        static let agentSkills = "agent.skills"
+        /// Ids of built-in skills the user has edited. Their edited copy lives in `agentSkills`.
+        static let agentSkillOverrides = "agent.skillOverrides"
         /// The user's MCP servers. Configuration, not secrets — see `MCPServerStore`.
         static let mcpServers = "agent.mcpServers"
         /// The marker of the tasks folder this app last used. Remembered so a folder
