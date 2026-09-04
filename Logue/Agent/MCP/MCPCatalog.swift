@@ -6,6 +6,12 @@ import os.log
 /// The registry asks this for tools on every rebuild, so it holds the last known answer
 /// rather than going to the network — a rebuild happens on every send, and a send must not
 /// wait on someone else's server before the model sees a tool list.
+///
+/// **`refresh()` and `forget(id:)` have no caller yet, and that is the current state of the
+/// feature rather than an oversight.** Both belong to the Settings screen that adds, enables
+/// and removes servers, which is the one remaining box of #63. Until it lands there is no way
+/// to add a server, `discovered` stays empty, and no MCP tool is ever published — which is
+/// why this half could land without being able to reach the network at all.
 @MainActor
 @Observable
 final class MCPCatalog {

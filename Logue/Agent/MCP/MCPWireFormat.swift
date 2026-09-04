@@ -14,9 +14,14 @@ enum MCPWireFormat {
     /// Largest reply we will read, in bytes.
     ///
     /// The output a tool returns is bounded again later by `MCPToolOutput`, but that bound is
-    /// applied to a `String` that has already been decoded — which means a server can make
-    /// Logue allocate whatever it sends before anything trims it. This is the bound that
-    /// stops that, and it belongs here because it has to be applied to bytes.
+    /// applied to a `String` that has already been decoded — so by itself it would let a
+    /// server make Logue allocate whatever it sent before anything trimmed it.
+    ///
+    /// This is the bound in bytes, and it is enforced in two places for two different
+    /// reasons. `MCPHTTPTransport` stops *reading* at it, which is what bounds the
+    /// allocation; this check stops *parsing* at it, which also covers a caller that got its
+    /// bytes some other way. Neither makes the other redundant: reading is where the memory
+    /// goes, parsing is where a caller without a socket arrives.
     static let maxResponseBytes = 2 * 1024 * 1024
 
     /// Longest a server's tool list may be.

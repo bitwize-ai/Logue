@@ -54,9 +54,13 @@ enum MCPToolNaming {
 
     /// Whether `name` is a name a server published, rather than one of ours.
     ///
-    /// The question the approval gate and the registry both ask, answered by the shape of the
-    /// name rather than by looking anything up — so it stays true for a call that arrives
-    /// after its server was removed.
+    /// Answered by the *shape* of the name rather than by looking the server up, so it stays
+    /// true for a call that arrives after its server was removed — which is the property a
+    /// caller deciding how much to trust an in-flight call needs.
+    ///
+    /// Nothing outside this module asks yet. It is here because the shape question has to be
+    /// answerable without the store, and getting that wrong later would mean re-deriving it
+    /// from a list that no longer contains the server.
     static func isPublished(_ name: String) -> Bool {
         guard let range = name.range(of: separator) else { return false }
         return !name[name.startIndex ..< range.lowerBound].isEmpty

@@ -56,7 +56,8 @@ struct MCPHTTPTransport: MCPTransport {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await Self.session.data(for: request)
+        let (stream, response) = try await Self.session.bytes(for: request)
+        let data = try await Self.read(stream, declaring: response.expectedContentLength)
 
         if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
             // Host only, never the address — the project rule, and it applies to error paths
@@ -67,5 +68,33 @@ struct MCPHTTPTransport: MCPTransport {
             throw MCPWireFormat.WireError.server("HTTP \(http.statusCode)")
         }
         return try MCPWireFormat.result(from: data)
+    }
+
+    /// Reads a reply, stopping the moment it exceeds what we are willing to hold.
+    ///
+    /// `URLSession.data(for:)` buffers the whole body before returning it, so checking the
+    /// size afterwards checks a allocation that has already happened — a server could make
+    /// Logue hold a hundred megabytes and the bound in `MCPWireFormat` would only stop it
+    /// being *parsed*. This is what makes that bound real: the read stops at the cap, so the
+    /// most a server can make us hold is the cap itself.
+    ///
+    /// `expectedContentLength` is a fast reject for a server that declares the size honestly,
+    /// and it is only that — a server that lies, or sends no `Content-Length`, is caught by
+    /// the running total, which is the check that does not depend on the server telling the
+    /// truth.
+    private static func read(_ stream: URLSession.AsyncBytes, declaring declared: Int64) async throws -> Data {
+        if declared > Int64(MCPWireFormat.maxResponseBytes) {
+            throw MCPWireFormat.WireError.tooLarge
+        }
+
+        var data = Data()
+        data.reserveCapacity(min(Int(max(declared, 0)), MCPWireFormat.maxResponseBytes))
+        for try await byte in stream {
+            data.append(byte)
+            if data.count > MCPWireFormat.maxResponseBytes {
+                throw MCPWireFormat.WireError.tooLarge
+            }
+        }
+        return data
     }
 }
