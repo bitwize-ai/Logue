@@ -70,7 +70,39 @@ struct IslandThreadTests {
             for: [toolCall("read_document", id: callID), toolResult(for: callID)],
             isStreaming: false
         )
-        #expect(rows.count == 1)
+        // Asserting the kind, not just the count: drop the call row and emit the result as an
+        // assistant message instead — its content is non-empty, so it would render — and a
+        // count of 1 still passes while raw tool output is shown as if the assistant said it.
+        #expect(kinds(rows) == ["tool:read_document"])
+    }
+
+    @Test("A call awaiting approval is not also drawn as a row")
+    func approvalPendingCallsAreLeftToTheStrip() {
+        // The pinned strip above the pill owns those, because an answer that scrolls out of
+        // reach is an answer the user cannot give. Emitting it here too put two cards for one
+        // call inside a 420pt panel, only one of them answerable.
+        let rows = IslandThread.rows(
+            for: [
+                user("delete that document"),
+                toolCall("delete_document", status: .needsConfirmation),
+            ],
+            isStreaming: false
+        )
+        #expect(kinds(rows) == ["user"])
+    }
+
+    @Test("Once approved, the call becomes a row like any other")
+    func answeredCallsBecomeRows() {
+        let callID = UUID()
+        let rows = IslandThread.rows(
+            for: [
+                user("delete that document"),
+                toolCall("delete_document", id: callID, status: .needsConfirmation),
+                toolResult(for: callID),
+            ],
+            isStreaming: false
+        )
+        #expect(kinds(rows) == ["user", "tool:delete_document"])
     }
 
     @Test("A card carries its result once one has arrived")

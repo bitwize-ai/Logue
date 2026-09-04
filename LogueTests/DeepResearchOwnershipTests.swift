@@ -71,6 +71,46 @@ struct DeepResearchOwnershipTests {
         }
     }
 
+    @Test("A failed run still has something to report")
+    func failedRunsStillReport() {
+        // The progress strip mounts on `hasActivity`, so this is the predicate that decides
+        // whether a user who cancelled sees why it stopped. It used to mount on a separate
+        // expression in the view, which meant these assertions could stay green while the
+        // strip stopped appearing.
+        withIdleCoordinator { coordinator in
+            let owner = UUID()
+            coordinator.run(prompt: "why", conversationID: owner)
+            coordinator.cancel()
+            #expect(coordinator.currentStep == .failed)
+            #expect(coordinator.hasActivity(in: owner))
+        }
+    }
+
+    @Test("A cancelled run cannot take the next one down with it")
+    func aCancelledRunDoesNotClobberItsSuccessor() {
+        // `cancel()` releases `isRunning` synchronously, but the cancelled task keeps
+        // unwinding until whatever it is awaiting returns — MLX generation is not
+        // preemptible, so that can be tens of seconds. A second run legitimately starts in
+        // that window, and the first one then wrote its own terminal state over it: the strip
+        // read "Cancelled", `isRunning` went false while the second was still working, and
+        // nothing could stop it. The generation counter is what makes those late writes
+        // no-ops; this pins the part of it that is observable synchronously.
+        withIdleCoordinator { coordinator in
+            let first = UUID()
+            let second = UUID()
+
+            coordinator.run(prompt: "one", conversationID: first)
+            coordinator.cancel()
+            #expect(coordinator.lastError != nil, "the cancel itself still reports")
+
+            coordinator.run(prompt: "two", conversationID: second)
+            #expect(coordinator.isRunning(in: second), "the second run owns the coordinator")
+            #expect(coordinator.runningConversationID == second)
+            #expect(coordinator.lastError == nil, "a fresh run starts clean")
+            #expect(coordinator.currentStep != .failed)
+        }
+    }
+
     @Test("Dismissing a finished run gives up the thread")
     func dismissReleasesOwnership() {
         withIdleCoordinator { coordinator in
@@ -81,6 +121,23 @@ struct DeepResearchOwnershipTests {
 
             #expect(coordinator.runningConversationID == nil)
             #expect(coordinator.hasActivity(in: owner) == false)
+        }
+    }
+
+    @Test("A refused start appends nothing")
+    func refusedStartLeavesNoQuestion() {
+        // `start` used to append the question and let `run` drop the request, which left the
+        // user's question in the thread with nothing that would ever answer it: no spinner
+        // (run state is per conversation), no strip (it belongs to the other conversation),
+        // no error, and the composer already cleared. Returning nil is what lets the caller
+        // put the question back instead.
+        withIdleCoordinator { coordinator in
+            let first = UUID()
+            coordinator.run(prompt: "one", conversationID: first)
+
+            let refused = coordinator.start(prompt: "two", in: UUID())
+            #expect(refused == nil)
+            #expect(coordinator.runningConversationID == first, "the first run keeps the coordinator")
         }
     }
 

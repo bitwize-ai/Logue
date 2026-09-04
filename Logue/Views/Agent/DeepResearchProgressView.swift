@@ -14,13 +14,18 @@ struct DeepResearchProgressView: View {
 
     @State private var coordinator = DeepResearchCoordinator.shared
 
+    /// Whether this thread has anything to report.
+    ///
+    /// Asks `hasActivity(in:)` rather than rebuilding the rule out of `runningConversationID`
+    /// and `isRunning`. Two expressions for one question meant the tests pinned a predicate
+    /// the view did not use, so the strip could stop appearing with every assertion green.
     private var isMine: Bool {
         guard let conversationID else { return false }
-        return coordinator.runningConversationID == conversationID
+        return coordinator.hasActivity(in: conversationID)
     }
 
     var body: some View {
-        if isMine, coordinator.isRunning || coordinator.currentStep == .failed {
+        if isMine {
             VStack(alignment: .leading, spacing: 10) {
                 header
                 stepList

@@ -1,4 +1,5 @@
 import Cocoa
+import os.log
 import SwiftUI
 
 /// Panel mode for Command Center — chat or recording.
@@ -73,6 +74,18 @@ private class TransparentContainerView: NSView {
     /// on turns the transparent region into a dead zone that swallows them.
     var claimsEmptyAreaClicks: (() -> Bool)?
 
+    /// The island's own drawn bounds, in this view's coordinates.
+    ///
+    /// "Empty area" used to mean "no SwiftUI subview claimed this point", which is
+    /// not the same thing at all: the pill's background, its padding, and the gap
+    /// between the transcript and the prompt bar are all inside the island and are
+    /// claimed by nothing. Clicking any of them put the island away, which is the
+    /// reported bug — a click *on* the island closing it.
+    ///
+    /// A click inside these bounds belongs to the island whether or not a control
+    /// wanted it. Only clicks outside them are clicks off the island.
+    var islandBounds: (() -> NSRect)?
+
     override func draw(_ dirtyRect: NSRect) {
         // Fully transparent — do not draw anything.
     }
@@ -93,14 +106,36 @@ private class TransparentContainerView: NSView {
                 return hit
             }
         }
-        // No subview hit — claim it only if we will act on it, otherwise return nil
-        // to let the click pass through entirely.
+        // Inside the island but claimed by no control — its background, its padding,
+        // the gap between the transcript and the pill. That is still the island, so
+        // take the click and do nothing with it rather than letting it fall through
+        // to the app behind (which would activate that app and bury us).
+        if isInsideIsland(localPoint) {
+            return self
+        }
+        // Genuinely off the island: claim it only if we will act on it, otherwise
+        // return nil to let the click pass through entirely.
         return claimsEmptyAreaClicks?() == true ? self : nil
     }
 
     override func mouseDown(with event: NSEvent) {
-        // Only called when hitTest returned self (empty area click).
+        // Reached for two different clicks — one on the island's own inert area, one
+        // beside it — and only the second is a decision about the island.
+        let localPoint = convert(event.locationInWindow, from: nil)
+        guard !isInsideIsland(localPoint) else {
+            // Still hand it up the responder chain: `CommandCenterPanel.mouseDown`
+            // makes the panel key, and swallowing this meant clicking the island's own
+            // background no longer focused it — which silently disabled Esc, since the
+            // local monitor only acts while the panel is key.
+            super.mouseDown(with: event)
+            return
+        }
         onClickEmptyArea?()
+    }
+
+    private func isInsideIsland(_ localPoint: NSPoint) -> Bool {
+        guard let islandBounds else { return false }
+        return islandBounds().contains(localPoint)
     }
 }
 
@@ -117,15 +152,15 @@ class CommandCenterController: ObservableObject {
     private var currentMode: CommandCenterMode?
     private var escMonitor: Any?
     private var escLocalMonitor: Any?
-    private var clickMonitor: Any?
     private var clickLocalMonitor: Any?
-    private var chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
+    private var chatContent = CommandCenterChatContent(hasConversation: false, hasDraft: false, hasAttachments: false)
 
     /// The meeting ID of the active recording panel, used to restore the island.
     private(set) var activeRecordingMeetingID: UUID?
     /// Whether the panel was hidden because the Logue main window became active.
     private var hiddenForMainWindow: Bool = false
     private var appActiveObserver: NSObjectProtocol?
+    private static let logger = Logger(subsystem: AppConstants.bundleID, category: "CommandCenter")
     private var appResignObserver: NSObjectProtocol?
     /// Suppresses the next app-became-active hide (used during panel creation).
     private var suppressNextActiveHide: Bool = false
@@ -135,43 +170,25 @@ class CommandCenterController: ObservableObject {
     /// Summons the chat island, or dismisses it when it is already up, so the
     /// activation shortcut is the same key that puts it away again.
     func toggleChatPanel() {
-        switch CommandCenterChatRule.trigger(
-            mode: currentMode,
-            isShowingPanel: panel != nil,
-            isChatBehindOtherApps: panel?.level == .normal
-        ) {
+        switch CommandCenterChatRule.trigger(mode: currentMode, isShowingPanel: panel != nil) {
         case .dismiss:
-            dismissPanel()
-            return
-        case .raise:
-            raiseChatPanel()
+            dismissPanel(reason: .hotkey)
             return
         case .replace:
-            dismissPanel()
+            dismissPanel(reason: .replacedByRecording)
         case .present:
             break
         }
         currentMode = .chat
-        chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
+        chatContent = CommandCenterChatContent(hasConversation: false, hasDraft: false)
         createPanel(mode: .chat)
         setupAppActiveObservers()
-    }
-
-    /// Brings an island that was sent behind other apps back to the front, with
-    /// whatever was typed into it still there. Reached from the shortcut while
-    /// another app is frontmost, where nothing else would re-promote it.
-    private func raiseChatPanel() {
-        guard let panel else { return }
-        panel.level = .floating
-        panel.orderFrontRegardless()
-        panel.makeKey()
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func showRecordingPanel(meetingID: UUID) {
         hiddenForMainWindow = false
         if panel != nil {
-            dismissPanel()
+            dismissPanel(reason: .replacedByRecording)
         }
         activeRecordingMeetingID = meetingID
         currentMode = .recording(meetingID: meetingID)
@@ -222,8 +239,9 @@ class CommandCenterController: ObservableObject {
     }
 
     private func handleAppBecameActive() {
+        // The chat island keeps its level for its whole life now, so there is
+        // nothing to restore — it is simply left alone.
         if case .chat = currentMode {
-            panel?.level = .floating
             return
         }
         guard case .recording = currentMode else { return }
@@ -244,10 +262,9 @@ class CommandCenterController: ObservableObject {
     private func handleAppResignedActive() {
         switch CommandCenterChatRule.focusLoss(mode: currentMode, chatHasContent: !chatContent.isEmpty) {
         case .dismiss:
-            dismissPanel()
+            dismissPanel(reason: .focusLoss)
             return
-        case .sendBehindOtherApps:
-            panel?.level = .normal
+        case .keep:
             return
         case nil:
             break
@@ -277,7 +294,9 @@ class CommandCenterController: ObservableObject {
         switch mode {
         case .chat:
             let chatView = CommandCenterChatView(
-                onDismiss: { [weak self] in self?.dismissPanel() },
+                onDismiss: { [weak self] dismissal in
+                    self?.dismissPanel(reason: dismissal == .openInLogue ? .openInLogue : .closeButton)
+                },
                 onContentChanged: { [weak self] content in self?.chatContent = content }
             )
             let hv = TransparentHostingView(rootView: chatView)
@@ -304,8 +323,18 @@ class CommandCenterController: ObservableObject {
                 hv.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
             ])
 
-            container.claimsEmptyAreaClicks = { [weak self] in self?.chatContent.hasMessages == false }
-            container.onClickEmptyArea = { [weak self] in self?.dismissPanel() }
+            // The same rule the click monitor uses, so an island holding a staged file
+            // is not torn down by a click on the transparent area while surviving one
+            // on another window.
+            container.claimsEmptyAreaClicks = { [weak self] in
+                guard let self else { return false }
+                return CommandCenterChatRule.clickOff(chatContent)
+            }
+            // What counts as "on the island" — the hosting view is pinned to the bottom
+            // and is only as tall as the SwiftUI content, so its frame is exactly the
+            // island's drawn bounds.
+            container.islandBounds = { [weak hv] in hv?.frame ?? .zero }
+            container.onClickEmptyArea = { [weak self] in self?.dismissPanel(reason: .emptyAreaClick) }
 
             hostingView = container
             panelWidth = 740
@@ -315,7 +344,7 @@ class CommandCenterController: ObservableObject {
             let recordingView = CommandCenterRecordingView(
                 recorder: RecordingSessionManager.shared,
                 activeMeetingID: meetingID,
-                onDismiss: { [weak self] in self?.dismissPanel() },
+                onDismiss: { [weak self] in self?.dismissPanel(reason: .recordingDismissed) },
                 onStop: { [weak self] in self?.dismissRecordingWithCollapse() },
                 onOpenInApp: { [weak self] in self?.openMeetingInApp(meetingID) }
             )
@@ -430,7 +459,9 @@ class CommandCenterController: ObservableObject {
     private func setupMonitors(mode: CommandCenterMode) {
         escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == Self.escapeKeyCode {
-                Task { @MainActor in self?.dismissPanel() }
+                // Global means the keystroke went to another app, so it is not a
+                // decision about the island — held to the same bar as a stray click.
+                Task { @MainActor in self?.dismissIfEscapeApplies(pressedInIsland: false) }
             }
         }
 
@@ -442,35 +473,70 @@ class CommandCenterController: ObservableObject {
         if case .chat = mode {
             escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard event.keyCode == Self.escapeKeyCode, let self, panel?.isKeyWindow == true else { return event }
-                dismissPanel()
+                // The island is key, so this is someone dismissing what they are
+                // looking at. Always honoured, however much it holds.
+                dismissIfEscapeApplies(pressedInIsland: true)
                 return nil
             }
 
-            clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let screenPoint = Self.screenPoint(for: event)
-                Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
-            }
+            // Deliberately no *global* mouse-down monitor. A mouse-down outside Logue is
+            // another application being clicked, which is `handleAppResignedActive`'s
+            // question, and it answers it with the real rule — an island holding something
+            // goes behind rather than being destroyed.
+            //
+            // Watching it here as well duplicated that decision with a cruder one, and broke
+            // dragging a file onto the island: the mouse-down that *starts* a drag in Finder
+            // is outside the pill, and the pill is still empty because the drop has not
+            // landed yet, so the island was torn down before the file arrived.
 
             clickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let screenPoint = Self.screenPoint(for: event)
-                Task { @MainActor in self?.dismissIfClickMissedPanel(screenPoint) }
+                // Reduced to two Sendable facts here rather than carrying the `NSWindow`
+                // across the actor hop, which `NSWindow` is not.
+                let clicked = event.window.map(ObjectIdentifier.init)
+                let isPanel = event.window is NSPanel
+                Task { @MainActor in
+                    self?.dismissIfClickLandedElsewhere(windowID: clicked, isPanel: isPanel)
+                }
                 return event
             }
         }
     }
 
-    /// Where a click landed, in screen coordinates. Events from a global monitor
-    /// carry no window and are already in screen space.
-    private static func screenPoint(for event: NSEvent) -> NSPoint {
-        guard let window = event.window else { return event.locationInWindow }
-        return window.convertPoint(toScreen: event.locationInWindow)
+    /// Puts an empty chat island away when a click lands on one of Logue's *other*
+    /// windows. What may be closed is `CommandCenterChatRule.clickOff`.
+    ///
+    /// Decided by window identity rather than by hit-testing a screen point against
+    /// `panel.frame`, which is what this used to do and got wrong twice over. The
+    /// point came from `event.locationInWindow` converted with the event's own
+    /// window — and when that window was nil the code fell back to using
+    /// *window-local* coordinates as though they were screen coordinates, so a click
+    /// on the island itself could read as a click somewhere else and close it. The
+    /// same test also counted clicks inside the attach picker as clicks elsewhere:
+    /// `NSOpenPanel.begin` is non-modal and, because Logue is unsandboxed, runs in
+    /// this process, so choosing a file tore down the very island it was for.
+    ///
+    /// Panels are excluded wholesale. Every panel Logue puts on screen — the picker,
+    /// the toast, the island itself — is either ours or transient, and none of them
+    /// is a user saying "I am done with the island".
+    private func dismissIfClickLandedElsewhere(windowID: ObjectIdentifier?, isPanel: Bool) {
+        guard case .chat = currentMode, let panel, let windowID, !isPanel else { return }
+        guard windowID != ObjectIdentifier(panel) else { return }
+        guard CommandCenterChatRule.clickOff(chatContent) else { return }
+        dismissPanel(reason: .clickOnOtherWindow)
     }
 
-    /// Puts an empty chat island away when a click lands anywhere but on it. An
-    /// island holding a conversation or an unsent prompt stays.
-    private func dismissIfClickMissedPanel(_ screenPoint: NSPoint) {
-        guard let panel, !chatContent.hasMessages, !panel.frame.contains(screenPoint) else { return }
-        dismissPanel()
+    /// Handles Esc from either monitor. `pressedInIsland` is what separates a
+    /// deliberate dismissal from a keystroke that happened elsewhere.
+    private func dismissIfEscapeApplies(pressedInIsland: Bool) {
+        // The global Esc monitor is installed for both modes, and `chatContent` is a chat
+        // fact. Recording keeps the unconditional dismissal it has always had.
+        guard case .chat = currentMode else {
+            dismissPanel(reason: .escape(inIsland: pressedInIsland))
+            return
+        }
+        guard panel != nil else { return }
+        guard CommandCenterChatRule.escape(content: chatContent, pressedInIsland: pressedInIsland) else { return }
+        dismissPanel(reason: .escape(inIsland: pressedInIsland))
     }
 
     // MARK: - Dismiss
@@ -482,9 +548,6 @@ class CommandCenterController: ObservableObject {
         }
         if let monitor = escLocalMonitor {
             NSEvent.removeMonitor(monitor); escLocalMonitor = nil
-        }
-        if let monitor = clickMonitor {
-            NSEvent.removeMonitor(monitor); clickMonitor = nil
         }
         if let monitor = clickLocalMonitor {
             NSEvent.removeMonitor(monitor); clickLocalMonitor = nil
@@ -509,7 +572,7 @@ class CommandCenterController: ObservableObject {
         panel = nil
         isVisible = false
         currentMode = nil
-        chatContent = CommandCenterChatContent(hasMessages: false, hasDraft: false)
+        chatContent = CommandCenterChatContent(hasConversation: false, hasDraft: false)
         if !keepRecordingState {
             activeRecordingMeetingID = nil
             tearDownAppActiveObservers()
@@ -517,7 +580,34 @@ class CommandCenterController: ObservableObject {
         return dismissed
     }
 
-    func dismissPanel() {
+    /// Why an island is being put away.
+    ///
+    /// Recorded on every dismissal because the island vanishing for the wrong reason
+    /// is invisible after the fact — the panel is gone either way — and several paths
+    /// can do it. With this, the log says which one fired.
+    enum DismissReason: Equatable {
+        /// The X in the island's header.
+        case closeButton
+        /// "Open in Logue" carried the thread to the main window.
+        case openInLogue
+        /// The Ask Logue shortcut, pressed while the island was up.
+        case hotkey
+        /// A recording island took its place.
+        case replacedByRecording
+        /// The recording island's own close button.
+        case recordingDismissed
+        /// Esc. `inIsland` is false when the keystroke went to another app.
+        case escape(inIsland: Bool)
+        /// A click landed on another Logue window.
+        case clickOnOtherWindow
+        /// A click landed on the panel's transparent area, around the island.
+        case emptyAreaClick
+        /// Logue stopped being frontmost and the island was empty.
+        case focusLoss
+    }
+
+    func dismissPanel(reason: DismissReason) {
+        Self.logger.notice("Command Center panel dismissed: \(String(describing: reason), privacy: .public)")
         removeMonitors()
         let isRecordingMode = if case .recording = currentMode {
             true

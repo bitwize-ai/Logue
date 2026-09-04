@@ -13,9 +13,25 @@ extension CommandCenterChatView {
             // App logo
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                .scaledToFit()
                 .frame(width: 28, height: 28)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            // Everything that arms or attaches, in one menu — the same one the main
+            // window mounts. It used to be three separate glyphs here, which is the
+            // per-surface redraw #61 exists to stop, and left no way to reach tool
+            // settings from the island at all.
+            ComposerPlusMenu(
+                surface: .island,
+                isDisabled: isGenerating,
+                style: .island,
+                onAttach: {
+                    Task { @MainActor in
+                        let picked = await AttachmentIntake.pickFiles()
+                        attachments = AttachmentIntake.merging(picked, into: attachments)
+                    }
+                }
+            )
 
             // Input field
             TextField("What can I help you with?", text: $inputText, axis: .vertical)
@@ -28,62 +44,15 @@ extension CommandCenterChatView {
                     if NSEvent.modifierFlags.contains(.shift) {
                         inputText += "\n"
                         return .handled
-                    } else if canSend {
+                    } else if canSend, !LLMEngineStatus.shared.isBusy {
+                        // The same condition the Send button is disabled on. Without it
+                        // Return sent while the button beside it refused to, which reads as
+                        // the button being broken.
                         sendMessage()
                         return .handled
                     }
                     return .handled
                 }
-
-            // Attach
-            Button {
-                Task { @MainActor in
-                    let picked = await AttachmentIntake.pickFiles()
-                    attachments = AttachmentIntake.merging(picked, into: attachments)
-                }
-            } label: {
-                Image(systemName: "paperclip")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .islandControl(IslandControlCopy.attach(isBusy: isGenerating))
-
-            // Web search for this turn
-            Button {
-                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
-                    isWebSearchOnce.toggle()
-                }
-            } label: {
-                Image(systemName: "globe")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        isWebSearchOnce ? AppThemeConstants.brandPrimary : .white.opacity(0.4)
-                    )
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .islandControl(IslandControlCopy.webSearch(isOn: isWebSearchOnce))
-
-            // Deep Research for this turn
-            Button {
-                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
-                    isDeepResearchOnce.toggle()
-                }
-            } label: {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        isDeepResearchOnce ? AppThemeConstants.brandPrimary : .white.opacity(0.4)
-                    )
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .disabled(isGenerating)
-            .islandControl(IslandControlCopy.deepResearch(isOn: isDeepResearchOnce))
 
             // Mic button
             Button {
@@ -127,10 +96,14 @@ extension CommandCenterChatView {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(canSend ? .white : .white.opacity(0.25))
+                        .foregroundStyle(canSend && !LLMEngineStatus.shared.isBusy ? .white : .white.opacity(0.25))
                         .frame(width: 32, height: 32)
                         .background(
-                            Circle().fill(canSend ? AppThemeConstants.brandPrimary : Color.white.opacity(0.08))
+                            Circle().fill(
+                                canSend && !LLMEngineStatus.shared.isBusy
+                                    ? AppThemeConstants.brandPrimary
+                                    : Color.white.opacity(0.08)
+                            )
                         )
                 }
                 .buttonStyle(.plain)
@@ -240,7 +213,11 @@ extension CommandCenterChatView {
 
     private func attachmentChip(_ attachment: TempAttachment) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: "doc")
+            // The attachment's own icon, as the main window shows it. Hardcoding
+            // "doc" here made a PDF and a spreadsheet look identical on the island
+            // and different in the main window — per-surface drift in a chip that
+            // was copied rather than shared.
+            Image(systemName: attachment.iconName)
                 .font(.caption2)
             Text(attachment.displayName)
                 .font(.caption2)
@@ -271,7 +248,7 @@ extension CommandCenterChatView {
             modes.append(
                 ComposerMode(
                     id: "deepResearch",
-                    title: "Deep Research",
+                    title: UICopy.Input.deepResearch,
                     systemImage: "sparkle.magnifyingglass",
                     tint: AppThemeConstants.brandPrimary
                 ) { isDeepResearchOnce = false }
@@ -281,7 +258,7 @@ extension CommandCenterChatView {
             modes.append(
                 ComposerMode(
                     id: "search",
-                    title: "Search",
+                    title: UICopy.Input.webSearch,
                     systemImage: "globe",
                     tint: AppThemeConstants.brandPrimary
                 ) { isWebSearchOnce = false }

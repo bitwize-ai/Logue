@@ -1,11 +1,12 @@
-import AVFoundation
 import SwiftUI
 import Textual
 
 /// Bottom-centered chat island.
 /// Prompt pill at bottom, messages float above with glass backdrop.
 struct CommandCenterChatView: View {
-    let onDismiss: () -> Void
+    /// Puts the island away. The reason is passed so the controller's log can tell a
+    /// hand-off apart from someone pressing the close button.
+    let onDismiss: (CommandCenterChatDismissal) -> Void
     let onContentChanged: (CommandCenterChatContent) -> Void
 
     /// The island's own thread, created on first send and never selected.
@@ -22,21 +23,33 @@ struct CommandCenterChatView: View {
     /// lifted out of the main window's input bar — see `AttachmentIntake`.
     @State var attachments: [TempAttachment] = []
     // Extension-visible: +Composer
-    /// Web search for the next send.
+    /// Web search for the next send, belonging to this island alone.
     ///
-    /// The same `UserDefaults` key the main window's chip binds, because the coordinator reads
-    /// it too — three readers of one value rather than a copy per surface. It follows that the
-    /// island must clear it after a send exactly as the main window does, or a search switched
-    /// on here silently arms the next send over there.
-    @AppStorage(AppConstants.UserDefaultsKeys.oneShotWebSearch)
+    /// It used to bind the same `UserDefaults` key as the main window's chip, on the reasoning
+    /// that one value with several readers beats a copy per surface. That was wrong in the
+    /// direction nobody checked: the island clears the flag after every send, so asking a
+    /// quick question here silently disarmed a Search chip the user had turned on in the main
+    /// window and left armed on an unsent prompt. They would never be told — the prompt just
+    /// runs without web tools.
+    ///
+    /// The coordinator takes the value as a parameter, so nothing needs the shared read.
+    ///
+    /// It is `@AppStorage` on the island's *own* key rather than `@State`, because the `+`
+    /// menu's `Toggle` has to bind one: on macOS a SwiftUI `Menu` swallows `.toggle()`
+    /// against a plain `@Binding` in its deferred-close pipeline. A separate key keeps the
+    /// per-surface isolation that matters here while satisfying that. `.onAppear` clears it,
+    /// so a mode still dies with the island rather than surviving to the next launch.
+    @AppStorage(AppConstants.UserDefaultsKeys.islandOneShotWebSearch)
     var isWebSearchOnce: Bool = false
     // Extension-visible: +Composer
-    /// Deep Research for the next send.
+    /// Deep Research for the next send, belonging to this island alone.
     ///
-    /// The same key the main window's toggle binds, for the same reason as the web-search
-    /// one above: one value with several readers rather than a copy per surface. It follows
-    /// that the island must clear it after a send exactly as the main window does.
-    @AppStorage(AppConstants.UserDefaultsKeys.oneShotDeepResearch)
+    /// Same story as the web-search flag above, and the same fix: this bound the key the main
+    /// window's Deep Research toggle binds, and the island clears it after every send — so a
+    /// question asked here disarmed a Deep Research run the user had set up over there. The
+    /// consequence is larger than the search one, because that run is the expensive one they
+    /// deliberately chose. Same storage story as the flag above.
+    @AppStorage(AppConstants.UserDefaultsKeys.islandOneShotDeepResearch)
     var isDeepResearchOnce: Bool = false
     // Extension-visible: +Composer
     @State var deepResearch = DeepResearchCoordinator.shared
@@ -51,8 +64,14 @@ struct CommandCenterChatView: View {
     // Extension-visible: +Bubbles
     @State var savedMessageID: UUID?
     // Extension-visible: +Bubbles
-    @State var speakingMessageID: UUID?
-    @State private var synthesizer = AVSpeechSynthesizer()
+    /// The same service the main window reads with.
+    ///
+    /// The island used to own a bare `AVSpeechSynthesizer`, which is how the two surfaces
+    /// ended up sounding different: `AgentReadAloudService` strips Markdown before speaking,
+    /// so the main window says "hello" where the island said "asterisk asterisk hello
+    /// asterisk asterisk". It also tracks what is playing, which removes the polling loop the
+    /// island needed to notice that speech had finished.
+    @State var readAloud = AgentReadAloudService.shared
     // Extension-visible: +Composer
     @FocusState var isInputFocused: Bool
     // Extension-visible: +Composer
@@ -92,6 +111,22 @@ struct CommandCenterChatView: View {
         !rows.isEmpty
     }
 
+    /// Whether anything is staged for the next send.
+    private var hasStagedChips: Bool {
+        !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce
+    }
+
+    /// Whether this island owns a thread — drawn or not.
+    ///
+    /// The close button lives in `messagesPanel`, and the rules that refuse to dismiss the
+    /// island read `hasConversation`. Those two must be the same question or the island
+    /// reaches a state where nothing incidental can close it and there is no X to press: a
+    /// conversation exists with no rows yet, which happens between `ensureConversation()` and
+    /// the first row, and persists when a send is refused.
+    private var hasThread: Bool {
+        hasContent || conversationID != nil
+    }
+
     // Extension-visible: +Composer
     /// Whether the island's own thread is busy — never the main window's.
     var isGenerating: Bool {
@@ -104,14 +139,21 @@ struct CommandCenterChatView: View {
 
     private var content: CommandCenterChatContent {
         CommandCenterChatContent(
-            hasMessages: hasContent,
-            hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // A thread the island owns counts, whether or not anything is drawn in it
+            // yet. `AgentCoordinator.send` appends the user message inside a `Task`
+            // while this view clears the composer synchronously, so asking `hasContent`
+            // alone left a window in which a just-sent island reported itself empty —
+            // and an empty island is one every rule here is allowed to throw away.
+            // Clicking Send could close the island.
+            hasConversation: hasThread,
+            hasDraft: !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            hasAttachments: !attachments.isEmpty
         )
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if hasContent {
+            if hasThread {
                 messagesPanel
                     .padding(.bottom, 10)
                     .transition(IslandMotion.transition(reduceMotion: reduceMotion))
@@ -134,10 +176,15 @@ struct CommandCenterChatView: View {
                 .transition(.opacity)
             }
 
-            // In the layout rather than floating over it: as an overlay offset above the
-            // pill, the chip row took no space and drew over the bottom of the transcript.
+            // In the layout rather than floating above the pill. As an `.overlay` offset
+            // -34pt they sat outside the hosting view's frame on a fresh island — which the
+            // panel clips, and which hit-testing treats as "not the island", so a staged
+            // file or an armed mode showed no chip at all on the one path where you most
+            // need to see it. Bounding it is `ComposerChipRow`'s job; giving it a width is
+            // this view's, because only the island knows how wide its pill is.
             if hasStagedChips {
                 stagedChips
+                    .frame(width: pillWidth, alignment: .leading)
             }
 
             promptPill
@@ -150,7 +197,7 @@ struct CommandCenterChatView: View {
         // document — so it does not follow the system, which is what makes it legible in
         // both appearances.
         .environment(\.colorScheme, .dark)
-        .animation(IslandMotion.layout(reduceMotion: reduceMotion), value: hasContent)
+        .animation(IslandMotion.layout(reduceMotion: reduceMotion), value: hasThread)
         .onAppear {
             isInputFocused = true
             voiceManager.onTranscriptReady = { transcript in
@@ -167,30 +214,37 @@ struct CommandCenterChatView: View {
             if voiceManager.isRecording {
                 voiceManager.stopListening()
             }
-            synthesizer.stopSpeaking(at: .immediate)
+            // The callback lives on a shared singleton, so leaving ours installed means a
+            // later dictation from the editor's chat panel is delivered into this dead
+            // view's state and vanishes. The two in-app panels already clear theirs.
+            voiceManager.onTranscriptReady = nil
+            stopReadAloudIfOurs()
+        }
+        .onAppear {
+            // The controller resets its copy when it builds the panel, so tell it what
+            // we actually hold before any change fires.
+            onContentChanged(content)
+            // A per-send mode belongs to the question it was set for. These live in
+            // `UserDefaults` only because the `+` menu's toggles need somewhere bindable,
+            // so clear them here — otherwise an armed Deep Research would outlive the
+            // island and surprise the user with an expensive run days later.
+            isWebSearchOnce = false
+            isDeepResearchOnce = false
+        }
+        .onChange(of: conversationID) { _, _ in
+            onContentChanged(content)
         }
         .onChange(of: rows.count) { _, _ in
             onContentChanged(content)
         }
-        .onChange(of: inputText) { _, _ in
+        // Staged files count as content, so the controller has to be told about them —
+        // without this the island reports itself empty while holding a PDF, and the next
+        // click anywhere off the pill throws it away.
+        .onChange(of: attachments.count) { _, _ in
             onContentChanged(content)
         }
-        // U7: Replaced continuous Timer.publish with onChange-triggered task
-        .onChange(of: speakingMessageID) { _, newValue in
-            if newValue != nil {
-                Task {
-                    let deadline = ContinuousClock.now + .seconds(60)
-                    while speakingMessageID != nil, synthesizer.isSpeaking {
-                        if ContinuousClock.now >= deadline {
-                            break
-                        }
-                        try? await Task.sleep(for: AppConstants.Delays.speechSynthesisPolling)
-                    }
-                    if speakingMessageID != nil, !synthesizer.isSpeaking {
-                        speakingMessageID = nil
-                    }
-                }
-            }
+        .onChange(of: inputText) { _, _ in
+            onContentChanged(content)
         }
     }
 
@@ -238,7 +292,7 @@ struct CommandCenterChatView: View {
                     .islandControl(IslandControlCopy.openInLogue)
                 }
 
-                Button(action: onDismiss) {
+                Button { onDismiss(.closeButton) } label: {
                     Image(systemName: "xmark")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.secondary)
@@ -333,13 +387,27 @@ struct CommandCenterChatView: View {
         )
         guard let route, !isGenerating else { return }
 
+        // `isGenerating` is scoped to this conversation, which is right for the spinner and
+        // wrong for this: `AgentCoordinator.send` refuses on a *global* busy check. Without
+        // this guard a send made while the main window was mid-run cleared the field, the
+        // staged files and the mode flags, then hit that refusal and did nothing — no bubble,
+        // no error, and an empty conversation left behind by `ensureConversation`.
+        guard !coordinator.isProcessingAnyConversation else {
+            // Not a toast: `.toastOverlay()` is mounted only on the main window, so a toast
+            // raised here is shown in the window behind the pill or not at all — the same
+            // trap `MessageActions` documents. The island has its own banner.
+            localError = UICopy.Status.busyElsewhere
+            return
+        }
+
         let conversationID = ensureConversation()
         let staged = attachments
         let searchThisTurn = isWebSearchOnce
         inputText = ""
         attachments = []
-        // Cleared per send, like the main window's chips. Left set, a mode switched on here
-        // would arm the next send in the other window too.
+        // Cleared per send: a one-shot mode must not survive the question it was set for.
+        // Both flags are `@AppStorage` on the island's own keys — see their declarations
+        // for why they are not the main window's — and are cleared again in `.onAppear`.
         isWebSearchOnce = false
         isDeepResearchOnce = false
 
@@ -366,11 +434,19 @@ struct CommandCenterChatView: View {
             // library and the web, and takes no attachments on either surface. Anyone who
             // dropped a file in gets it back on the pill rather than silently losing it.
             attachments = staged
-            deepResearch.start(
+            let started = deepResearch.start(
                 prompt: text,
                 in: conversationID,
                 oneShotWebSearch: searchThisTurn
             )
+            if started == nil {
+                // One run at a time, app-wide — and this one belongs to the other surface, so
+                // none of the island's own indicators would have said anything. Put the whole
+                // send back, both modes included: restoring the prompt and the Deep Research
+                // chip while dropping the Search one is how the next attempt runs without web
+                // tools and never says so.
+                restore(text: text, webSearch: searchThisTurn, deepResearch: true, files: staged)
+            }
         case let .imagePlayground(concept):
             // ImagePlayground presents a sheet, which a floating pill cannot host. Answer it
             // as a normal turn rather than silently dropping the send.
@@ -391,20 +467,16 @@ struct CommandCenterChatView: View {
     /// `approvalTimeoutSeconds` (five minutes), and then failed. The run looked frozen and
     /// there was no way to say yes.
     ///
-    /// Only calls that need an answer are rendered. Completed tool calls stay filtered out of
-    /// the island — the main window shows those as history, and a pill floating over another
-    /// app has no room for a transcript of everything the agent did. What it must show is
-    /// what it is blocking on.
+    /// This is a *second*, pinned copy of a call that `IslandThread` also emits as a row —
+    /// deliberately, because an answer that scrolls out of reach is an answer the user cannot
+    /// give. The row copy is read-only (`conversationID: nil`); this one carries the buttons.
+    /// `IslandThread` drops a call while it is awaiting approval so the two are never on
+    /// screen at once.
     private var pendingApprovals: [AgentToolCall] {
         guard let conversationID,
               let conversation = store.conversations.first(where: { $0.id == conversationID })
         else { return [] }
         return AgentToolTimeline.awaitingApproval(in: conversation.messages)
-    }
-
-    /// Whether anything is staged for the next send.
-    private var hasStagedChips: Bool {
-        !attachments.isEmpty || isWebSearchOnce || isDeepResearchOnce
     }
 
     /// Whether to say the island is working rather than show an answer.
@@ -439,6 +511,14 @@ struct CommandCenterChatView: View {
         guard let conversationID else { return [] }
         return coordinator.activeToolCalls(in: conversationID)
     }
+
+    // Extension-visible: +Composer
+    /// An error the island raised itself, as opposed to one a run left behind.
+    ///
+    /// Separate from the coordinator's `lastError` because a refused send never reaches a
+    /// coordinator — there is no run to own the message — and because it must clear as soon
+    /// as the user does anything.
+    @State var localError: String?
 
     /// The error for this thread, if the last run left one.
     ///
@@ -476,6 +556,7 @@ struct CommandCenterChatView: View {
 
             Button {
                 withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
+                    localError = nil
                     coordinator.dismissError()
                 }
             } label: {
@@ -508,9 +589,13 @@ struct CommandCenterChatView: View {
         // Selecting before activating, so the window is already showing the right thread when
         // it comes forward rather than visibly switching to it afterwards.
         store.selectedConversationID = conversationID
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        // Activating is not enough. With the main window closed or minimised there is no
+        // window to come forward and no `MainWindowView` to observe `.chatFocusInput`, so the
+        // button dismissed the island, made Logue frontmost, and showed nothing — leaving the
+        // thread it promised to carry over unreachable until the user opened a window by hand.
+        AppDelegate.bringMainWindowForward()
         NotificationCenter.default.post(name: .chatFocusInput, object: nil)
-        onDismiss()
+        onDismiss(.openInLogue)
     }
 
     /// The island's thread, made on first use.
@@ -540,10 +625,20 @@ struct CommandCenterChatView: View {
     /// run going with nothing on screen able to stop it — the button reported success and the
     /// report arrived minutes later.
     private func cancelWhicheverIsRunning() {
-        if let conversationID, deepResearch.isRunning(in: conversationID) {
+        guard let conversationID else { return }
+        switch AskStopTarget.target(
+            isResearchingHere: deepResearch.isRunning(in: conversationID),
+            isAgentRunningHere: coordinator.isProcessing(in: conversationID)
+        ) {
+        case .deepResearch:
             deepResearch.cancel()
-        } else {
+        case .agentLoop:
             coordinator.cancel()
+        case .nothing:
+            // Nothing of ours is running. The `else` here used to call `coordinator.cancel()`
+            // unconditionally, which is unscoped — so pressing "New" on the island stopped an
+            // answer streaming in the main window and rejected whatever it was waiting on.
+            break
         }
     }
 
@@ -554,31 +649,55 @@ struct CommandCenterChatView: View {
     /// would throw away something the user can still open from the main window.
     private func clearSession() {
         cancelWhicheverIsRunning()
-        synthesizer.stopSpeaking(at: .immediate)
-        speakingMessageID = nil
+        stopReadAloudIfOurs()
         conversationID = nil
         inputText = ""
+        // A staged file belonged to the question being abandoned. Leaving it meant "New"
+        // handed you a fresh thread that was still holding — and about to send — the
+        // previous one's attachment.
+        attachments = []
+        localError = nil
         isInputFocused = true
+    }
+
+    /// Puts a refused send back exactly as it was.
+    ///
+    /// `sendMessage` clears the composer before it knows whether the send was accepted, so
+    /// every refusal has to undo all of it. Written once because the branch that restored
+    /// the prompt and one mode while dropping the other is the bug this replaced.
+    private func restore(text: String, webSearch: Bool, deepResearch: Bool, files: [TempAttachment]) {
+        inputText = text
+        isWebSearchOnce = webSearch
+        isDeepResearchOnce = deepResearch
+        attachments = files
+        localError = UICopy.Status.busyElsewhere
+    }
+
+    /// Stops read-aloud only when what is playing is one of this island's answers.
+    ///
+    /// `AgentReadAloudService` is shared with the main window — that is the point of
+    /// mounting it rather than owning a second synthesizer — so an unconditional `stop()`
+    /// here cut off a reply the *main window* was reading whenever the island was dismissed
+    /// or cleared. Same rule as every other piece of live state: it belongs to the
+    /// conversation that started it.
+    private func stopReadAloudIfOurs() {
+        guard rows.contains(where: { row in
+            if case let .message(message) = row {
+                return readAloud.isSpeaking(content: message.content)
+            }
+            return false
+        })
+        else { return }
+        readAloud.stop()
     }
 
     // Extension-visible: +Bubbles
     func speakMessage(_ message: EphemeralChatMessage) {
-        if speakingMessageID == message.id {
-            synthesizer.stopSpeaking(at: .immediate)
-            speakingMessageID = nil
-            return
+        if readAloud.isSpeaking(content: message.content) {
+            readAloud.stop()
+        } else {
+            readAloud.speak(message.content)
         }
-        synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: message.content)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        if let voice = AVSpeechSynthesisVoice.speechVoices()
-            .filter({ $0.language.hasPrefix("en") })
-            .max(by: { $0.quality.rawValue < $1.quality.rawValue })
-        {
-            utterance.voice = voice
-        }
-        speakingMessageID = message.id
-        synthesizer.speak(utterance)
     }
 
     // Extension-visible: +Bubbles

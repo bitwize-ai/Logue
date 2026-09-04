@@ -87,7 +87,11 @@ enum AskRouter {
         // the agent is expected to read it.
         guard !trimmed.isEmpty || request.hasAttachments else { return nil }
 
-        if request.deepResearchRequested {
+        // Deep Research needs a question. The chip alone is not one: a send carrying only
+        // attachments passes the guard above, and routing that to Deep Research appended an
+        // empty user bubble and ran the whole seven-step pipeline on "" — with the files
+        // handed straight back, since research takes no attachments on either surface.
+        if request.deepResearchRequested, !trimmed.isEmpty {
             return .deepResearch
         }
 
