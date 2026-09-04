@@ -71,3 +71,44 @@ struct MCPRenameMigrationTests {
         #expect(MCPRenameMigration.remapped(disabled: [], from: "A", to: "B").isEmpty)
     }
 }
+
+/// Removing a server while it is being contacted must not resurrect it.
+@Suite("MCP catalog lifecycle")
+@MainActor
+struct MCPCatalogLifecycleTests {
+    private struct SlowTransport: MCPTransport {
+        func listTools(server _: MCPServer) async throws -> [MCPToolDescriptor] {
+            // Long enough that the removal below lands first.
+            try await Task.sleep(for: .milliseconds(120))
+            return [MCPToolDescriptor(name: "do_thing", description: "")]
+        }
+
+        func call(server _: MCPServer, tool _: String, arguments _: [String: Any]) async throws -> String { "" }
+    }
+
+    @Test("A server removed mid-refresh does not come back")
+    func removedServerIsNotResurrected() async throws {
+        let suiteName = "mcp.catalog.lifecycle"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let store = MCPServerStore(defaults: defaults, key: "mcp.catalog.lifecycle.servers")
+        let url = try #require(URL(string: "https://mcp.example.com/rpc"))
+        #expect(store.add(name: "Doomed", endpoint: url))
+        let id = try #require(store.servers.first?.id)
+        store.setEnabled(true, for: id)
+
+        let catalog = MCPCatalog(store: store, transport: SlowTransport())
+        async let running: Void = catalog.refresh()
+
+        // Remove it while the transport is still thinking.
+        try await Task.sleep(for: .milliseconds(30))
+        store.remove(id: id)
+        catalog.forget(id: id)
+
+        await running
+
+        #expect(catalog.discovered[id] == nil, "the removed server's tool list came back")
+        #expect(catalog.health[id] == nil, "the removed server's health came back")
+    }
+}

@@ -26,7 +26,12 @@ struct MCPServersSection: View {
     @State private var editingID: UUID?
     @State private var draftName = ""
     @State private var draftAddress = ""
-    @State private var isRefreshing = false
+    /// How many refreshes are in flight, rather than whether one is.
+    ///
+    /// Enabling two servers in quick succession starts two, and with a boolean the first to
+    /// finish clears the spinner while the second is still going — so the row that has not
+    /// been contacted yet looks settled. A count only reaches zero when the last one ends.
+    @State private var refreshesInFlight = 0
     @State private var saveFailed = false
 
     var body: some View {
@@ -66,7 +71,7 @@ struct MCPServersSection: View {
             HStack(spacing: 8) {
                 Text("MCP servers").font(.headline)
                 Spacer()
-                if isRefreshing {
+                if refreshesInFlight > 0 {
                     ProgressView().controlSize(.small)
                 }
             }
@@ -311,8 +316,11 @@ struct MCPServersSection: View {
     }
 
     private func refresh() async {
-        isRefreshing = true
+        refreshesInFlight += 1
+        // `defer` rather than a line after the await: the task is cancelled when this section
+        // goes away mid-refresh, and a counter left above zero by a cancellation would leave
+        // the spinner turning for the rest of the session.
+        defer { refreshesInFlight -= 1 }
         await catalog.refresh()
-        isRefreshing = false
     }
 }
