@@ -150,19 +150,11 @@ enum ToolApprovalPrompt {
         return string.isEmpty ? nil : string
     }
 
-    /// Puts a target on one line.
-    ///
-    /// Titles are user-authored and a path can contain anything. A newline in either would
-    /// split the sentence in half and leave the verb sitting alone above Approve.
     private static func flatten(_ value: String) -> String {
-        value
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        DisplayText.singleLine(value)
     }
 
     private static func clamp(_ value: String) -> String {
-        guard value.count > maxTargetLength else { return value }
-        return String(value.prefix(maxTargetLength - 1)) + "…"
+        DisplayText.clamp(value, to: maxTargetLength)
     }
 }

@@ -45,25 +45,11 @@ enum ToolArgumentSummary {
         return clamp(pairs.joined(separator: ", "), to: maxTotalLength)
     }
 
-    /// Puts a value on one line.
-    ///
-    /// A document body arrives with its newlines intact, and a `Text` limited to one line
-    /// renders the first of them and hides the rest — so a multi-paragraph argument looked
-    /// like a short one. Collapsing whitespace makes the truncation honest.
     private static func flatten(_ value: String) -> String {
-        value
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        DisplayText.singleLine(value)
     }
 
-    /// Cuts to `limit`, marking that something was cut.
-    ///
-    /// The ellipsis is inside the budget rather than added to it, so the result is never
-    /// longer than the caller asked for.
     private static func clamp(_ value: String, to limit: Int) -> String {
-        guard value.count > limit else { return value }
-        guard limit > 1 else { return String(value.prefix(limit)) }
-        return String(value.prefix(limit - 1)) + "…"
+        DisplayText.clamp(value, to: limit)
     }
 }
