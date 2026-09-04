@@ -27,6 +27,7 @@ struct MCPServersSection: View {
     @State private var draftName = ""
     @State private var draftAddress = ""
     @State private var isRefreshing = false
+    @State private var saveFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -36,13 +37,20 @@ struct MCPServersSection: View {
                 empty
             } else {
                 ForEach(store.servers) { server in
-                    row(for: server)
+                    // The form replaces the row it is editing, rather than the row vanishing
+                    // and a form appearing under the whole list — with several servers, that
+                    // leaves no way to tell which one is being edited.
+                    if editingID == server.id {
+                        form
+                    } else {
+                        row(for: server)
+                    }
                 }
             }
 
-            if isAdding || editingID != nil {
+            if isAdding {
                 form
-            } else {
+            } else if editingID == nil {
                 Button("Add a server…") { beginAdding() }
                     .buttonStyle(.link)
                     .font(.callout)
@@ -91,59 +99,54 @@ struct MCPServersSection: View {
 
     // MARK: - A server
 
-    @ViewBuilder
     private func row(for server: MCPServer) -> some View {
-        if editingID == server.id {
-            EmptyView()
-        } else {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Toggle(
-                    isOn: Binding(
-                        get: { server.isEnabled },
-                        set: { enable($0, for: server) }
-                    )
-                ) {
-                    EmptyView()
-                }
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .accessibilityLabel("\(server.name) enabled")
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(server.name.isEmpty ? "Unnamed server" : server.name)
-                        .font(.callout)
-                    HStack(spacing: 6) {
-                        // Shown to the user in full — it is their own address and they need to
-                        // recognise it. It is never *logged*; that is the rule, and it is a
-                        // different one.
-                        Text(server.endpoint.absoluteString)
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        if !MCPEndpoint.leavesTheMachine(server.endpoint) {
-                            Text("on this Mac")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    Text(status(for: server).summary)
-                        .font(.caption2)
-                        .foregroundStyle(status(for: server).needsAttention ? AppThemeConstants.error : .secondary)
-                }
-
-                Spacer()
-
-                Button("Edit") { beginEditing(server) }
-                    .buttonStyle(.link)
-                    .font(.caption)
-                Button("Remove") { remove(server) }
-                    .buttonStyle(.link)
-                    .font(.caption)
-                    .foregroundStyle(AppThemeConstants.error)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Toggle(
+                isOn: Binding(
+                    get: { server.isEnabled },
+                    set: { enable($0, for: server) }
+                )
+            ) {
+                EmptyView()
             }
-            .padding(.vertical, 4)
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .accessibilityLabel("\(server.name) enabled")
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(server.name.isEmpty ? "Unnamed server" : server.name)
+                    .font(.callout)
+                HStack(spacing: 6) {
+                    // Shown to the user in full — it is their own address and they need to
+                    // recognise it. It is never *logged*; that is the rule, and it is a
+                    // different one.
+                    Text(server.endpoint.absoluteString)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if !MCPEndpoint.leavesTheMachine(server.endpoint) {
+                        Text("on this Mac")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Text(status(for: server).summary)
+                    .font(.caption2)
+                    .foregroundStyle(status(for: server).needsAttention ? AppThemeConstants.error : .secondary)
+            }
+
+            Spacer()
+
+            Button("Edit") { beginEditing(server) }
+                .buttonStyle(.link)
+                .font(.caption)
+            Button("Remove") { remove(server) }
+                .buttonStyle(.link)
+                .font(.caption)
+                .foregroundStyle(AppThemeConstants.error)
         }
+        .padding(.vertical, 4)
     }
 
     /// A server nobody has contacted has not failed — see `MCPServerHealth.State`.
@@ -170,6 +173,21 @@ struct MCPServersSection: View {
                 Text("On this Mac, so nothing leaves it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            if let clash = namespaceClash {
+                Text(
+                    "“\(clash)” already publishes its tools under the same prefix. "
+                        + "Whichever comes first keeps the names; the other's tools are dropped."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if saveFailed {
+                Text("That server could not be saved. Check the address.")
+                    .font(.caption)
+                    .foregroundStyle(AppThemeConstants.error)
             }
 
             HStack {
@@ -202,6 +220,19 @@ struct MCPServersSection: View {
         !draftName.trimmingCharacters(in: .whitespaces).isEmpty && validatedAddress != nil
     }
 
+    /// Another server whose name folds to the same namespace as the one being typed.
+    ///
+    /// Not blocked — two servers may legitimately be called similar things — but said, because
+    /// the consequence is otherwise invisible. The rule is `MCPNamespaceClash`'s; this only
+    /// supplies the names, and excludes the server being edited, which cannot clash with
+    /// itself.
+    private var namespaceClash: String? {
+        MCPNamespaceClash.first(
+            for: draftName,
+            among: store.servers.filter { $0.id != editingID }.map(\.name)
+        )
+    }
+
     // MARK: - Doing things
 
     private func beginAdding() {
@@ -223,19 +254,31 @@ struct MCPServersSection: View {
         editingID = nil
         draftName = ""
         draftAddress = ""
+        saveFailed = false
     }
 
     private func commit() {
         guard let url = validatedAddress else { return }
         let name = draftName.trimmingCharacters(in: .whitespaces)
 
+        // The store validates too, and its answer is the one that decides. Taking it rather
+        // than discarding it is the difference between a refusal the user can see and a
+        // button that closes the form, clears the fields and saves nothing — the two
+        // validators agree today, and the day one of them gains a rule the other has not,
+        // this is what stops that becoming a silent loss of what they typed.
+        var saved = false
         if let editingID, let existing = store.servers.first(where: { $0.id == editingID }) {
             // Before the store forgets the old name: what the user turned off is keyed on the
             // published name, which is derived from it. See `MCPRenameMigration`.
             migrateDisabledTools(from: existing.name, to: name)
-            store.update(id: editingID, name: name, endpoint: url)
+            saved = store.update(id: editingID, name: name, endpoint: url)
         } else {
-            store.add(name: name, endpoint: url)
+            saved = store.add(name: name, endpoint: url)
+        }
+
+        guard saved else {
+            saveFailed = true
+            return
         }
         cancel()
         Task { await refresh() }

@@ -326,6 +326,7 @@
 		68523E427C1ECCA206B03149 /* ActionItemInboxPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89FFFB8EFE6EDE3560E782 /* ActionItemInboxPanel.swift */; };
 		68A60F0021C2B996783F3F41 /* DocumentPropertyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0075D6BBFD557576AAF966 /* DocumentPropertyTests.swift */; };
 		68E15F52C2575EED30F6D8AE /* TaskFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B356E5C7937D4D7600108E /* TaskFileTests.swift */; };
+		691B28ABDBEEA10FB184EB2E /* MCPNamespaceClash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72F9D97B1C46C433A8908CB6 /* MCPNamespaceClash.swift */; };
 		693843E5E8F7A5A45AAD99BA /* InlineDiagramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A85CBFCD11CDF2FB693F73 /* InlineDiagramView.swift */; };
 		697553876307B2C83EA86595 /* ReviewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE44EB0DEEE58EA51F73402B /* ReviewModels.swift */; };
 		69B2689283C249CBE8252ADE /* IslandSurfaceModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E127468D8DFBEDBF111016 /* IslandSurfaceModifier.swift */; };
@@ -514,6 +515,7 @@
 		ACBD67F76F286A34F1A0E4CA /* DocumentWidthMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62566632EE8FA6DAD6713DB /* DocumentWidthMode.swift */; };
 		ACF6D6515BF5CB9F03B85496 /* QuickOpenPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CABE8A04DD20F09B12BEDB15 /* QuickOpenPaletteView.swift */; };
 		AD07D0DCE8536510D087A05C /* TroubleshootingActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15DD5F0F004960A0D0B66E8B /* TroubleshootingActions.swift */; };
+		AE20DB2F67CD986E3DEEAC19 /* MCPNamespaceClashTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F475CCA42BE819BF19DD4FA4 /* MCPNamespaceClashTests.swift */; };
 		AE7BCB76D77404A8B71D119E /* PIIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9978579DD7A8D5743C9DB6 /* PIIModels.swift */; };
 		AF35E4BCA1244DFE4B983329 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFBC89D908FFD586D1C38ABF /* UndoToastView.swift */; };
 		AFCA039A58319E9F99A6A763 /* VerifyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F31BC63173139D2C8BB0D1D /* VerifyModels.swift */; };
@@ -1086,6 +1088,7 @@
 		71CCC37048141456C9BA5AA3 /* DocumentSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentSearchBar.swift; sourceTree = "<group>"; };
 		7250A0C394AFABC041C58D68 /* DeepResearchCoordinator+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeepResearchCoordinator+Helpers.swift"; sourceTree = "<group>"; };
 		72EE330160AA0276B2907F2A /* MeetingRowCompact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingRowCompact.swift; sourceTree = "<group>"; };
+		72F9D97B1C46C433A8908CB6 /* MCPNamespaceClash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPNamespaceClash.swift; sourceTree = "<group>"; };
 		7390A75F79EE786998273DA7 /* IslandMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IslandMotion.swift; sourceTree = "<group>"; };
 		739A71E158624FCF8E71C075 /* PostRecordingPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostRecordingPipeline.swift; sourceTree = "<group>"; };
 		73A0577F01A5B33292317D52 /* SummaryNarrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryNarrationService.swift; sourceTree = "<group>"; };
@@ -1467,6 +1470,7 @@
 		F26F4F42013205EAE3A14D9D /* HomeContinueGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeContinueGrid.swift; sourceTree = "<group>"; };
 		F30E821E71C80A341EEC3F68 /* BlockEditorView+Reorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlockEditorView+Reorder.swift"; sourceTree = "<group>"; };
 		F3BC206B7D135B2017B99C1D /* LinkIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkIndexTests.swift; sourceTree = "<group>"; };
+		F475CCA42BE819BF19DD4FA4 /* MCPNamespaceClashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPNamespaceClashTests.swift; sourceTree = "<group>"; };
 		F4837D7E60145F15B37A2310 /* GraphRetriever.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRetriever.swift; sourceTree = "<group>"; };
 		F4D0B06CDDC1184FD7958F9A /* SuggestionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionCardView.swift; sourceTree = "<group>"; };
 		F520732BF6E86EA62DAC3E2B /* AgentTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTool.swift; sourceTree = "<group>"; };
@@ -1567,6 +1571,7 @@
 			children = (
 				7A0EC77C2B3E1C387145AC15 /* MCPCatalog.swift */,
 				4856F91CAEDD15EA6FD63DE3 /* MCPHTTPTransport.swift */,
+				72F9D97B1C46C433A8908CB6 /* MCPNamespaceClash.swift */,
 				786248368D126D5970BA120F /* MCPRegistryPlan.swift */,
 				B9815711174A0E38CAC49564 /* MCPRemoteTool.swift */,
 				8E5888F5EAA0144BB535EDF2 /* MCPRenameMigration.swift */,
@@ -1655,6 +1660,7 @@
 				640842B5780506F6C1A32F84 /* MarkdownStorageReenableTests.swift */,
 				216D7BAD368F51D5920D02E5 /* MCPFoundationsTests.swift */,
 				5650D423F2BE1586460EC7CD /* MCPInjectionTests.swift */,
+				F475CCA42BE819BF19DD4FA4 /* MCPNamespaceClashTests.swift */,
 				FA7C233F1363CFCDD985A945 /* MCPRegistryPlanTests.swift */,
 				83D720B453351470C9880F85 /* MCPRemoteToolTests.swift */,
 				64125C31BA8CDB08ADD703FA /* MCPRenameMigrationTests.swift */,
@@ -2909,6 +2915,7 @@
 				C8E1AB4ED265C0B97465C5BD /* LongRecordingE2ETests.swift in Sources */,
 				6810260973C01161B9183B44 /* MCPFoundationsTests.swift in Sources */,
 				DC93BD43EA6E6F7471EDABFD /* MCPInjectionTests.swift in Sources */,
+				AE20DB2F67CD986E3DEEAC19 /* MCPNamespaceClashTests.swift in Sources */,
 				B4BD1DFE81C73B14923168E1 /* MCPRegistryPlanTests.swift in Sources */,
 				957B3BD059A37354FC76CD38 /* MCPRemoteToolTests.swift in Sources */,
 				613D7C325B26DC43F4CD0955 /* MCPRenameMigrationTests.swift in Sources */,
@@ -3258,6 +3265,7 @@
 				F03521AB1AD681F4D08060C3 /* LogueApp.swift in Sources */,
 				2944C84805092418E45892EA /* MCPCatalog.swift in Sources */,
 				4508AD94FB3EB3CF566D4FA9 /* MCPHTTPTransport.swift in Sources */,
+				691B28ABDBEEA10FB184EB2E /* MCPNamespaceClash.swift in Sources */,
 				94858FA8F83D9A3EA7A94BD0 /* MCPRegistryPlan.swift in Sources */,
 				E85CACB47187DC6493AB23A0 /* MCPRemoteTool.swift in Sources */,
 				4E71028643800BB98A439F98 /* MCPRenameMigration.swift in Sources */,
