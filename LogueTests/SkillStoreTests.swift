@@ -124,6 +124,22 @@ struct SkillStoreTests {
         #expect(store.skills.count { $0.title.hasPrefix("Weekly Review") } == 2)
     }
 
+    @Test("Two long identical titles both import")
+    func longTitlesStillGetUniqueNames() {
+        // Uniqueness is decided on the *invocation*, which is bounded more tightly than the
+        // title. So a long title takes " 2", stays inside the title limit, and has the
+        // counter truncated away again when the invocation is derived — every candidate then
+        // folds to the name it was meant to differ from and the skill is silently dropped.
+        // The first version of the fix shortened against the title limit and still failed
+        // this, which is why the case is here rather than the reasoning alone.
+        let store = scratch("skills.longtitle")
+        let long = String(repeating: "a", count: SkillName.maxTitleLength)
+        let file = "---\nname: \(long)\n---\nBody."
+        #expect(store.importSkills(from: [file, file]) == 2)
+        #expect(store.userSkills.count == 2)
+        #expect(Set(store.userSkills.map(\.invocation)).count == 2, "both landed on one name")
+    }
+
     @Test("A malformed file costs that skill, not the import")
     func malformedFileDoesNotStopTheImport() {
         let store = scratch("skills.partial")

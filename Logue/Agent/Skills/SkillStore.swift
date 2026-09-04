@@ -138,8 +138,15 @@ final class SkillStore {
             }
             var candidate = parsed
             candidate.title = uniqueTitle(from: parsed.title)
-            if case .success = add(candidate) {
+            switch add(candidate) {
+            case .success:
                 taken += 1
+            case let .failure(rejection):
+                // Says which one and why. A skill that does not arrive and does not explain
+                // itself is worse than one that is refused loudly.
+                logger.error(
+                    "Skipped an imported skill: \(rejection.message, privacy: .public)"
+                )
             }
         }
         return taken
@@ -150,17 +157,32 @@ final class SkillStore {
     }
 
     /// A title nothing else is using, by adding a counter rather than refusing.
+    ///
+    /// The base is shortened to leave room for the counter **before** it is appended, and it
+    /// is shortened against the *invocation* limit rather than the title one.
+    ///
+    /// That is the part worth stating, because the obvious version is wrong. Uniqueness is
+    /// decided on the invocation, which is the shorter of the two bounds — so a long title
+    /// takes `" 2"`, stays comfortably inside the title limit, and has the counter truncated
+    /// off again when the invocation is derived. Every candidate then folds to the name it
+    /// was supposed to differ from, the loop runs out, and the skill is dropped without a
+    /// word. Importing the same long-named skill twice is all it takes.
     private func uniqueTitle(from wanted: String) -> String {
         let existing = otherTitles(excluding: nil)
         guard case .failure = SkillName.validate(wanted, against: existing) else { return wanted }
+
+        // Room for a space and the widest counter, inside the tighter of the two limits.
+        let room = min(SkillName.maxTitleLength, SkillName.maxInvocationLength) - 4
+        let base = String(wanted.prefix(max(1, room)))
         // Bounded: a suffix that never terminates would be a hang, not a rename.
         for suffix in 2 ... 99 {
-            let candidate = "\(wanted) \(suffix)"
+            let candidate = "\(base) \(suffix)"
             if case .success = SkillName.validate(candidate, against: existing) {
                 return candidate
             }
         }
-        return "\(wanted) \(UUID().uuidString.prefix(8))"
+        let short = String(wanted.prefix(max(1, SkillName.maxInvocationLength - 9)))
+        return "\(short) \(UUID().uuidString.prefix(8))"
     }
 
     // MARK: - Persistence
