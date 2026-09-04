@@ -93,10 +93,27 @@ final class AgentCoordinator {
         SkillToolScope.scoped(registeredTools, to: activeSkill, name: \.name)
     }
 
-    /// Sets the skill for the current run. Pair every set with a matching clear in a
-    /// `defer`, exactly as the web-tool override does.
-    func setActiveSkill(_ skill: AgentSkill?) {
+    /// Which run owns the current skill.
+    ///
+    /// A counter rather than a bare clear, for the reason `CLAUDE.md` gives: the clear
+    /// happens in a `Task { @MainActor }` inside a `defer`, so it lands *after* the run
+    /// finishes — and a second send can begin in that gap, because the guard it passes reads
+    /// processing state that is already false. The late clear would then wipe the skill the
+    /// new run had just set, and that run would answer with no skill and no sign of why.
+    private var skillGeneration = 0
+
+    /// Sets the skill for a run, and returns the token that run must present to clear it.
+    @discardableResult
+    func setActiveSkill(_ skill: AgentSkill?) -> Int {
+        skillGeneration += 1
         activeSkill = skill
+        return skillGeneration
+    }
+
+    /// Clears the skill only if it is still the one this run set.
+    func clearActiveSkill(generation: Int) {
+        guard generation == skillGeneration else { return }
+        activeSkill = nil
     }
 
     private init() {
@@ -209,7 +226,7 @@ final class AgentCoordinator {
         if oneShotWebSearch {
             setOneShotIncludeWebTools(true)
         }
-        setActiveSkill(skill)
+        let skillRun = setActiveSkill(skill)
         let userMessage = AgentMessage(role: .user, content: message, attachments: attachments)
         // Defer cleanup of the per-send override into the Task body so it fires
         // even if the Task is cancelled before `runGraph` is awaited (the
@@ -223,8 +240,9 @@ final class AgentCoordinator {
                         self?.setOneShotIncludeWebTools(false)
                     }
                     // Always cleared, even when no skill was set: a skill left behind by a
-                    // cancelled run would silently steer the next question.
-                    self?.setActiveSkill(nil)
+                    // cancelled run would silently steer the next question. Only if this run
+                    // still owns it — see `skillGeneration`.
+                    self?.clearActiveSkill(generation: skillRun)
                 }
             }
             AgentConversationStore.shared.appendMessage(userMessage, to: conversationID)

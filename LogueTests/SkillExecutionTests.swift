@@ -145,3 +145,49 @@ struct SkillToolScopeTests {
         )
     }
 }
+
+/// A skill belongs to the run that set it.
+@Suite("Skill run ownership")
+@MainActor
+struct SkillRunOwnershipTests {
+    private func skill(_ title: String) -> AgentSkill {
+        AgentSkill(title: title, instructions: "i")
+    }
+
+    @Test("A late clear from a finished run does not wipe the next run's skill")
+    func lateClearDoesNotWipeTheNextRun() {
+        // The gap this closes: the clear runs in a `Task { @MainActor }` inside a `defer`, so
+        // it lands after the run ends — and the next send can begin in that gap, because the
+        // guard it passes reads processing state that is already false. Without the
+        // generation check the new run answers with no skill and nothing says why.
+        let coordinator = AgentCoordinator.shared
+        let first = coordinator.setActiveSkill(skill("First"))
+        let second = coordinator.setActiveSkill(skill("Second"))
+
+        coordinator.clearActiveSkill(generation: first)
+        #expect(coordinator.activeSkill?.title == "Second", "the finished run wiped the new one's skill")
+
+        coordinator.clearActiveSkill(generation: second)
+        #expect(coordinator.activeSkill == nil)
+    }
+
+    @Test("The run that set a skill can clear it")
+    func owningRunCanClear() {
+        let coordinator = AgentCoordinator.shared
+        let generation = coordinator.setActiveSkill(skill("Only"))
+        #expect(coordinator.activeSkill != nil)
+        coordinator.clearActiveSkill(generation: generation)
+        #expect(coordinator.activeSkill == nil)
+    }
+
+    @Test("Scoping follows the active skill")
+    func scopingFollowsTheActiveSkill() {
+        let coordinator = AgentCoordinator.shared
+        let generation = coordinator.setActiveSkill(
+            AgentSkill(title: "Narrow", instructions: "i", allowedToolNames: [])
+        )
+        #expect(coordinator.toolsForThisRun.isEmpty, "a skill asking for no tools got some")
+        coordinator.clearActiveSkill(generation: generation)
+        #expect(coordinator.toolsForThisRun.count == coordinator.registeredTools.count)
+    }
+}
