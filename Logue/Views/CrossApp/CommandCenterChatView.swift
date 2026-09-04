@@ -516,13 +516,12 @@ struct CommandCenterChatView: View {
         return coordinator.activeToolCalls(in: conversationID)
     }
 
-    // Extension-visible: +Composer
     /// An error the island raised itself, as opposed to one a run left behind.
     ///
     /// Separate from the coordinator's `lastError` because a refused send never reaches a
     /// coordinator — there is no run to own the message — and because it must clear as soon
     /// as the user does anything.
-    @State var localError: String?
+    @State private var localError: String?
 
     /// The error for this thread, if the last run left one.
     ///

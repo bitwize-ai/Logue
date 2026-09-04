@@ -13,14 +13,15 @@ struct AgentChatView: View {
     /// Incremented to pull focus into the input after a card fills it.
     @State private var focusRequest = 0
 
-    // Injected by `MainWindowView`. Read from the environment rather than reaching for
-    // the shared singletons again, so this view observes the same instances the rest of
-    // the window does.
-    @Environment(MeetingStore.self) private var meetingStore
-    @Environment(DocumentStore.self) private var documentStore
+    // Injected by `MainWindowView`. Both are per-window state rather than a global rule,
+    // which is why they stay in the environment: `insights` is derived and each surface
+    // owns its own, and `modelManager` is read for what this window is showing.
+    //
+    // The document, meeting and space stores used to sit here too. The three things this
+    // view asked them are now `HomeSuggestions.storesAreLoaded` and `currentInputs`,
+    // because the island needs the same answers — see the note on `suggestionInputs`.
     @Environment(InsightsStatsProvider.self) private var insights
     @Environment(ModelManager.self) private var modelManager
-    @Environment(SpaceStore.self) private var spaceStore
 
     /// Reveals a space created from Home's first-run card. `AgentChatView` cannot set the
     /// sidebar selection itself, so `MainWindowView` supplies the one line that can.
@@ -244,26 +245,27 @@ struct AgentChatView: View {
         HomeSuggestions.storesAreLoaded
     }
 
-    /// One definition, used by both the header and the cards — and now by the island too,
-    /// which is why it lives in `HomeSuggestions` rather than here. Two definitions is how a
-    /// workspace with spaces but no documents gets first-run chips above a set of cards that
-    /// have all self-hidden; leaving a copy behind after extracting the rule is how the two
-    /// would have drifted back apart.
+    /// The workspace as the chip rules see it.
     ///
-    /// The environment stores and the singletons are the same objects — `LogueApp` injects
-    /// `.shared` — so reading them through `HomeSuggestions` changes nothing at runtime and
-    /// removes the second definition.
+    /// Read once and used for both the empty state and the chips, so the two cannot
+    /// disagree. They were separate readings until the island needed the same rule: two
+    /// definitions is how a workspace with spaces but no documents gets first-run chips
+    /// above a set of cards that have all self-hidden.
+    private var suggestionInputs: HomeSuggestions.Inputs {
+        HomeSuggestions.currentInputs(overdueCount: insights.actionItemStats.overdue)
+    }
+
+    /// One definition, used by both the header and the cards — and by the island, which is
+    /// why the rule lives in `HomeSuggestions` rather than here.
     private var workspaceIsEmpty: Bool {
-        !HomeSuggestions.currentInputs(overdueCount: 0).hasAnyContent
+        !suggestionInputs.hasAnyContent
     }
 
     /// Derived fresh each render from the stores — no inference, no caching. The rules live
     /// in `HomeSuggestions` and the reading of the workspace in `+Inputs`, so the island can
     /// offer the same chips rather than growing its own list.
     private var suggestionChips: [HomeSuggestions.Chip] {
-        HomeSuggestions.chips(
-            for: HomeSuggestions.currentInputs(overdueCount: insights.actionItemStats.overdue)
-        )
+        HomeSuggestions.chips(for: suggestionInputs)
     }
 
     /// Post-first-message layout: scrolling message list + bottom-anchored input
