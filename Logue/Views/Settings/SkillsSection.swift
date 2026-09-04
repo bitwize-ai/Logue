@@ -160,6 +160,18 @@ struct SkillsSection: View {
                 )
                 .accessibilityLabel("Instructions")
 
+            // Said while it is still editable, not discovered later. Only a bounded amount
+            // of a skill ever reaches the model — the rest is stored and never used, which
+            // is the kind of thing you would otherwise find out from an answer that ignored
+            // half of what you wrote.
+            if let notice = lengthNotice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(draft.instructions.count > SkillFile.maxBodyCharacters
+                        ? AppThemeConstants.error
+                        : .secondary)
+            }
+
             Toggle("Limit which tools this skill may use", isOn: $draft.narrowsTools)
                 .font(.callout)
             if draft.narrowsTools {
@@ -183,13 +195,39 @@ struct SkillsSection: View {
                 Button("Cancel") { cancel() }
                 Button(editingID == nil ? "Add" : "Save") { commit() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!canCommit)
             }
         }
         .padding(.vertical, 4)
     }
 
+    /// What to say about how long the instructions are.
+    ///
+    /// Two different limits, and they mean different things. Past
+    /// `AgentSkill.maxInstructionCharacters` the extra is *stored but never sent* — a skill
+    /// is layered on top of the system prompt and everything else the turn needs, so it
+    /// spends context the conversation would otherwise have. Past
+    /// `SkillFile.maxBodyCharacters` it will not save at all.
+    private var lengthNotice: String? {
+        let count = draft.instructions.count
+        if count > SkillFile.maxBodyCharacters {
+            return "Too long to save — \(count) characters, and the limit is \(SkillFile.maxBodyCharacters)."
+        }
+        if count > AgentSkill.maxInstructionCharacters {
+            return "Only the first \(AgentSkill.maxInstructionCharacters) characters are sent to the model. "
+                + "The rest is saved but never used."
+        }
+        return nil
+    }
+
     // MARK: - Doing things
+
+    /// Refuses rather than silently cutting: losing what someone typed on save is the one
+    /// failure here that cannot be undone.
+    private var canCommit: Bool {
+        !draft.title.trimmingCharacters(in: .whitespaces).isEmpty
+            && draft.instructions.count <= SkillFile.maxBodyCharacters
+    }
 
     private func beginAdding() {
         editingID = nil
