@@ -45,6 +45,36 @@ struct ToolApprovalPromptTests {
         #expect(missing.isEmpty, "no approval prompt for: \(missing.sorted())")
     }
 
+    // MARK: - A target cannot lie about itself
+
+    @Test("A title cannot reverse the sentence it is shown in")
+    func targetCannotSpoofWithBidi() {
+        // The card sits above a Touch ID prompt. A title carrying U+202E — which can arrive
+        // in a .md file dropped into the markdown folder, or from a create_document call a
+        // prompt-injected model made — would otherwise render the filename backwards, so the
+        // card names a different document than the one about to be deleted.
+        let id = UUID().uuidString
+        let result = sentence("delete_document", ["documentID": id], resolving: "report\u{202E}gnp.txt")
+        #expect(result.unicodeScalars.contains { $0.value == 0x202E } == false)
+        #expect(result == "Delete \u{201C}reportgnp.txt\u{201D}")
+    }
+
+    @Test("A literal argument is stripped too, not only a resolved name")
+    func literalTargetIsStripped() {
+        // `write_text_to_file` takes the path straight from the model's arguments — there is
+        // no store lookup to launder it, so this is the shorter path to the same card.
+        let result = sentence("write_text_to_file", ["path": "~/notes\u{202E}dm.txt"], resolving: nil)
+        #expect(result.unicodeScalars.contains { $0.value == 0x202E } == false)
+    }
+
+    @Test("A newline in a target cannot split the sentence")
+    func targetStaysOnOneLine() {
+        let id = UUID().uuidString
+        let result = sentence("delete_document", ["documentID": id], resolving: "Q3\nPlanning")
+        #expect(result.contains("\n") == false)
+        #expect(result == "Delete \u{201C}Q3 Planning\u{201D}")
+    }
+
     // MARK: - Naming the target
 
     @Test("A document is named, not referred to by its id")

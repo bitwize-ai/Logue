@@ -352,7 +352,7 @@ struct CommandCenterChatView: View {
             // there.
             DeepResearchProgressView(conversationID: conversationID)
 
-            if let error = currentError {
+            if let error = displayedError {
                 errorBanner(error)
                     .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             }
@@ -386,6 +386,10 @@ struct CommandCenterChatView: View {
             )
         )
         guard let route, !isGenerating else { return }
+
+        // A new attempt supersedes the last refusal. Without this the "busy elsewhere"
+        // banner outlives the condition that raised it and sits over a send that worked.
+        localError = nil
 
         // `isGenerating` is scoped to this conversation, which is right for the spinner and
         // wrong for this: `AgentCoordinator.send` refuses on a *global* busy check. Without
@@ -528,6 +532,18 @@ struct CommandCenterChatView: View {
     private var currentError: String? {
         guard let conversationID else { return nil }
         return coordinator.lastError(in: conversationID)
+    }
+
+    /// What the banner shows.
+    ///
+    /// `localError` first, because a refusal is the most recent thing that happened and it is
+    /// the only one of the two that can exist without a conversation: `sendMessage` refuses a
+    /// globally-busy send *before* `ensureConversation()`, so `conversationID` is still nil
+    /// and `currentError` — which needs one — can only ever answer nil on that path. Reading
+    /// `currentError` alone meant the refusal set a message nothing rendered, and the send
+    /// appeared to vanish, which is precisely the failure the guard that sets it describes.
+    private var displayedError: String? {
+        localError ?? currentError
     }
 
     /// Says when a send failed.

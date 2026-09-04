@@ -241,16 +241,20 @@ struct AgentChatView: View {
     /// library was still being read is the loudest possible wrong answer this screen can
     /// give, so nothing derived from store contents renders until all three report.
     private var storesAreLoaded: Bool {
-        documentStore.isLoaded && meetingStore.isLoaded && spaceStore.isLoaded
+        HomeSuggestions.storesAreLoaded
     }
 
-    /// One definition, used by both the header and the cards. Two definitions is how a
-    /// workspace with spaces but no documents gets first-run chips above a set of cards
-    /// that have all self-hidden.
+    /// One definition, used by both the header and the cards — and now by the island too,
+    /// which is why it lives in `HomeSuggestions` rather than here. Two definitions is how a
+    /// workspace with spaces but no documents gets first-run chips above a set of cards that
+    /// have all self-hidden; leaving a copy behind after extracting the rule is how the two
+    /// would have drifted back apart.
+    ///
+    /// The environment stores and the singletons are the same objects — `LogueApp` injects
+    /// `.shared` — so reading them through `HomeSuggestions` changes nothing at runtime and
+    /// removes the second definition.
     private var workspaceIsEmpty: Bool {
-        documentStore.activeDocuments.isEmpty
-            && meetingStore.activeMeetings.isEmpty
-            && spaceStore.topLevelSpaces.isEmpty
+        !HomeSuggestions.currentInputs(overdueCount: 0).hasAnyContent
     }
 
     /// Derived fresh each render from the stores — no inference, no caching. The rules live
