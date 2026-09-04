@@ -53,6 +53,12 @@ struct CommandCenterChatView: View {
     var isDeepResearchOnce: Bool = false
     // Extension-visible: +Composer
     @State var deepResearch = DeepResearchCoordinator.shared
+    // Extension-visible: +Composer
+    /// Built the way `MainWindowView` builds its own, off the same singletons. The island is
+    /// an `NSPanel` and never receives the main window's environment, so a shared instance
+    /// would have to be reached for globally; two providers over one set of stores answer
+    /// the same question.
+    @State var insights = InsightsStatsProvider(meetingStore: .shared, documentStore: .shared)
     // Extension-visible: +Bubbles
     @State var copiedMessageID: UUID?
     // Extension-visible: +Bubbles
@@ -68,6 +74,10 @@ struct CommandCenterChatView: View {
     @State var readAloud = AgentReadAloudService.shared
     // Extension-visible: +Composer
     @FocusState var isInputFocused: Bool
+    // Extension-visible: +Composer
+    /// Accessibility → Display → Reduce motion. The island slides in over another app,
+    /// springs open on the first message and scales its chips; none of it consulted this.
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     // Extension-visible: +Composer
     var voiceManager: VoicePushToTalkManager {
@@ -146,24 +156,48 @@ struct CommandCenterChatView: View {
             if hasThread {
                 messagesPanel
                     .padding(.bottom, 10)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(IslandMotion.transition(reduceMotion: reduceMotion))
+            } else {
+                starters
+            }
+
+            if voiceManager.isRecording {
+                // The same indicator the two in-app chat panels mount. The island streams the
+                // partial transcript straight into the field so it can be edited before
+                // sending, so the indicator is handed none — what it adds here is the level,
+                // which is the only thing that says the mic is actually hearing anything, and
+                // a stop target bigger than the mic glyph.
+                VoiceInputIndicator(
+                    audioLevel: voiceManager.audioLevel,
+                    partialTranscript: "",
+                    onStop: { voiceManager.stopListening() }
+                )
+                .padding(.bottom, 8)
+                .transition(.opacity)
             }
 
             // In the layout rather than floating above the pill. As an `.overlay` offset
             // -34pt they sat outside the hosting view's frame on a fresh island — which the
             // panel clips, and which hit-testing treats as "not the island", so a staged
             // file or an armed mode showed no chip at all on the one path where you most
-            // need to see it.
+            // need to see it. Bounding it is `ComposerChipRow`'s job; giving it a width is
+            // this view's, because only the island knows how wide its pill is.
             if hasStagedChips {
-                attachmentChips
+                stagedChips
                     .frame(width: pillWidth, alignment: .leading)
-                    .padding(.bottom, 6)
             }
 
             promptPill
         }
         .frame(width: pillWidth)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: hasThread)
+        // The island commits to dark. Every foreground in it is white and `Material` is not:
+        // in Light appearance `.ultraThinMaterial` is a light frost, so the transcript drew
+        // white text on a white-ish panel and could not be read. Half a palette adapting is
+        // worse than none, and this is a HUD over someone else's window rather than a
+        // document — so it does not follow the system, which is what makes it legible in
+        // both appearances.
+        .environment(\.colorScheme, .dark)
+        .animation(IslandMotion.layout(reduceMotion: reduceMotion), value: hasThread)
         .onAppear {
             isInputFocused = true
             voiceManager.onTranscriptReady = { transcript in
@@ -235,6 +269,7 @@ struct CommandCenterChatView: View {
                     .background(Capsule().fill(Color.primary.opacity(0.06)))
                 }
                 .buttonStyle(.plain)
+                .islandControl(IslandControlCopy.newConversation)
 
                 Spacer()
 
@@ -254,7 +289,7 @@ struct CommandCenterChatView: View {
                         .background(Capsule().fill(Color.primary.opacity(0.06)))
                     }
                     .buttonStyle(.plain)
-                    .help("Continue this conversation in the main window")
+                    .islandControl(IslandControlCopy.openInLogue)
                 }
 
                 Button { onDismiss(.closeButton) } label: {
@@ -265,6 +300,7 @@ struct CommandCenterChatView: View {
                         .background(Circle().fill(Color.primary.opacity(0.06)))
                 }
                 .buttonStyle(.plain)
+                .islandControl(IslandControlCopy.close)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -277,13 +313,19 @@ struct CommandCenterChatView: View {
                             islandRow(row)
                                 .id(row.id)
                         }
+
+                        if showsThinking {
+                            thinkingRow(toolName: activeToolName)
+                                .id("island-thinking")
+                                .transition(.opacity)
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
                 }
                 .onChange(of: rows) { _, newRows in
                     if let last = newRows.last {
-                        withAnimation(.easeOut(duration: 0.15)) {
+                        withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
@@ -302,7 +344,7 @@ struct CommandCenterChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             }
 
             // Mounted, not redrawn: the island shows the same seven-step strip the main
@@ -310,21 +352,14 @@ struct CommandCenterChatView: View {
             // there.
             DeepResearchProgressView(conversationID: conversationID)
 
-            if let error = currentError {
+            if let error = displayedError {
                 errorBanner(error)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             }
         }
         .frame(width: pillWidth)
         .frame(maxHeight: 420)
-        .background(
-            .ultraThinMaterial,
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-        )
+        .islandSurface(cornerRadius: 18)
     }
 
     // MARK: - Logic
@@ -351,6 +386,10 @@ struct CommandCenterChatView: View {
             )
         )
         guard let route, !isGenerating else { return }
+
+        // A new attempt supersedes the last refusal. Without this the "busy elsewhere"
+        // banner outlives the condition that raised it and sits over a send that worked.
+        localError = nil
 
         // `isGenerating` is scoped to this conversation, which is right for the spinner and
         // wrong for this: `AgentCoordinator.send` refuses on a *global* busy check. Without
@@ -444,13 +483,45 @@ struct CommandCenterChatView: View {
         return AgentToolTimeline.awaitingApproval(in: conversation.messages)
     }
 
-    // Extension-visible: +Composer
+    /// Whether to say the island is working rather than show an answer.
+    ///
+    /// The same rule the main window uses. Note what is passed as the pending answer: the
+    /// *last* message's text only when it is the one being streamed. Reading the last
+    /// assistant message unconditionally would be the previous answer, which is non-empty for
+    /// the whole of every later gap — so the indicator would never appear again after the
+    /// first reply.
+    private var showsThinking: Bool {
+        guard let conversationID else { return false }
+        let streaming = coordinator.isStreaming(in: conversationID)
+        let pending: String = if case let .message(message)? = rows.last, message.isStreaming {
+            message.content
+        } else {
+            ""
+        }
+        return AgentThinkingState.showsThinking(
+            isProcessing: coordinator.isProcessing(in: conversationID),
+            isStreaming: streaming,
+            pendingAnswerText: pending,
+            hasActiveToolCard: !activeToolCalls.isEmpty
+        )
+    }
+
+    /// The tool the island is currently running, which is what the thinking row names.
+    private var activeToolName: String? {
+        activeToolCalls.last?.toolName
+    }
+
+    private var activeToolCalls: [AgentToolCall] {
+        guard let conversationID else { return [] }
+        return coordinator.activeToolCalls(in: conversationID)
+    }
+
     /// An error the island raised itself, as opposed to one a run left behind.
     ///
     /// Separate from the coordinator's `lastError` because a refused send never reaches a
     /// coordinator — there is no run to own the message — and because it must clear as soon
     /// as the user does anything.
-    @State var localError: String?
+    @State private var localError: String?
 
     /// The error for this thread, if the last run left one.
     ///
@@ -460,6 +531,18 @@ struct CommandCenterChatView: View {
     private var currentError: String? {
         guard let conversationID else { return nil }
         return coordinator.lastError(in: conversationID)
+    }
+
+    /// What the banner shows.
+    ///
+    /// `localError` first, because a refusal is the most recent thing that happened and it is
+    /// the only one of the two that can exist without a conversation: `sendMessage` refuses a
+    /// globally-busy send *before* `ensureConversation()`, so `conversationID` is still nil
+    /// and `currentError` — which needs one — can only ever answer nil on that path. Reading
+    /// `currentError` alone meant the refusal set a message nothing rendered, and the send
+    /// appeared to vanish, which is precisely the failure the guard that sets it describes.
+    private var displayedError: String? {
+        localError ?? currentError
     }
 
     /// Says when a send failed.
@@ -487,7 +570,7 @@ struct CommandCenterChatView: View {
             Spacer(minLength: 0)
 
             Button {
-                withAnimation {
+                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
                     localError = nil
                     coordinator.dismissError()
                 }

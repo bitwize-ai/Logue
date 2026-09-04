@@ -43,7 +43,7 @@ extension CommandCenterChatView {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .fill(AppThemeConstants.brandPrimary)
                         )
-                } else {
+                } else if !message.content.isEmpty {
                     markdownContent(message)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -64,10 +64,28 @@ extension CommandCenterChatView {
         }
     }
 
-    @ViewBuilder
+    /// The pulsing row the main window shows in the gap before the first token.
+    ///
+    /// The island had nothing here. Between a send and the first token it showed the user's
+    /// own bubble and empty space — which is the moment someone concludes the send did not
+    /// land and presses Return again.
+    func thinkingRow(toolName: String?) -> some View {
+        HStack(spacing: 8) {
+            PulsingDot()
+            Text(AgentThinkingState.label(activeToolName: toolName))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(AgentThinkingState.label(activeToolName: toolName))
+    }
+
     private func markdownContent(_ message: EphemeralChatMessage) -> some View {
-        let displayText = message.content.isEmpty && message.isStreaming ? "..." : message.content
-        StructuredText(markdown: displayText)
+        // No placeholder. An empty streaming bubble used to render a literal "..." through
+        // the markdown renderer; the thinking row says the same thing properly, and saying it
+        // twice put a grey box under it with three dots in it.
+        StructuredText(markdown: message.content)
             .font(AppThemeConstants.chatMessageFont)
             .textual.structuredTextStyle(.gitHub)
             .textual.inlineStyle(.gitHub)

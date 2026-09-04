@@ -120,12 +120,13 @@ final class AgentCoordinator {
     /// when either the Settings master toggle is on or a per-send override
     /// (`oneShotIncludeWebTools`) is set.
     private func buildToolRegistry() -> [any AgentTool] {
-        var tools = Self.readOnlyTools()
-            + Self.writeTools()
-            + Self.aiContentTools()
-            + Self.appleNativeTools()
-            + Self.computeAndDialogTools()
-            + Self.fileSystemTools()
+        // Web search tools — registered when the Settings master toggle is on OR when a
+        // per-send override (the input bar's one-shot Search toggle) is active for this run.
+        let userOptedIn = UserDefaults.standard.bool(forKey: AppConstants.UserDefaultsKeys.webSearchEnabled)
+        let includeWebTools = userOptedIn || oneShotIncludeWebTools
+        let webNames = Set(Self.webTools().map(\.name))
+
+        var tools = Self.allKnownTools().filter { includeWebTools || !webNames.contains($0.name) }
 
         // Phase A: per-tool enable/disable filter. The AISettingsTab persists
         // a set of tool names the user has explicitly turned off (e.g. "I
@@ -135,15 +136,28 @@ final class AgentCoordinator {
         if !disabledNames.isEmpty {
             tools.removeAll { disabledNames.contains($0.name) }
         }
-        // Web search tools — included when the Settings master toggle is on
-        // OR when a per-send override (the input bar's one-shot Search toggle)
-        // is active for this run.
-        let userOptedIn = UserDefaults.standard.bool(forKey: AppConstants.UserDefaultsKeys.webSearchEnabled)
-        if userOptedIn || oneShotIncludeWebTools {
-            tools.append(WebSearchTool())
-            tools.append(FetchWebPageTool())
-        }
         return tools
+    }
+
+    /// Every tool the app can build, before any user filter.
+    ///
+    /// Exists so the registry has one definition rather than a second list kept in step by
+    /// hand — `ToolApprovalPromptTests` walks this to prove nothing that asks for approval
+    /// lacks a sentence explaining what it is about to do. A separate list would go stale
+    /// exactly when it mattered: the day someone adds a destructive tool.
+    static func allKnownTools() -> [any AgentTool] {
+        readOnlyTools()
+            + writeTools()
+            + aiContentTools()
+            + appleNativeTools()
+            + computeAndDialogTools()
+            + fileSystemTools()
+            + webTools()
+    }
+
+    /// Reaching off the machine, so registered only on an explicit opt-in.
+    static func webTools() -> [any AgentTool] {
+        [WebSearchTool(), FetchWebPageTool()]
     }
 
     // MARK: - Tool registry shards
