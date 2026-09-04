@@ -119,7 +119,7 @@ struct MCPServersSection: View {
             .accessibilityLabel("\(server.name) enabled")
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(server.name.isEmpty ? "Unnamed server" : server.name)
+                Text(displayName(of: server))
                     .font(.callout)
                 HStack(spacing: 6) {
                     // Shown to the user in full — it is their own address and they need to
@@ -143,15 +143,29 @@ struct MCPServersSection: View {
 
             Spacer()
 
+            // Named for the row they belong to. With several servers, a list of buttons all
+            // announcing "Edit" tells a VoiceOver user which action but not which server —
+            // and Remove is the one where guessing is expensive.
             Button("Edit") { beginEditing(server) }
                 .buttonStyle(.link)
                 .font(.caption)
+                .accessibilityLabel("Edit \(displayName(of: server))")
             Button("Remove") { remove(server) }
                 .buttonStyle(.link)
                 .font(.caption)
                 .foregroundStyle(AppThemeConstants.error)
+                .accessibilityLabel("Remove \(displayName(of: server))")
         }
         .padding(.vertical, 4)
+    }
+
+    /// What to call a server on screen.
+    ///
+    /// A name can be empty — the decoder defaults it to `""` so a file written before the
+    /// field existed still reads — and a row labelled with nothing is a row that cannot be
+    /// told apart from the next one, in the list and in VoiceOver alike.
+    private func displayName(of server: MCPServer) -> String {
+        server.name.isEmpty ? "Unnamed server" : server.name
     }
 
     /// A server nobody has contacted has not failed — see `MCPServerHealth.State`.
