@@ -81,6 +81,49 @@ struct TranscriptRealignmentTests {
         #expect(TranscriptRealignment.realign(live: [], words: [word("x", 0, 1)]).isEmpty)
     }
 
+    @Test("Empty live captions keep the batch transcript instead of throwing it away")
+    func emptyLiveAdoptsBatch() {
+        let batch = [segment("Parakeet heard this", 0, 4), segment("and this", 4, 8)]
+        let kept = TranscriptRealignment.keepingLiveShape(
+            live: [],
+            batch: batch,
+            words: [word("Parakeet ", 0, 1), word("heard ", 1, 2), word("this", 2, 3)]
+        )
+        #expect(kept.map(\.text) == ["Parakeet heard this", "and this"])
+    }
+
+    @Test("A later session with no live lines appends the batch onto the earlier meeting")
+    func emptyLiveSessionAppendsBatch() {
+        let earlier = [segment("first session", 0, 10)]
+        let batch = [segment("second session", 0, 5)]
+        let kept = TranscriptRealignment.keepingLiveShape(
+            live: earlier,
+            batch: batch,
+            words: [word("second ", 0, 1), word("session", 1, 2)],
+            sessionStart: 11
+        )
+        #expect(kept.count == 2)
+        #expect(kept[0].text == "first session")
+        #expect(kept[1].text == "second session")
+        #expect(kept[1].startTime == 11)
+        #expect(kept[1].endTime == 16)
+    }
+
+    @Test("Live lines still receive the batch words rather than being replaced")
+    func liveShapeIsKeptWhenCaptionsExist() {
+        let live = [segment("that ours came in higher", 0, 5)]
+        let batch = [segment("Quarterly numbers came in higher", 0, 5)]
+        let kept = TranscriptRealignment.keepingLiveShape(
+            live: live,
+            batch: batch,
+            words: [word("Quarterly ", 0.1, 0.9), word("numbers ", 1.0, 1.8),
+                    word("came ", 2.0, 2.4), word("in ", 2.5, 2.7), word("higher", 2.8, 3.4)]
+        )
+        #expect(kept.count == 1)
+        #expect(kept[0].id == live[0].id)
+        #expect(kept[0].text == "Quarterly numbers came in higher")
+    }
+
     // MARK: - Sub-word tokens
 
     @Test("Sub-word pieces are joined before placement")

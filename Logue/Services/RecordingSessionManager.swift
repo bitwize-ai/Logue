@@ -156,7 +156,8 @@ final class RecordingSessionManager {
 
     let audioRecorder = AudioRecorder()
     let systemCapture = SystemAudioCapture()
-    private var speechEngine: SpeechTranscriberEngine?
+    // Extension-visible: +AudioStream. Live captions attach after the mic is already running.
+    var speechEngine: SpeechTranscriberEngine?
     // Extension-visible: +DeviceLoss, +Diarization
     var diarizationManager: DiarizationManager?
 
@@ -368,10 +369,8 @@ final class RecordingSessionManager {
         }
         let offset = timeOffset
 
-        // Set up the speech transcriber engine
         let isOnlineMeeting = meeting.recordingMode == .onlineMeeting
         let engine = SpeechTranscriberEngine()
-        // C3: Explicitly annotate as @MainActor for Sendable safety
         engine.onFinalSegment = { @MainActor segment in
             var tagged = segment
             tagged.startTime += offset
@@ -382,20 +381,6 @@ final class RecordingSessionManager {
             MeetingStore.shared.appendSegment(tagged, to: meetingID, persistImmediately: false)
         }
 
-        do {
-            let locale = TranscriptionLanguage(rawValue: meeting.transcriptionLanguage ?? "auto")?.locale
-            recordingLocale = locale
-            try await engine.setup(locale: locale)
-        } catch {
-            errorMessage = RecordingError.speechEngineSetupFailed(error.localizedDescription).localizedDescription
-            logger.error("Speech engine setup failed: \(error.localizedDescription, privacy: .public)")
-            recordingState = .idle
-            return .engineUnavailable
-        }
-
-        speechEngine = engine
-
-        // Create diarizer (not yet initialized — audio will buffer once init completes)
         let diarizer = DiarizationManager(
             config: DiarizerConfig(clusteringThreshold: 0.65, minSpeechDuration: 2.0)
         )
@@ -406,8 +391,6 @@ final class RecordingSessionManager {
         systemWrittenSeconds.withLock { $0 = 0 }
         speechGate.reset()
 
-        // Somewhere the audio survives the app not reaching stopRecording(). The directory existing
-        // afterwards is what tells the next launch this session was interrupted.
         do {
             inProgressDirectory = try InProgressRecordingStore.directory(for: meetingID)
             audioRecorder.inProgressDirectory = inProgressDirectory
@@ -417,18 +400,27 @@ final class RecordingSessionManager {
             logger.error("No durable location for this recording: \(error.localizedDescription, privacy: .public)")
         }
 
-        // Start audio capture IMMEDIATELY — don't wait for diarization models.
-        //
-        // The microphone always runs. What kind of session this is — a call, a room, a voice note —
-        // is something we find out from what actually gets captured, not something the user is asked
-        // to declare before they have started.
-        await startMicrophoneRecording(engine: engine, diarizer: diarizer)
+        // Microphone first — live captions must not delay or block capture. German's
+        // SpeechTranscriber asset can sit in "Not Installing" for seconds; the file and the
+        // level meter have to be running regardless.
+        await startMicrophoneRecording(diarizer: diarizer)
 
-        // If audio capture failed to start, clean up and bail
         if recordingState != .recording {
             diarizationManager = nil
             recordingState = .idle
             return .captureFailed
+        }
+
+        do {
+            let language = TranscriptionLanguage.resolved(fromStored: meeting.transcriptionLanguage)
+            let locale = language.resolvedSpeechLocale()
+            recordingLocale = locale
+            try await engine.setup(locale: locale, allowLanguageFallback: language == .auto)
+            speechEngine = engine
+            logger.info("Live captions attached")
+        } catch {
+            logger.error("Speech engine setup failed: \(error.localizedDescription, privacy: .public)")
+            captureNotice = "Live captions could not start — the microphone is still recording"
         }
 
         // Initialize diarization in background (models download while transcription runs)
@@ -476,9 +468,9 @@ final class RecordingSessionManager {
         return isRecording ? .started : .captureFailed
     }
 
-    private func startMicrophoneRecording(engine: SpeechTranscriberEngine, diarizer: DiarizationManager) async {
-        // Mic permission already verified in startRecording() before engine setup
-        startAudioBufferConsumer(engine: engine, diarizer: diarizer)
+    private func startMicrophoneRecording(diarizer: DiarizationManager) async {
+        // Mic permission already verified in startRecording() before capture starts
+        startAudioBufferConsumer(diarizer: diarizer)
         diarizer.beginSource(.microphone, atSessionTime: 0)
         let continuation = audioBufferContinuation
         audioRecorder.onAudioBuffer = { buffer in

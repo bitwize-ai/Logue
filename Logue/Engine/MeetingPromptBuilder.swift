@@ -7,8 +7,11 @@ enum MeetingPromptBuilder {
 
     /// System-level instructions for meeting summary generation (JSON format, rules, template guidance).
     /// Sourced from `PromptRegistry.Meeting.summaryInstructions`.
-    static func summarySystemInstructions(template: MeetingTemplate = .general) -> String {
-        PromptRegistry.Meeting.summaryInstructions(template: template)
+    static func summarySystemInstructions(
+        template: MeetingTemplate = .general,
+        language: TranscriptionLanguage = .auto
+    ) -> String {
+        PromptRegistry.Meeting.summaryInstructions(template: template, language: language)
     }
 
     /// Prompt-level content for meeting summary generation (question + labeled transcript).

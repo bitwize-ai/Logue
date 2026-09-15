@@ -34,7 +34,9 @@ extension MeetingStore {
 
         logger.info("generateAITitle: generating for meeting \(meetingID, privacy: .public) (\(trimmed.count, privacy: .public) chars)")
 
-        let titleSystem = PromptRegistry.Meeting.titleSystem.content
+        let titleSystem = PromptRegistry.Meeting.titleSystem(
+            language: TranscriptionLanguage.resolved(fromStored: meeting.transcriptionLanguage)
+        ).content
 
         let prompt = """
         Generate a title for this meeting.
@@ -82,10 +84,11 @@ extension MeetingStore {
         let currentTitle = meeting.title
         logger.info("regenerateAITitle: starting for meeting \(meetingID, privacy: .public) (\(trimmed.count, privacy: .public) chars)")
 
+        let language = TranscriptionLanguage.resolved(fromStored: meeting.transcriptionLanguage)
         let titleSystem = if isDefaultTitle(currentTitle) {
-            PromptRegistry.Meeting.titleSystem.content
+            PromptRegistry.Meeting.titleSystem(language: language).content
         } else {
-            PromptRegistry.Meeting.titleRegenerateSystem(currentTitle: currentTitle).content
+            PromptRegistry.Meeting.titleRegenerateSystem(currentTitle: currentTitle, language: language).content
         }
 
         let prompt = """
@@ -141,11 +144,14 @@ extension MeetingStore {
 
         let speakerContext = buildSpeakerContext(for: meeting)
         let template = meeting.template
+        let language = TranscriptionLanguage.resolved(fromStored: meeting.transcriptionLanguage)
 
         do {
             let result = try await withRetry {
                 try await LLMEngine.shared.complete(
-                    system: PromptRegistry.withBase(MeetingPromptBuilder.summarySystemInstructions(template: template)),
+                    system: PromptRegistry.withBase(
+                        MeetingPromptBuilder.summarySystemInstructions(template: template, language: language)
+                    ),
                     prompt: MeetingPromptBuilder.summaryPrompt(transcript: transcript) + speakerContext,
                     maxTokens: 2048
                 )
@@ -158,7 +164,7 @@ extension MeetingStore {
             if smartMinutes == nil, parsedSummary == nil {
                 logger.warning("Smart Minutes JSON parse failed — retrying with stricter format prompt")
                 let retryResult = try await LLMEngine.shared.complete(
-                    system: PromptRegistry.Meeting.summaryStrictSystem(template: template),
+                    system: PromptRegistry.Meeting.summaryStrictSystem(template: template, language: language),
                     prompt: MeetingPromptBuilder.summaryPrompt(transcript: String(transcript.prefix(2000))) + speakerContext,
                     maxTokens: 2048
                 )
@@ -176,7 +182,7 @@ extension MeetingStore {
                 // Final fallback: plain-text summary
                 logger.warning("Structured JSON failed after retry — using plain-text fallback")
                 let fallback = try await LLMEngine.shared.complete(
-                    system: PromptRegistry.Meeting.summaryFallbackSystem.content,
+                    system: PromptRegistry.Meeting.summaryFallbackSystem(language: language).content,
                     prompt: "<transcript>\n\(String(transcript.prefix(2000)))\n</transcript>"
                 )
                 if !fallback.isEmpty {
@@ -192,11 +198,27 @@ extension MeetingStore {
             }
 
             logger.info("AI summary generated for meeting \(meetingID, privacy: .public)")
+            refreshLinkedSummaryDocument(for: meetingID)
 
             return storedActionItemCount > 0 ? .success(actionItemCount: storedActionItemCount) : .noActionItems
         } catch {
             return .failed(error.localizedDescription)
         }
+    }
+
+    /// Rewrites the linked notes document after Smart Minutes are regenerated.
+    private func refreshLinkedSummaryDocument(for meetingID: UUID) {
+        guard let meeting = meetings.first(where: { $0.id == meetingID }),
+              let docID = meeting.summaryDocumentID,
+              let index = DocumentStore.shared.documents.firstIndex(where: { $0.id == docID })
+        else { return }
+        let markdown = meeting.smartMinutes != nil
+            ? meeting.smartMinutesMarkdown()
+            : (meeting.summary ?? "")
+        guard !markdown.isEmpty else { return }
+        var document = DocumentStore.shared.documents[index]
+        document.body = markdown
+        DocumentStore.shared.updateDocument(document)
     }
 
     // MARK: - Smart Highlights

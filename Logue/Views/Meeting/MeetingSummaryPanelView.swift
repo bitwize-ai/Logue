@@ -35,6 +35,8 @@ struct MeetingSummaryPanelView: View {
                     // — and this branch is taken ahead of the content that already exists.
                     if recorder.postRecordingPipeline.isGenerating(for: meeting.id)
                         || recorder.isDiarizing(for: meeting.id)
+                        || isGeneratingSummary
+                        || store.generatingMeetingIDs.contains(meeting.id)
                     {
                         aiSummaryLoadingView
                     } else if let smartMinutes = meeting.smartMinutes {
@@ -66,21 +68,7 @@ struct MeetingSummaryPanelView: View {
                                 ?? "Record a meeting and generate Smart Minutes.",
                             actionLabel: meeting.segments.isEmpty ? nil : (generationMessage != nil ? "Try Again" : "Generate Summary"),
                             action: meeting.segments.isEmpty ? nil : {
-                                guard !LLMEngineStatus.shared.isBusy else { return }
-                                generationMessage = nil
-                                isGeneratingSummary = true
-                                Task {
-                                    let result = await store.generateAISummary(for: meeting.id)
-                                    isGeneratingSummary = false
-                                    switch result {
-                                    case .success, .noActionItems:
-                                        break
-                                    case let .failed(error):
-                                        generationMessage = "Failed to generate summary: \(error)"
-                                    case .skipped:
-                                        generationMessage = "AI model is not loaded. Please check Settings → Models."
-                                    }
-                                }
+                                regenerateSummary()
                             }
                         )
                     }
@@ -252,6 +240,21 @@ struct MeetingSummaryPanelView: View {
             } else {
                 Spacer()
 
+                if !meeting.segments.isEmpty {
+                    Button {
+                        regenerateSummary()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Regenerate")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(LLMEngineStatus.shared.isBusy || isGeneratingSummary)
+                    .help("Regenerate Smart Minutes in the recording language")
+                }
+
                 Button {
                     narration.play(meeting: meeting)
                 } label: {
@@ -297,6 +300,24 @@ struct MeetingSummaryPanelView: View {
         .onDisappear {
             if isNarrating {
                 narration.stop()
+            }
+        }
+    }
+
+    private func regenerateSummary() {
+        guard !LLMEngineStatus.shared.isBusy, !isGeneratingSummary else { return }
+        generationMessage = nil
+        isGeneratingSummary = true
+        Task {
+            let result = await store.generateAISummary(for: meeting.id)
+            isGeneratingSummary = false
+            switch result {
+            case .success, .noActionItems:
+                break
+            case let .failed(error):
+                generationMessage = "Failed to generate summary: \(error)"
+            case .skipped:
+                generationMessage = "AI model is not loaded. Please check Settings → Models."
             }
         }
     }

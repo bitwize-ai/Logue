@@ -240,4 +240,80 @@ extension RecordingSessionManager {
             speakerSegments: speakerSegments
         )
     }
+
+    /// Fills a meeting that has audio on disk but no transcript — the live captions
+    /// produced nothing, and the post-recording pass then had no lines to pour into.
+    func transcribeSavedRecordingIfEmpty(for meetingID: UUID) async {
+        guard recordingState == .idle, diarizingMeetingID == nil else { return }
+        guard let meeting = MeetingStore.shared.meetings.first(where: { $0.id == meetingID }) else { return }
+        guard meeting.segments.isEmpty else { return }
+        guard let audioURL = savedAudioURL(for: meeting) else {
+            logger.info("No saved audio to transcribe for meeting \(meetingID)")
+            return
+        }
+
+        let diarizer = DiarizationManager()
+        do {
+            try await diarizer.initialize()
+        } catch {
+            logger.warning("Saved-audio transcription unavailable: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        diarizingMeetingID = meetingID
+        diarizationStage = "Identifying speakers…"
+        defer {
+            diarizingMeetingID = nil
+            diarizationStage = ""
+        }
+
+        guard let result = await diarizer.processRecordingFile(audioURL) else {
+            logger.warning("Saved-audio transcription produced nothing")
+            return
+        }
+
+        if !result.segments.isEmpty {
+            MeetingStore.shared.replaceTranscript(
+                for: meetingID,
+                with: result.segments,
+                sessionStart: 0,
+                heardDuration: nil
+            )
+            logger.info("Filled empty transcript from saved audio: \(result.segments.count) segment(s)")
+        }
+
+        if !result.speakers.isEmpty {
+            applySortformerUpdates(
+                SortformerTimeline.normalize(result.speakers),
+                for: meetingID,
+                sessionStart: 0
+            )
+            renumberSpeakers(for: meetingID)
+            alignRecoveredTranscript(for: meetingID)
+        }
+
+        guard !result.segments.isEmpty else { return }
+        postRecordingPipeline.start(for: meetingID)
+        MeetingStore.shared.saveMeeting(id: meetingID)
+    }
+
+    /// The recording written when the session stopped, or the conventional Recordings path
+    /// if the stored URL no longer resolves (container move, unsigned local build).
+    private func savedAudioURL(for meeting: MeetingNote) -> URL? {
+        if let url = meeting.audioFileURL, FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let recordings = support?
+            .appending(path: AppConstants.bundleID, directoryHint: .isDirectory)
+            .appending(path: "Recordings", directoryHint: .isDirectory)
+        for ext in ["m4a", "caf", "wav"] {
+            if let url = recordings?.appending(path: "\(meeting.id.uuidString).\(ext)"),
+               FileManager.default.fileExists(atPath: url.path)
+            {
+                return url
+            }
+        }
+        return nil
+    }
 }

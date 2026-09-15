@@ -104,6 +104,8 @@ enum AppConstants {
         static let memoryTopK = "agent.memoryTopK"
         /// Preferred TTS voice identifier (`AVSpeechSynthesisVoice.identifier`).
         static let ttsVoiceIdentifier = "agent.ttsVoiceIdentifier"
+        /// Default live-transcript language for new meetings (`TranscriptionLanguage.rawValue`).
+        static let defaultTranscriptionLanguage = "defaultTranscriptionLanguage"
     }
 
     enum ModelStorage {
@@ -371,6 +373,13 @@ enum AppConstants {
         static let postRecordingWaitTimeout: Duration = .seconds(5)
         /// Timeout for SpeechTranscriberEngine recognizer finalization
         static let recognizerFinalizationTimeout: Duration = .seconds(10)
+        /// How long to wait after `endAudio()` for the system speech recognizer
+        /// to deliver its last result. Cancelling immediately discarded the
+        /// only copy of a meeting that never emitted `isFinal` mid-session.
+        static let legacyRecognizerFinalTimeout: Duration = .seconds(3)
+        /// Apple's SpeechTranscriber download for some languages never leaves
+        /// "Not Installing". Don't block live captions waiting for it.
+        static let speechAssetDownloadTimeout: Duration = .seconds(8)
 
         /// -- Accessibility / Cross-App --
         /// Brief yield before posting synthetic keyboard events (Cmd+V paste)

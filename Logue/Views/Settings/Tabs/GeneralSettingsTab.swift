@@ -49,6 +49,8 @@ struct GeneralSettingsTab: View {
     @AppStorage(AppConstants.UserDefaultsKeys.groupByDate) private var groupByDate = true
     @AppStorage(AppConstants.UserDefaultsKeys.hasClearedSeedData) private var hasClearedSeedData = false
     @AppStorage(AppConstants.UserDefaultsKeys.autoSaveSummaryToDocument) private var autoSaveSummaryToDocument = true
+    @AppStorage(AppConstants.UserDefaultsKeys.defaultTranscriptionLanguage) private var defaultTranscriptionLanguageRaw =
+        TranscriptionLanguage.auto.rawValue
     @AppStorage(AppConstants.UserDefaultsKeys.sidebarSpaceSortOrder) private var sidebarSpaceSortOrderRaw = SidebarSpaceSortOrder.custom.rawValue
     @AppStorage(AppConstants.UserDefaultsKeys.webSearchEnabled) private var webSearchEnabled = false
 
@@ -174,6 +176,17 @@ struct GeneralSettingsTab: View {
             }
 
             Section("Meetings") {
+                Picker("Default recording language", selection: $defaultTranscriptionLanguageRaw) {
+                    ForEach(TranscriptionLanguage.allCases) { language in
+                        Text(language.label).tag(language.rawValue)
+                    }
+                }
+                Text(
+                    "Live captions and Smart Minutes for new meetings. Override it on a meeting from the Start control."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
                 Toggle(isOn: $autoSaveSummaryToDocument) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Auto-save summary to document")

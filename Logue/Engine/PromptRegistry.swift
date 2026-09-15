@@ -112,24 +112,31 @@ extension PromptRegistry {
         // MARK: Title Generation
 
         /// v1.0.0 — System prompt for generating a meeting title from scratch.
-        static let titleSystem = PromptTemplate(
-            content: withBase(
-                "Generate a short meeting title (3-7 words, title case). "
-                    + "Rules: Do NOT include person names, speaker names, or words like \"Meeting\", \"Discussion\", \"Session\". "
-                    + "The title should be a noun phrase describing the topic, not a sentence. "
-                    + "Output ONLY the title, nothing else."
-            ),
-            version: "1.0.0",
-            key: "meeting.title.system"
-        )
+        static func titleSystem(language: TranscriptionLanguage = .auto) -> PromptTemplate {
+            PromptTemplate(
+                content: withBase(
+                    "Generate a short meeting title (3-7 words). "
+                        + titleLanguageRule(language)
+                        + "Rules: Do NOT include person names, speaker names, or words like \"Meeting\", \"Discussion\", \"Session\". "
+                        + "The title should be a noun phrase describing the topic, not a sentence. "
+                        + "Output ONLY the title, nothing else."
+                ),
+                version: "1.0.0",
+                key: "meeting.title.system"
+            )
+        }
 
         /// v1.0.0 — System prompt for regenerating a title when one already exists.
-        static func titleRegenerateSystem(currentTitle: String) -> PromptTemplate {
+        static func titleRegenerateSystem(
+            currentTitle: String,
+            language: TranscriptionLanguage = .auto
+        ) -> PromptTemplate {
             PromptTemplate(
                 content: withBase(
                     "The current title is: \"\(currentTitle)\". "
                         + "If the topic still matches the current title, return the same title. "
-                        + "Only generate a new title (3-7 words, title case) if the topic has significantly changed. "
+                        + "Only generate a new title (3-7 words) if the topic has significantly changed. "
+                        + titleLanguageRule(language)
                         + "Do NOT include person names or words like \"Meeting\", \"Discussion\", \"Session\". "
                         + "Output ONLY the title, nothing else."
                 ),
@@ -138,10 +145,24 @@ extension PromptRegistry {
             )
         }
 
+        private static func titleLanguageRule(_ language: TranscriptionLanguage) -> String {
+            switch language {
+            case .english:
+                "Use title case. "
+            case .auto:
+                "Write the title in the same language as the transcript. "
+            default:
+                "Write the title in \(language.label). Do not translate it into English. "
+            }
+        }
+
         // MARK: Summary
 
         /// v1.0.0 — System instructions for Smart Minutes JSON generation.
-        static func summaryInstructions(template: MeetingTemplate) -> String {
+        static func summaryInstructions(
+            template: MeetingTemplate,
+            language: TranscriptionLanguage = .auto
+        ) -> String {
             let templateGuidance = templateInstructions(for: template)
 
             return """
@@ -164,6 +185,7 @@ extension PromptRegistry {
             ```
 
             Rules:
+            - \(language.outputLanguageInstruction)
             - CRITICAL: Every value MUST come from the actual transcript content. \
             NEVER use generic placeholders like "Decision 1", "Point 1", "Task description", or "Follow-up item 1"
             - NEVER invent or fabricate content. Only extract what was actually said in the transcript
@@ -185,17 +207,25 @@ extension PromptRegistry {
         }
 
         /// v1.0.0 — System prompt for summary with stricter JSON instructions (retry path).
-        static func summaryStrictSystem(template: MeetingTemplate) -> String {
-            withBase(summaryInstructions(template: template)
+        static func summaryStrictSystem(
+            template: MeetingTemplate,
+            language: TranscriptionLanguage = .auto
+        ) -> String {
+            withBase(summaryInstructions(template: template, language: language)
                 + "\n\nIMPORTANT: You MUST output ONLY a valid JSON object. No text before or after. Start with { and end with }.")
         }
 
         /// v1.0.0 — Fallback system prompt for plain-text summary when JSON fails.
-        static let summaryFallbackSystem = PromptTemplate(
-            content: withBase("Summarize this meeting in 2-3 sentences. Output only the summary, nothing else."),
-            version: "1.0.0",
-            key: "meeting.summary.fallback"
-        )
+        static func summaryFallbackSystem(language: TranscriptionLanguage = .auto) -> PromptTemplate {
+            PromptTemplate(
+                content: withBase(
+                    "Summarize this meeting in 2-3 sentences. \(language.outputLanguageInstruction) "
+                        + "Output only the summary, nothing else."
+                ),
+                version: "1.0.0",
+                key: "meeting.summary.fallback"
+            )
+        }
 
         // MARK: Smart Highlights
 

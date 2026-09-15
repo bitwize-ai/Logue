@@ -11,7 +11,7 @@ import Foundation
 extension RecordingSessionManager {
     /// Creates a single-consumer async stream for audio buffers.
     /// One MainActor Task processes all buffers sequentially, instead of spawning a new Task per buffer.
-    func startAudioBufferConsumer(engine: SpeechTranscriberEngine, diarizer: DiarizationManager) {
+    func startAudioBufferConsumer(diarizer: DiarizationManager) {
         // Clean up any existing stream
         audioBufferContinuation?.finish()
         audioBufferConsumerTask?.cancel()
@@ -19,23 +19,15 @@ extension RecordingSessionManager {
         let (stream, continuation) = AsyncStream<CapturedAudio>.makeStream()
         audioBufferContinuation = continuation
 
-        audioBufferConsumerTask = Task { [weak self, weak engine, weak diarizer] in
+        audioBufferConsumerTask = Task { [weak self, weak diarizer] in
             for await captured in stream {
                 guard !Task.isCancelled else { break }
 
-                // The diarizer and the file get every buffer, always. Only the transcriber is
-                // gated, and only on the microphone: the system tap is already silent when nothing
-                // is playing, and gating it could cost a remote speaker's opening word for nothing.
+                // File and diarizer always get the buffer. Live captions get it too — the
+                // voice-activity gate was swallowing microphone audio (level meter still moved
+                // because it reads the tap directly) so the transcript stayed empty.
                 diarizer?.processAudioBuffer(captured.buffer, from: captured.source)
-
-                guard captured.source == .microphone, let self else {
-                    engine?.streamAudio(captured.buffer)
-                    continue
-                }
-
-                for buffer in await admitToTranscriber(captured.buffer, diarizer: diarizer) {
-                    engine?.streamAudio(buffer)
-                }
+                self?.speechEngine?.streamAudio(captured.buffer)
             }
         }
     }

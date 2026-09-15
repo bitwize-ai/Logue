@@ -71,6 +71,37 @@ enum TranscriptRealignment {
         return words
     }
 
+    /// The transcript to keep after the post-recording batch pass.
+    ///
+    /// Live captions are the shape the reader already has, so their words are
+    /// poured into those lines. When live captions produced nothing for this
+    /// session, that shape does not exist — keeping an empty transcript then
+    /// throws away the batch result. Adopt the batch lines instead, shifted onto
+    /// the meeting timeline.
+    static func keepingLiveShape(
+        live: [TranscriptSegment],
+        batch: [TranscriptSegment],
+        words: [TimedWord],
+        sessionStart: TimeInterval = 0
+    ) -> [TranscriptSegment] {
+        let liveThisSession = live.filter { $0.startTime >= sessionStart }
+        if liveThisSession.isEmpty {
+            guard !batch.isEmpty else { return live }
+            let shifted = batch.map { segment in
+                var copy = segment
+                copy.startTime += sessionStart
+                copy.endTime += sessionStart
+                return copy
+            }
+            return sessionStart == 0 ? shifted : live + shifted
+        }
+        guard !words.isEmpty else { return live }
+        return snappedToSentences(
+            realign(live: live, words: words, sessionStart: sessionStart),
+            sessionStart: sessionStart
+        )
+    }
+
     /// Returns the live segments with their text replaced by the batch words that fall inside them.
     ///
     /// Segments keep their `id`, `startTime`, `endTime` and speaker. A segment no word lands in

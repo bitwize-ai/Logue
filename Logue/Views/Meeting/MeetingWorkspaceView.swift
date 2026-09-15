@@ -94,6 +94,7 @@ struct MeetingWorkspaceView: View {
                         volatileText: recorder.isRecording ? recorder.volatileText : "",
                         bookmarks: meeting.bookmarks,
                         isLive: recorder.isRecording,
+                        captionsPending: recorder.isRecording && recorder.speechEngine == nil,
                         externalScrollTarget: $scrollToSegmentID,
                         onAddBookmark: { timestamp, label, color in
                             let bookmark = Bookmark(label: label, timestamp: timestamp, color: color)
@@ -159,6 +160,9 @@ struct MeetingWorkspaceView: View {
             }
             .task(id: meeting.id) {
                 await takeAutoRecordRequest(for: meeting)
+                if !recorder.isRecording, store.pendingAutoRecord != meeting.id {
+                    await recorder.transcribeSavedRecordingIfEmpty(for: meeting.id)
+                }
             }
             // Retried whenever the recorder frees up — a rebuild finishing, or the previous
             // session finishing being written. The `.task` above re-runs on a change of meeting,
@@ -250,7 +254,8 @@ extension MeetingWorkspaceView {
                 RecordingStatusView(
                     elapsedTime: recorder.elapsedTime,
                     audioLevel: recorder.audioLevel,
-                    isCapturingSystemAudio: recorder.isCapturingSystemAudio
+                    isCapturingSystemAudio: recorder.isCapturingSystemAudio,
+                    isMicActive: recorder.isMicActive
                 )
             }
         }
@@ -270,7 +275,7 @@ extension MeetingWorkspaceView {
                 } label: {
                     Image(systemName: recorder.isMicActive ? "mic.fill" : "mic.slash.fill")
                         .font(.caption)
-                        .foregroundStyle(recorder.isMicActive ? .primary : .secondary)
+                        .foregroundStyle(recorder.isMicActive ? AppThemeConstants.error : .secondary)
                 }
                 .help(recorder.isMicActive ? "Mute microphone" : "Unmute microphone")
             }
@@ -360,17 +365,42 @@ extension MeetingWorkspaceView {
     }
 
     func startRecordingButton(for meeting: MeetingNote) -> some View {
-        Button {
-            startSmartRecording(for: meeting)
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "record.circle")
-                Text("Start")
+        let selected = TranscriptionLanguage.resolved(fromStored: meeting.transcriptionLanguage)
+        return ControlGroup {
+            Button {
+                startSmartRecording(for: meeting)
+            } label: {
+                Label("Start", systemImage: "record.circle")
             }
+            .keyboardShortcut("r", modifiers: .command)
+            .help("Start Recording (⌘R)")
+            .accessibilityLabel("Start recording")
+
+            Menu {
+                ForEach(TranscriptionLanguage.allCases) { language in
+                    Button {
+                        setMeetingLanguage(language, for: meeting)
+                    } label: {
+                        if language == selected {
+                            Label(language.label, systemImage: "checkmark")
+                        } else {
+                            Text(language.label)
+                        }
+                    }
+                }
+            } label: {
+                Text(selected.label)
+            }
+            .help("Recording language for this meeting. Defaults to Settings → General.")
+            .accessibilityLabel("Recording language")
+            .accessibilityValue(selected.label)
         }
-        .keyboardShortcut("r", modifiers: .command)
-        .accessibilityLabel("Start recording")
-        .help("Start Recording (⌘R)")
+    }
+
+    func setMeetingLanguage(_ language: TranscriptionLanguage, for meeting: MeetingNote) {
+        var updated = meeting
+        updated.transcriptionLanguage = language.rawValue
+        store.updateMeeting(updated)
     }
 
     func quickBookmarkButton(for meeting: MeetingNote) -> some View {
@@ -432,6 +462,15 @@ extension MeetingWorkspaceView {
                 systemImage: meeting.isArchived ? "tray.and.arrow.up" : "archivebox"
             )
         }
+        transcribeRecordingButton(for: meeting)
+        Button {
+            Task { @MainActor in
+                await store.generateAISummary(for: meeting.id)
+            }
+        } label: {
+            Label("Regenerate Smart Minutes", systemImage: "arrow.clockwise")
+        }
+        .disabled(meeting.segments.isEmpty || LLMEngineStatus.shared.isBusy)
         Button {
             Task { @MainActor in
                 await store.regenerateAITitle(for: meeting.id)
@@ -439,7 +478,7 @@ extension MeetingWorkspaceView {
         } label: {
             Label("Generate Title", systemImage: "sparkles")
         }
-        .disabled(meeting.segments.isEmpty)
+        .disabled(meeting.segments.isEmpty || LLMEngineStatus.shared.isBusy)
         Button {
             renameText = meeting.title
             showRenameAlert = true
@@ -462,6 +501,20 @@ extension MeetingWorkspaceView {
             showDeleteConfirmation = true
         } label: {
             Label("Delete Meeting", systemImage: "trash")
+        }
+    }
+
+    @ViewBuilder
+    func transcribeRecordingButton(for meeting: MeetingNote) -> some View {
+        if meeting.segments.isEmpty {
+            Button {
+                Task { @MainActor in
+                    await recorder.transcribeSavedRecordingIfEmpty(for: meeting.id)
+                }
+            } label: {
+                Label("Transcribe Recording", systemImage: "waveform")
+            }
+            .disabled(recorder.isDiarizing(for: meeting.id) || recorder.isRecording)
         }
     }
 
@@ -847,14 +900,14 @@ extension MeetingWorkspaceView {
 
 /// Compact recording status shown in the macOS toolbar during active recording.
 ///
-/// Says what is being captured; it does not offer to change it. The microphone has no indicator
-/// here because the mute button sitting beside this capsule already shows its state and is the one
-/// control for it — two mic glyphs an inch apart was what made automatic capture still look like a
-/// pair of toggles.
+/// Says what is being captured; it does not offer to change it. The mute button beside this
+/// capsule is the control; the mic glyph here is only status, so the level meter is not the
+/// only sign that the microphone is live.
 struct RecordingStatusView: View {
     let elapsedTime: TimeInterval
     let audioLevel: Float
     var isCapturingSystemAudio: Bool = false
+    var isMicActive: Bool = true
 
     var body: some View {
         HStack(spacing: 8) {
@@ -870,10 +923,16 @@ struct RecordingStatusView: View {
             AudioLevelMeter(level: audioLevel)
                 .frame(width: 64, height: 14)
 
+            Image(systemName: isMicActive ? "mic.fill" : "mic.slash.fill")
+                .font(.caption2)
+                .foregroundStyle(isMicActive ? AppThemeConstants.error : .secondary)
+                .accessibilityLabel(isMicActive ? "Microphone recording" : "Microphone muted")
+
             if isCapturingSystemAudio {
                 Image(systemName: "display")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("System audio recording")
                     .help("Also capturing system audio")
             }
         }

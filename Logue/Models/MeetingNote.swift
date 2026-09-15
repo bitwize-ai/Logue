@@ -260,6 +260,40 @@ struct SmartMinutes: Codable {
     var attendeeSummary: [AttendeeContribution]
 }
 
+/// Localized section titles for the notes document exported from Smart Minutes.
+struct MinutesMarkdownHeadings {
+    let date: String
+    let duration: String
+    let keyDecisions: String
+    let discussionPoints: String
+    let actionItems: String
+    let followUps: String
+    let attendees: String
+    let topics: String
+
+    static let english = MinutesMarkdownHeadings(
+        date: "Date",
+        duration: "Duration",
+        keyDecisions: "Key Decisions",
+        discussionPoints: "Discussion Points",
+        actionItems: "Action Items",
+        followUps: "Follow-ups",
+        attendees: "Attendees",
+        topics: "Topics"
+    )
+
+    static let german = MinutesMarkdownHeadings(
+        date: "Datum",
+        duration: "Dauer",
+        keyDecisions: "Wichtige Entscheidungen",
+        discussionPoints: "Diskussionspunkte",
+        actionItems: "Aufgaben",
+        followUps: "Nächste Schritte",
+        attendees: "Teilnehmer",
+        topics: "Themen"
+    )
+}
+
 /// Summary of a single attendee's contributions during the meeting.
 struct AttendeeContribution: Codable, Identifiable {
     var id: String {
@@ -377,9 +411,36 @@ enum TranscriptionLanguage: String, CaseIterable, Identifiable {
         rawValue
     }
 
+    /// Prompt fragment so Smart Minutes match the recording language, not the Mac or the model default.
+    var outputLanguageInstruction: String {
+        switch self {
+        case .auto:
+            """
+            Write every human-readable value (summary, keyDecisions, discussionPoints, \
+            actionItems, followUps, attendee keyPoints, topicKeywords) in the same language as the transcript. \
+            Keep JSON keys in English. Do not translate person names.
+            """
+        default:
+            """
+            Write every human-readable value (summary, keyDecisions, discussionPoints, \
+            actionItems, followUps, attendee keyPoints, topicKeywords) in \(label). \
+            Keep JSON keys in English. Do not translate person names. \
+            Do not translate into English unless the transcript is English.
+            """
+        }
+    }
+
+    /// Section titles for the notes document exported from Smart Minutes.
+    var minutesMarkdownHeadings: MinutesMarkdownHeadings {
+        switch self {
+        case .german: .german
+        default: .english
+        }
+    }
+
     var label: String {
         switch self {
-        case .auto: "Auto-detect"
+        case .auto: "Auto"
         case .english: "English"
         case .spanish: "Spanish"
         case .french: "French"
@@ -398,7 +459,8 @@ enum TranscriptionLanguage: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Returns the Locale for SpeechTranscriber, or nil for auto-detect (uses system default).
+    /// Canonical locale for an explicit language. `auto` is `nil` — resolve via
+    /// `resolvedSpeechLocale(preferredLanguages:)` so it follows the Mac, not en-US.
     var locale: Locale? {
         switch self {
         case .auto: nil
@@ -419,6 +481,129 @@ enum TranscriptionLanguage: String, CaseIterable, Identifiable {
         case .polish: Locale(identifier: "pl-PL")
         }
     }
+
+    /// Language stored on a meeting, or the app default when the meeting never chose one.
+    static func resolved(fromStored raw: String?, defaults: UserDefaults = .standard) -> TranscriptionLanguage {
+        if let raw, let language = TranscriptionLanguage(rawValue: raw) {
+            return language
+        }
+        return storedDefault(from: defaults)
+    }
+
+    static func storedDefault(from defaults: UserDefaults = .standard) -> TranscriptionLanguage {
+        let raw = defaults.string(forKey: AppConstants.UserDefaultsKeys.defaultTranscriptionLanguage)
+        return TranscriptionLanguage(rawValue: raw ?? TranscriptionLanguage.auto.rawValue) ?? .auto
+    }
+
+    /// Locale to hand `SpeechTranscriber`. Auto walks preferred languages rather than
+    /// assuming English — Apple's live ASR still needs one locale per session, so this
+    /// is the Mac's language list, not detection of what is being spoken.
+    func resolvedSpeechLocale(
+        preferredLanguages: [String] = Locale.preferredLanguages,
+        fallback: Locale = .current
+    ) -> Locale {
+        if let locale {
+            return locale
+        }
+        return Self.localeMatchingPreferredLanguages(preferredLanguages, fallback: fallback)
+    }
+
+    static func localeMatchingPreferredLanguages(
+        _ preferred: [String],
+        fallback: Locale = .current
+    ) -> Locale {
+        for identifier in preferred {
+            let preferredLocale = Locale(identifier: identifier)
+            guard let code = preferredLocale.language.languageCode?.identifier,
+                  let match = TranscriptionLanguage(rawValue: code),
+                  match != .auto
+            else { continue }
+            // Prefer the canonical Speech locale (`de-DE`) over a bare language
+            // tag (`de`). Apple's asset catalog names models `transcription.de`
+            // when the region is missing, and that download fails.
+            return match.locale ?? preferredLocale
+        }
+        return fallback
+    }
+
+    /// Locales to try for live ASR, in order: Apple's equivalent, then every
+    /// supported locale of the same language (`de-AT` after `de-DE`).
+    static func speechLocaleCandidates(
+        requested: Locale,
+        equivalent: Locale?,
+        supported: [Locale]
+    ) -> [Locale] {
+        var candidates: [Locale] = []
+        var seen = Set<String>()
+        func append(_ locale: Locale) {
+            let key = locale.identifier(.bcp47)
+            guard seen.insert(key).inserted else { return }
+            candidates.append(locale)
+        }
+        if let equivalent {
+            append(equivalent)
+        }
+        if let match = matchingLocale(for: requested, in: supported) {
+            append(match)
+        }
+        if let language = requested.language.languageCode?.identifier {
+            for locale in supported where locale.language.languageCode?.identifier == language {
+                append(locale)
+            }
+        }
+        if candidates.isEmpty {
+            append(requested)
+        }
+        return candidates
+    }
+
+    /// Apple's SpeechTranscriber download for some languages (German, Arabic, …)
+    /// fails with `transcription.<lang> … Not Installing` even when the locale is
+    /// listed as supported. Those errors should fall through to DictationTranscriber.
+    static func isSpeechAssetUnavailable(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("not installing")
+            || lower.contains("asset unavailable")
+            || lower.contains("asset not found")
+    }
+
+    /// Picks the closest installed Speech locale for `requested`.
+    /// Exact identifier / BCP-47 first, then same language code (`de-AT` → `de-DE`).
+    static func matchingLocale(for requested: Locale, in supported: [Locale]) -> Locale? {
+        let requestedID = requested.identifier
+        let requestedBCP47 = requested.identifier(.bcp47)
+        if let exact = supported.first(where: {
+            $0.identifier == requestedID || $0.identifier(.bcp47) == requestedBCP47
+        }) {
+            return exact
+        }
+        guard let requestedLang = requested.language.languageCode?.identifier else { return nil }
+        return supported.first { $0.language.languageCode?.identifier == requestedLang }
+    }
+
+    /// Resolves which locale the transcriber should actually run.
+    /// Empty `supported` means assets have not been enumerated yet — keep the request.
+    /// English fallbacks are only used for Auto, never when the user picked a language.
+    static func workingLocale(
+        requested: Locale,
+        supported: [Locale],
+        fallbacks: [Locale],
+        allowLanguageFallback: Bool
+    ) -> Locale? {
+        if let matched = matchingLocale(for: requested, in: supported) {
+            return matched
+        }
+        if supported.isEmpty {
+            return requested
+        }
+        guard allowLanguageFallback else { return nil }
+        for fallback in fallbacks {
+            if let matched = matchingLocale(for: fallback, in: supported) {
+                return matched
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - Markdown Export
@@ -426,22 +611,23 @@ enum TranscriptionLanguage: String, CaseIterable, Identifiable {
 extension MeetingNote {
     /// Builds a Markdown representation of this meeting's Smart Minutes.
     func smartMinutesMarkdown() -> String {
+        let headings = TranscriptionLanguage.resolved(fromStored: transcriptionLanguage).minutesMarkdownHeadings
         var content = "# \(title)\n\n"
-        content += "**Date:** \(createdAt.formatted())  \n"
-        content += "**Duration:** \(formattedDuration)\n\n"
+        content += "**\(headings.date):** \(createdAt.formatted())  \n"
+        content += "**\(headings.duration):** \(formattedDuration)\n\n"
 
         if let summary, !summary.isEmpty {
             content += summary + "\n\n"
         }
 
         if let minutes = smartMinutes {
-            content += minutes.toMarkdown()
+            content += minutes.toMarkdown(headings: headings)
         } else if let summary {
             content += summary + "\n"
         }
 
         if !topicKeywords.isEmpty {
-            content += "## Topics\n\n"
+            content += "## \(headings.topics)\n\n"
             content += topicKeywords.joined(separator: ", ") + "\n"
         }
 
@@ -451,13 +637,13 @@ extension MeetingNote {
 
 extension SmartMinutes {
     /// Formats the structured minutes as Markdown sections.
-    func toMarkdown() -> String {
+    func toMarkdown(headings: MinutesMarkdownHeadings = .english) -> String {
         var content = ""
-        content += markdownSection("Key Decisions", items: keyDecisions)
-        content += markdownSection("Discussion Points", items: discussionPoints)
-        content += markdownChecklistSection("Action Items", items: actionItems)
-        content += markdownSection("Follow-ups", items: followUps)
-        content += attendeeMarkdown()
+        content += markdownSection(headings.keyDecisions, items: keyDecisions)
+        content += markdownSection(headings.discussionPoints, items: discussionPoints)
+        content += markdownChecklistSection(headings.actionItems, items: actionItems)
+        content += markdownSection(headings.followUps, items: followUps)
+        content += attendeeMarkdown(title: headings.attendees)
         return content
     }
 
@@ -479,9 +665,9 @@ extension SmartMinutes {
         return content + "\n"
     }
 
-    private func attendeeMarkdown() -> String {
+    private func attendeeMarkdown(title: String) -> String {
         guard !attendeeSummary.isEmpty else { return "" }
-        var content = "## Attendees\n\n"
+        var content = "## \(title)\n\n"
         for attendee in attendeeSummary {
             content += "### \(attendee.name)"
             if attendee.speakingTimePercent > 0 {

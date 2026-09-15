@@ -161,21 +161,32 @@ extension RecordingSessionManager {
         // Adopting them re-cut the transcript the user had been reading. So its words are poured
         // into the live segments instead: every line keeps its identity, its start and its end, and
         // only the text inside improves.
-        if let batchSegments, !diarizer.lastBatchWords.isEmpty,
+        //
+        // When live captions produced no lines, there is nothing to pour into. Keeping the empty
+        // live transcript then discards the batch result — which is how a recorded meeting ended
+        // with 71 ASR segments and zero text. Adopt the batch lines in that case.
+        if let batchSegments, !batchSegments.isEmpty,
            let meeting = MeetingStore.shared.meetings.first(where: { $0.id == meetingID })
         {
-            let realigned = TranscriptRealignment.snappedToSentences(
-                TranscriptRealignment.realign(
-                    live: meeting.segments,
-                    words: diarizer.lastBatchWords,
-                    sessionStart: sessionStart
-                ),
+            let kept = TranscriptRealignment.keepingLiveShape(
+                live: meeting.segments,
+                batch: batchSegments,
+                words: diarizer.lastBatchWords,
                 sessionStart: sessionStart
             )
-            MeetingStore.shared.updateSegments(realigned, for: meetingID)
-            logger.info(
-                "Realigned \(batchSegments.count) batch segment(s) onto \(realigned.count) live line(s)"
-            )
+            let liveCount = meeting.segments.filter { $0.startTime >= sessionStart }.count
+            if kept != meeting.segments {
+                MeetingStore.shared.updateSegments(kept, for: meetingID)
+            }
+            if liveCount == 0 {
+                logger.info(
+                    "Live captions were empty — adopted \(batchSegments.count) batch segment(s)"
+                )
+            } else {
+                logger.info(
+                    "Realigned \(batchSegments.count) batch segment(s) onto \(kept.count) live line(s)"
+                )
+            }
         }
 
         if let updates = sortformerUpdates {

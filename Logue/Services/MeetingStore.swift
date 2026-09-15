@@ -180,7 +180,13 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
         inSpace spaceID: UUID? = nil
     ) -> MeetingNote {
         let deduped = uniqueTitle(title, among: activeMeetings.map(\.title))
-        let meeting = MeetingNote(title: deduped, recordingMode: mode, template: template, spaceID: spaceID)
+        let meeting = MeetingNote(
+            title: deduped,
+            recordingMode: mode,
+            template: template,
+            transcriptionLanguage: TranscriptionLanguage.storedDefault().rawValue,
+            spaceID: spaceID
+        )
         meetings.insert(meeting, at: 0)
         rebuildIndexMap()
         selectedMeetingID = meeting.id
@@ -193,7 +199,13 @@ final class MeetingStore: MeetingRepository, MeetingSegmentManager, MeetingSpeak
     func createVoiceNote(inSpace spaceID: UUID? = nil) -> MeetingNote {
         let baseTitle = "Voice Note \(Date.now.formatted(date: .abbreviated, time: .shortened))"
         let deduped = uniqueTitle(baseTitle, among: activeMeetings.map(\.title))
-        let note = MeetingNote(title: deduped, recordingMode: .voiceNote, template: .general, spaceID: spaceID)
+        let note = MeetingNote(
+            title: deduped,
+            recordingMode: .voiceNote,
+            template: .general,
+            transcriptionLanguage: TranscriptionLanguage.storedDefault().rawValue,
+            spaceID: spaceID
+        )
         meetings.insert(note, at: 0)
         rebuildIndexMap()
         selectedMeetingID = note.id

@@ -23,6 +23,7 @@ struct TranscriptTimelineView: View {
     var volatileText: String = ""
     var bookmarks: [Bookmark] = []
     let isLive: Bool
+    var captionsPending: Bool = false
     @Binding var externalScrollTarget: UUID?
     var onAddBookmark: ((TimeInterval, String, BookmarkColor) -> Void)?
     var onRemoveBookmark: ((UUID) -> Void)?
@@ -350,10 +351,14 @@ struct TranscriptTimelineView: View {
             if isLive {
                 ProgressView()
                     .scaleEffect(0.8)
-                Text("Listening...")
+                Text(captionsPending ? "Starting live captions…" : "Listening...")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text("Transcript will appear here as you speak.")
+                Text(
+                    captionsPending
+                        ? "Audio is being recorded. Captions attach when the speech model is ready."
+                        : "Transcript will appear here as you speak."
+                )
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             } else {

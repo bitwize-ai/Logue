@@ -103,6 +103,19 @@ struct TranscriptReplacementTests {
         #expect(result.map(\.text) == ["batch"])
     }
 
+    @Test("An empty live transcript is filled by the batch result")
+    func emptyLiveIsFilledFromBatch() {
+        let result = TranscriptReplacement.merged(
+            existing: [],
+            batch: [segment("heard this", 0, 4), segment("and this", 4, 8)],
+            sessionStart: 0,
+            heardDuration: nil
+        )
+        #expect(result.map(\.text) == ["heard this", "and this"])
+        #expect(result[0].startTime == 0)
+        #expect(result[1].endTime == 8)
+    }
+
     @Test("Merged output is ordered by start time")
     func outputIsSorted() {
         let existing = [
