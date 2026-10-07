@@ -123,6 +123,49 @@ struct AgentToolTimelineTests {
         #expect(entry?.call.status == .failed, "the card reads the call, so it has to carry it too")
     }
 
+    // MARK: - The turn in flight
+
+    @Test("An approval abandoned in an earlier turn is not this turn's")
+    func staleApprovalIsLeftBehind() {
+        // Stop a run while its approval card is up and no result is ever posted for the
+        // call, so it reads as awaiting approval for the rest of the conversation. Asked of
+        // the whole thread, "is the user being waited on" then answers yes forever.
+        let abandoned = call(status: .needsConfirmation)
+        let messages = [
+            AgentMessage(role: .user, content: "delete it"),
+            callMessage([abandoned]),
+            AgentMessage(role: .user, content: "never mind, what is in it?"),
+            AgentMessage(role: .assistant, content: ""),
+        ]
+        #expect(AgentToolTimeline.awaitingApproval(in: messages).map(\.id) == [abandoned.id])
+        #expect(AgentToolTimeline.unansweredInCurrentTurn(in: messages).isEmpty)
+    }
+
+    @Test("An approved call is still unanswered until its result arrives")
+    func runningCallIsStillUnanswered() {
+        // Approve flips the card to running before the Touch ID sheet and before the tool
+        // has done anything. The pause it explains is not over.
+        let approved = call(status: .running)
+        let messages = [AgentMessage(role: .user, content: "delete it"), callMessage([approved])]
+        #expect(AgentToolTimeline.unansweredInCurrentTurn(in: messages).map(\.id) == [approved.id])
+        #expect(AgentToolTimeline.unansweredInCurrentTurn(in: messages + [resultMessage(for: approved.id)]).isEmpty)
+    }
+
+    @Test("An approval asked for in this turn is this turn's")
+    func currentApprovalIsFound() {
+        let asked = call(status: .needsConfirmation)
+        let messages = [
+            AgentMessage(role: .user, content: "earlier"),
+            AgentMessage(role: .assistant, content: "done"),
+            AgentMessage(role: .user, content: "delete it"),
+            callMessage([asked]),
+        ]
+        #expect(AgentToolTimeline.unansweredInCurrentTurn(in: messages).map(\.id) == [asked.id])
+        // Answered, it is no longer waiting.
+        let answered = messages + [resultMessage(for: asked.id)]
+        #expect(AgentToolTimeline.unansweredInCurrentTurn(in: answered).isEmpty)
+    }
+
     @Test("A conversation with no tool calls has no entries")
     func plainConversationHasNoEntries() {
         let messages = [

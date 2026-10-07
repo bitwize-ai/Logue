@@ -27,8 +27,14 @@ enum DisplayText {
         // becoming `firstsecond`, which reads as a different value rather than a flattened
         // one. So: take out the controls that carry no meaning, then let the split turn the
         // ones that do into a single space.
+        //
+        // The exemption is for whitespace that takes up room. Foundation also counts the
+        // zero-width space (U+200B) as whitespace, and it is a format character: exempted,
+        // it came out the other side as a real space, so an invisible character in `ab`
+        // rendered as `a b`. Format characters go regardless of what else they are.
         let scrubbed = value.unicodeScalars.filter { scalar in
-            !CharacterSet.controlCharacters.contains(scalar)
+            guard scalar.properties.generalCategory != .format else { return false }
+            return !CharacterSet.controlCharacters.contains(scalar)
                 || CharacterSet.whitespacesAndNewlines.contains(scalar)
         }
         return String(String.UnicodeScalarView(scrubbed))
@@ -45,5 +51,28 @@ enum DisplayText {
         guard value.count > limit else { return value }
         guard limit > 1 else { return String(value.prefix(limit)) }
         return String(value.prefix(limit - 1)) + "…"
+    }
+
+    /// Cuts to `limit` from the middle, keeping both ends.
+    ///
+    /// For a value whose end is the part that tells it apart — a path, where the folders are
+    /// shared by every file beside it and the filename is last. Cut from the tail, two
+    /// different files in one deep folder produce the same sentence. The end gets the larger
+    /// share for that reason; the start is kept so `/Volumes/…` and `~/…` still differ.
+    static func clampMiddle(_ value: String, to limit: Int) -> String {
+        guard value.count > limit else { return value }
+        guard limit > 2 else { return clamp(value, to: limit) }
+        let head = (limit - 1) / 3
+        let tail = limit - 1 - head
+        return String(value.prefix(head)) + "…" + String(value.suffix(tail))
+    }
+
+    /// Cuts to `limit` from the start, keeping the end.
+    ///
+    /// For a host name, which reads right to left: the part that says whose it is comes last.
+    static func clampStart(_ value: String, to limit: Int) -> String {
+        guard value.count > limit else { return value }
+        guard limit > 1 else { return String(value.suffix(limit)) }
+        return "…" + String(value.suffix(limit - 1))
     }
 }

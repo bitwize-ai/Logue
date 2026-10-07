@@ -73,6 +73,8 @@ struct ToolArgumentSummaryTests {
             let value = String(repeating: "c", count: length)
             let summary = ToolArgumentSummary.summary(fromJSON: #"{"k":"\#(value)"}"#)
             #expect(summary.count <= ToolArgumentSummary.maxTotalLength)
+            // The value's own budget, which is the boundary 47, 48 and 49 are here to walk.
+            #expect(summary.dropFirst("k: ".count).count <= ToolArgumentSummary.maxValueLength)
         }
     }
 
@@ -92,6 +94,15 @@ struct ToolArgumentSummaryTests {
     func whitespaceIsCollapsed() {
         let summary = ToolArgumentSummary.summary(fromJSON: #"{"t":"a     b\t\tc"}"#)
         #expect(summary == "t: a b c")
+    }
+
+    @Test("A key is scrubbed like a value")
+    func keysAreScrubbedToo() {
+        // The key is the model's text as much as the value is. Only values were flattened,
+        // so a bidi override or a newline in a key went straight onto the card.
+        let summary = ToolArgumentSummary.summary(fromJSON: #"{"a\u202Eb\nc":"x"}"#)
+        #expect(summary.unicodeScalars.contains { $0.value == 0x202E } == false)
+        #expect(summary == "ab c: x")
     }
 
     // MARK: - Nothing to show

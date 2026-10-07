@@ -37,23 +37,4 @@ struct IslandMotionTests {
         #expect(IslandMotion.control(reduceMotion: true) == nil)
         #expect(IslandMotion.control(reduceMotion: false) != nil)
     }
-
-    @Test("Nothing animates at all when motion is reduced")
-    func nothingSurvivesUnnoticed() {
-        // A sweep, so a new animation added to the policy without a reduced branch fails
-        // here rather than shipping.
-        #expect(IslandMotion.layout(reduceMotion: true) == nil)
-        #expect(IslandMotion.control(reduceMotion: true) == nil)
-        #expect(IslandMotion.allowsPulse(reduceMotion: true) == false)
-        #expect(IslandMotion.entrance(reduceMotion: true) == .fadeOnly)
-    }
-
-    @Test("Ordinary settings keep every animation")
-    func normalSettingsAreUnchanged() {
-        // The other half: this must not quietly flatten the island for everyone.
-        #expect(IslandMotion.layout(reduceMotion: false) != nil)
-        #expect(IslandMotion.control(reduceMotion: false) != nil)
-        #expect(IslandMotion.allowsPulse(reduceMotion: false))
-        #expect(IslandMotion.entrance(reduceMotion: false) == .slideAndFade)
-    }
 }

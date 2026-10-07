@@ -52,7 +52,8 @@ struct IslandSurfaceTests {
     @Test("Every treatment keeps the scrim above the floor")
     func scrimNeverFallsBelowTheFloor() {
         // The failure this guards: glass with no veil over a white document is white text on
-        // a white panel. Delete the scrim from `treatment` and this goes red for every case.
+        // a white panel. `treatment` holds the glass case to the floor itself; this is what
+        // says the floor is still there for every combination of settings.
         for reduceTransparency in [false, true] {
             for increaseContrast in [false, true] {
                 let result = treatment(

@@ -8,9 +8,8 @@ import Foundation
 /// with a pulsing dot and a status line. The island filled it with a literal `"..."` rendered
 /// as markdown, and before the assistant message existed at all it filled it with nothing.
 ///
-/// The wording already had one definition in `UICopy.Status.describe(toolName:)`. This is the
-/// other half — *when* to show it — which was written out longhand at each place that needed
-/// it, and therefore came out differently at each place.
+/// *When* to show it was written out longhand at each place that needed it, and therefore
+/// came out differently at each place. This is the one definition both surfaces ask.
 ///
 /// Free of SwiftUI so the matrix is testable without a view.
 enum AgentThinkingState {
@@ -20,25 +19,38 @@ enum AgentThinkingState {
     ///   - pendingAnswerText: what has arrived of the answer being produced *now*. Empty
     ///     while nothing has. Deliberately not "the last assistant message", which is the
     ///     previous answer and is non-empty for the whole of the next gap.
-    ///   - hasActiveToolCard: a tool card is on screen saying what is happening. Two things
-    ///     claiming to explain the same pause is worse than one.
+    ///   - hasActiveToolCard: a tool card is on screen saying what is happening — which
+    ///     includes one waiting for approval, where the pause is the user's and a row claiming
+    ///     the model is thinking would be untrue for as long as they take to answer. Two
+    ///     things claiming to explain the same pause is worse than one.
     static func showsThinking(
         isProcessing: Bool,
         isStreaming: Bool,
         pendingAnswerText: String,
-        hasActiveToolCard: Bool
+        hasActiveToolCard: @autoclosure () -> Bool
     ) -> Bool {
         guard isProcessing || isStreaming else { return false }
-        guard !hasActiveToolCard else { return false }
-        return pendingAnswerText.isEmpty
+        guard pendingAnswerText.isEmpty else { return false }
+        // Asked last, and only if it can still matter: answering it reads the conversation,
+        // and this runs on every render while tokens stream.
+        return !hasActiveToolCard()
     }
 
-    /// What the row should say, given whatever the agent is doing.
+    /// Whether a tool card is already explaining the pause.
     ///
-    /// Delegates rather than restating: the strings are `UICopy`'s, and a second copy of the
-    /// mapping is how one surface starts saying "Thinking…" while the other says "Searching
-    /// the web…" about the same run.
-    static func label(activeToolName: String?) -> String {
-        UICopy.Status.describe(toolName: activeToolName)
+    /// A call waiting for approval counts — nothing is being thought about while the user
+    /// decides — and so does one approved and still running, but only from the turn now in
+    /// flight. See `AgentToolTimeline.unansweredInCurrentTurn` for the card a stopped run
+    /// leaves behind.
+    static func hasToolCard(activeToolCalls: [AgentToolCall], messages: [AgentMessage]) -> Bool {
+        !activeToolCalls.isEmpty
+            || !AgentToolTimeline.unansweredInCurrentTurn(in: messages).isEmpty
     }
+
+    /// What the row says.
+    ///
+    /// One string, not a mapping from the running tool: the row is hidden whenever a tool
+    /// card is showing, so it is never handed a tool to name. Stated here so both surfaces
+    /// take the wording from the same place as the rule for showing it.
+    static let label = UICopy.Status.thinking
 }

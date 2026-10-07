@@ -247,7 +247,7 @@ struct AgentChatView: View {
 
     /// The workspace as the chip rules see it.
     ///
-    /// Read once and used for both the empty state and the chips, so the two cannot
+    /// One reading, used for both the empty state and the chips, so the two cannot
     /// disagree. They were separate readings until the island needed the same rule: two
     /// definitions is how a workspace with spaces but no documents gets first-run chips
     /// above a set of cards that have all self-hidden.
@@ -262,7 +262,7 @@ struct AgentChatView: View {
     }
 
     /// Derived fresh each render from the stores — no inference, no caching. The rules live
-    /// in `HomeSuggestions` and the reading of the workspace in `+Inputs`, so the island can
+    /// in `HomeSuggestions` and the reading of the workspace in `HomeSuggestionsInputs`, so the island can
     /// offer the same chips rather than growing its own list.
     private var suggestionChips: [HomeSuggestions.Chip] {
         HomeSuggestions.chips(for: suggestionInputs)

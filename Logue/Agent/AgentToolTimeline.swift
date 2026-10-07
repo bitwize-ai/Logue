@@ -104,4 +104,22 @@ enum AgentToolTimeline {
             .filter { $0.status == .needsConfirmation }
             .map(\.call)
     }
+
+    /// The calls with a card on screen and no answer yet, in the turn now in flight — since
+    /// the last user message.
+    ///
+    /// Waiting for approval, or approved and running: both are a card explaining a pause.
+    /// Approval alone would end at the click on Approve, which is before the Touch ID sheet
+    /// a dangerous tool raises and before the tool has done anything.
+    ///
+    /// Bounded to the current turn on purpose. A run stopped while a card was up never posts
+    /// a result for that call, so it reads as unanswered for the rest of the conversation.
+    /// Anything asking "is a tool being waited on *now*" has to leave those behind, or one
+    /// cancelled approval answers yes forever.
+    static func unansweredInCurrentTurn(in messages: [AgentMessage]) -> [AgentToolCall] {
+        let turn = messages.lastIndex { $0.role == .user }.map { Array(messages[$0...]) } ?? messages
+        return entries(in: turn)
+            .filter { $0.status == .needsConfirmation || $0.status == .running }
+            .map(\.call)
+    }
 }

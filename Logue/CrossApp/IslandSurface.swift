@@ -71,7 +71,9 @@ enum IslandSurface {
         }
         return Treatment(
             usesMaterial: true,
-            scrimOpacity: increaseContrast ? 0.55 : 0.3,
+            // Held to the floor here rather than only checked by a test, so retuning either
+            // number cannot take the veil below what keeps white text readable.
+            scrimOpacity: max(increaseContrast ? 0.55 : 0.3, minimumScrimOpacity),
             strokeOpacity: increaseContrast ? 0.55 : 0.12,
             shadowOpacity: 0.35
         )

@@ -120,13 +120,10 @@ final class AgentCoordinator {
     /// when either the Settings master toggle is on or a per-send override
     /// (`oneShotIncludeWebTools`) is set.
     private func buildToolRegistry() -> [any AgentTool] {
-        // Web search tools — registered when the Settings master toggle is on OR when a
-        // per-send override (the input bar's one-shot Search toggle) is active for this run.
         let userOptedIn = UserDefaults.standard.bool(forKey: AppConstants.UserDefaultsKeys.webSearchEnabled)
         let includeWebTools = userOptedIn || oneShotIncludeWebTools
-        let webNames = Set(Self.webTools().map(\.name))
 
-        var tools = Self.allKnownTools().filter { includeWebTools || !webNames.contains($0.name) }
+        var tools = Self.localTools() + (includeWebTools ? Self.webTools() : [])
 
         // Phase A: per-tool enable/disable filter. The AISettingsTab persists
         // a set of tool names the user has explicitly turned off (e.g. "I
@@ -146,13 +143,17 @@ final class AgentCoordinator {
     /// lacks a sentence explaining what it is about to do. A separate list would go stale
     /// exactly when it mattered: the day someone adds a destructive tool.
     static func allKnownTools() -> [any AgentTool] {
+        localTools() + webTools()
+    }
+
+    /// Everything except the web tools — always registered, opt-in or not.
+    private static func localTools() -> [any AgentTool] {
         readOnlyTools()
             + writeTools()
             + aiContentTools()
             + appleNativeTools()
             + computeAndDialogTools()
             + fileSystemTools()
-            + webTools()
     }
 
     /// Reaching off the machine, so registered only on an explicit opt-in.
@@ -163,7 +164,7 @@ final class AgentCoordinator {
     // MARK: - Tool registry shards
 
     //
-    // The full registry is composed from these helpers in `buildToolRegistry`.
+    // The full registry is composed from these helpers in `localTools`.
     // Splitting keeps each function under SwiftLint's body-length cap and
     // gives a single place to look up which tools exist in each category.
 

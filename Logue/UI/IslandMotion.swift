@@ -16,6 +16,11 @@ import SwiftUI
 ///
 /// The level meter is deliberately untouched. Its movement *is* the reading — a still meter
 /// is not a calmer meter, it is a broken one.
+///
+/// Separate from `Motion`, which answers the same setting differently on purpose: it reads
+/// the system flag itself and swaps a spring for a short ease, which suits a window. Here the
+/// setting arrives as a parameter, from the SwiftUI environment, so a view re-renders when it
+/// changes and the policy is testable — and a spring is removed rather than shortened.
 enum IslandMotion {
     /// How something arriving or leaving should be drawn.
     enum Entrance: Equatable {

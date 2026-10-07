@@ -10,8 +10,9 @@ import Foundation
 /// a permission the user may not have granted, and reaching for one while an approval card is
 /// on screen would either block the main actor or prompt for access as a side effect of
 /// *drawing* — neither of which is acceptable in a card whose whole job is to be trustworthy.
-/// They fall back to the action alone, which is honest: "Delete" with nothing after it says
-/// we do not know the name, rather than showing a UUID that says nothing at all.
+/// They fall back to the rule's sentence without a name — "Delete a reminder" — which is
+/// honest: it says what kind of thing, and that we do not know which, rather than showing an
+/// identifier that says nothing at all.
 @MainActor
 enum ToolApprovalTargetResolver {
     static func name(for reference: ToolApprovalPrompt.Reference) -> String? {

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The one line a tool card shows for what a tool was called with.
 ///
@@ -31,25 +32,37 @@ enum ToolArgumentSummary {
         let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != "{}" else { return "" }
 
-        guard let data = trimmed.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
+        guard let dict = dictionary(fromJSON: trimmed) else {
             // Not JSON we can read. Show it anyway — it is still what the tool was called
             // with — but bounded, which is the whole point of this type.
-            return clamp(flatten(trimmed), to: maxTotalLength)
+            return DisplayText.clamp(DisplayText.singleLine(trimmed), to: maxTotalLength)
         }
 
+        // The key is the model's text as much as the value is, so it gets the same scrub.
         let pairs = dict.keys.sorted().map { key in
-            "\(key): \(clamp(flatten(String(describing: dict[key] ?? "")), to: maxValueLength))"
+            let value = DisplayText.singleLine(String(describing: dict[key] ?? ""))
+            return "\(DisplayText.singleLine(key)): \(DisplayText.clamp(value, to: maxValueLength))"
         }
-        return clamp(pairs.joined(separator: ", "), to: maxTotalLength)
+        return DisplayText.clamp(pairs.joined(separator: ", "), to: maxTotalLength)
     }
 
-    private static func flatten(_ value: String) -> String {
-        DisplayText.singleLine(value)
+    /// A tool call's arguments as a dictionary, or `nil` when they are not a JSON object.
+    ///
+    /// Shared with `ToolApprovalPrompt`, which reads single arguments out of the same string.
+    /// Logged at debug level only: this runs while a card is being drawn, so a malformed call
+    /// would otherwise write a line per render.
+    static func dictionary(fromJSON json: String) -> [String: Any]? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        do {
+            return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        } catch {
+            // The length, not the text: arguments carry document bodies and web addresses.
+            logger.debug(
+                "Tool arguments are not JSON (\(json.count) characters): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
     }
 
-    private static func clamp(_ value: String, to limit: Int) -> String {
-        DisplayText.clamp(value, to: limit)
-    }
+    private static let logger = Logger(subsystem: AppConstants.bundleID, category: "ToolArgumentSummary")
 }

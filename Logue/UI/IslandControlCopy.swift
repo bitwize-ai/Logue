@@ -22,9 +22,6 @@ enum IslandControlCopy {
         let hint: String
     }
 
-    static let on = "On"
-    static let off = "Off"
-
     // Attach, web search and Deep Research are deliberately absent. They were three glyphs
     // in the island's pill until the shared `ComposerPlusMenu` replaced them, and a menu
     // item built from a `Label` is already named for VoiceOver — so copy for them here
@@ -43,15 +40,22 @@ enum IslandControlCopy {
     /// Two different actions rather than one in two states, so they are named differently —
     /// a control that keeps the name "Send" while it cancels is how someone stops a run they
     /// meant to let finish.
-    static func send(canSend: Bool, isGenerating: Bool) -> Control {
+    ///
+    /// - Parameter isBusy: the engine is running something else — a summary, a grammar pass.
+    ///   The button is disabled for it, so the hint has to say so: "Send this message" on a
+    ///   button that will not send is the tooltip contradicting the control it sits on.
+    static func send(canSend: Bool, isGenerating: Bool, isBusy: Bool) -> Control {
         guard !isGenerating else {
             return Control(label: "Stop", value: nil, hint: "Stop generating this response")
         }
-        return Control(
-            label: "Send",
-            value: nil,
-            hint: canSend ? "Send this message" : "Type a message first"
-        )
+        let hint = if !canSend {
+            "Type a message first"
+        } else if isBusy {
+            "Logue is busy with another task"
+        } else {
+            "Send this message"
+        }
+        return Control(label: "Send", value: nil, hint: hint)
     }
 
     static let openInLogue = Control(

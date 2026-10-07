@@ -159,6 +159,17 @@ struct CommandCenterChatView: View {
                     .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             } else {
                 starters
+
+                // A refusal on an island with no thread yet. The banner otherwise lives in
+                // the transcript panel, which is not mounted until there is a conversation —
+                // and a send refused for being busy elsewhere returns before creating one.
+                if let localError {
+                    errorBanner(localError, onDismiss: dismissDisplayedError)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .islandSurface(cornerRadius: 12, isElevated: false)
+                        .padding(.bottom, 8)
+                        .transition(IslandMotion.transition(reduceMotion: reduceMotion))
+                }
             }
 
             if voiceManager.isRecording {
@@ -172,6 +183,9 @@ struct CommandCenterChatView: View {
                     partialTranscript: "",
                     onStop: { voiceManager.stopListening() }
                 )
+                // Outside both panels, so it needs the island's surface under it like
+                // everything else that sits directly on someone else's desktop.
+                .islandSurface(cornerRadius: AppThemeConstants.radiusMedium, isElevated: false)
                 .padding(.bottom, 8)
                 .transition(.opacity)
             }
@@ -243,8 +257,16 @@ struct CommandCenterChatView: View {
         .onChange(of: attachments.count) { _, _ in
             onContentChanged(content)
         }
-        .onChange(of: inputText) { _, _ in
+        .onChange(of: inputText) { old, new in
             onContentChanged(content)
+            // A refusal describes the attempt it answered; editing the draft is a new one.
+            // Compared trimmed, because a refused send puts the draft back trimmed: with a
+            // trailing space that restore would count as an edit and clear the banner it
+            // was raised alongside.
+            let trimmed = { (text: String) in text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if trimmed(old) != trimmed(new) {
+                localError = nil
+            }
         }
     }
 
@@ -315,20 +337,24 @@ struct CommandCenterChatView: View {
                         }
 
                         if showsThinking {
-                            thinkingRow(toolName: activeToolName)
-                                .id("island-thinking")
+                            thinkingRow
+                                .id(Self.thinkingRowID)
                                 .transition(.opacity)
                         }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
                 }
-                .onChange(of: rows) { _, newRows in
-                    if let last = newRows.last {
-                        withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
-                    }
+                // The thinking row sits below the last message. Following only the messages
+                // leaves it under the fold in a thread taller than the panel — the gap it
+                // exists to fill, still blank — so both handlers go to whichever is lowest.
+                // Both, because the empty placeholder a run appends changes `rows` after the
+                // row has appeared, and would scroll it back out of sight.
+                .onChange(of: showsThinking) { _, _ in
+                    scrollToBottom(with: proxy)
+                }
+                .onChange(of: rows) { _, _ in
+                    scrollToBottom(with: proxy)
                 }
             }
 
@@ -353,13 +379,23 @@ struct CommandCenterChatView: View {
             DeepResearchProgressView(conversationID: conversationID)
 
             if let error = displayedError {
-                errorBanner(error)
+                errorBanner(error, onDismiss: dismissDisplayedError)
                     .transition(IslandMotion.transition(reduceMotion: reduceMotion))
             }
         }
         .frame(width: pillWidth)
         .frame(maxHeight: 420)
         .islandSurface(cornerRadius: 18)
+    }
+
+    private func scrollToBottom(with proxy: ScrollViewProxy) {
+        withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
+            if showsThinking {
+                proxy.scrollTo(Self.thinkingRowID, anchor: .bottom)
+            } else if let last = rows.last {
+                proxy.scrollTo(last.id, anchor: .bottom)
+            }
+        }
     }
 
     // MARK: - Logic
@@ -477,10 +513,7 @@ struct CommandCenterChatView: View {
     /// `IslandThread` drops a call while it is awaiting approval so the two are never on
     /// screen at once.
     private var pendingApprovals: [AgentToolCall] {
-        guard let conversationID,
-              let conversation = store.conversations.first(where: { $0.id == conversationID })
-        else { return [] }
-        return AgentToolTimeline.awaitingApproval(in: conversation.messages)
+        AgentToolTimeline.awaitingApproval(in: storedMessages)
     }
 
     /// Whether to say the island is working rather than show an answer.
@@ -502,14 +535,16 @@ struct CommandCenterChatView: View {
             isProcessing: coordinator.isProcessing(in: conversationID),
             isStreaming: streaming,
             pendingAnswerText: pending,
-            hasActiveToolCard: !activeToolCalls.isEmpty
+            // Not `pendingApprovals`, which is every unanswered call in the thread: a run
+            // stopped while a card was up leaves one behind for good.
+            hasActiveToolCard: AgentThinkingState.hasToolCard(
+                activeToolCalls: activeToolCalls,
+                messages: storedMessages
+            )
         )
     }
 
-    /// The tool the island is currently running, which is what the thinking row names.
-    private var activeToolName: String? {
-        activeToolCalls.last?.toolName
-    }
+    private static let thinkingRowID = "island-thinking"
 
     private var activeToolCalls: [AgentToolCall] {
         guard let conversationID else { return [] }
@@ -520,7 +555,7 @@ struct CommandCenterChatView: View {
     ///
     /// Separate from the coordinator's `lastError` because a refused send never reaches a
     /// coordinator — there is no run to own the message — and because it must clear as soon
-    /// as the user does anything.
+    /// as the user does anything: edits the draft, sends again, starts a new thread.
     @State private var localError: String?
 
     /// The error for this thread, if the last run left one.
@@ -545,48 +580,16 @@ struct CommandCenterChatView: View {
         localError ?? currentError
     }
 
-    /// Says when a send failed.
+    /// Acknowledges what the banner is showing, and only that.
     ///
-    /// The island had this and lost it when it moved onto the coordinator: the old bare
-    /// completion caught its own error and wrote "No AI model loaded" into the bubble, and
-    /// that path went away with the `chatStream` call. Without this the most likely failure
-    /// a first-time user hits — no model set up yet — makes the send appear to vanish.
-    ///
-    /// Narrower than the main window's banner because the pill is narrow: the same
-    /// dismissable shape, without the second line of detail there is no room for.
-    private func errorBanner(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(AppThemeConstants.error)
-
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-
-            Spacer(minLength: 0)
-
-            Button {
-                withAnimation(IslandMotion.control(reduceMotion: reduceMotion)) {
-                    localError = nil
-                    coordinator.dismissError()
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(3)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss error")
+    /// The coordinator's dismissal is not scoped, so calling it for a refusal — which the
+    /// coordinator never saw — would acknowledge another conversation's error on its behalf.
+    private func dismissDisplayedError() {
+        if localError != nil {
+            localError = nil
+        } else if currentError != nil {
+            coordinator.dismissError()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(AppThemeConstants.error.opacity(AppThemeConstants.hoverOpacity))
     }
 
     /// Hands the island's thread to the main window and steps out of the way.

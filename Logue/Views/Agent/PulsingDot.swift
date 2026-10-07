@@ -4,9 +4,19 @@ import SwiftUI
 struct PulsingDot: View {
     var color: Color = AppThemeConstants.brandPrimary
     var size: CGFloat = 8
+    /// How the pulse looks: where it rests, how far it grows, how long one beat takes.
+    var style: Style = .activity
 
-    @State private var scale: CGFloat = 1
-    @State private var opacity: Double = 0.7
+    struct Style {
+        let restingOpacity: Double
+        let peakScale: CGFloat
+        let beat: TimeInterval
+
+        /// Background work — grows a little as it brightens.
+        static let activity = Style(restingOpacity: 0.7, peakScale: 1.25, beat: 0.9)
+        /// A live microphone — the same size throughout, dimming further.
+        static let recording = Style(restingOpacity: 0.4, peakScale: 1, beat: 0.8)
+    }
 
     /// Honoured here rather than at each call site, so a dot added somewhere new cannot
     /// reintroduce a forever-repeating animation for someone who asked for less movement.
@@ -15,33 +25,40 @@ struct PulsingDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let pulses = IslandMotion.allowsPulse(reduceMotion: reduceMotion)
+        PulsingCircle(color: color, size: size, style: style, pulses: pulses)
+            // A new identity when the setting changes, not a new value for the old one. The
+            // dot outlives the setting — it is on screen while someone turns Reduce Motion on
+            // — and a `repeatForever` already in flight is not stopped by assigning the value
+            // it is heading for: the opacity is already "1" as far as SwiftUI is concerned,
+            // so nothing replaced that animation and the dot kept fading. Rebuilding the
+            // circle removes it with the view it was on, and brings the pulse back the same
+            // way when the setting is turned off again.
+            .id(pulses)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct PulsingCircle: View {
+    let color: Color
+    let size: CGFloat
+    let style: PulsingDot.Style
+    let pulses: Bool
+
+    @State private var isExpanded = false
+
+    var body: some View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .onAppear { applyPulse() }
-            // Also on change, not only on appear. The dot outlives the setting: someone who
-            // turns Reduce Motion on while the island is streaming would otherwise keep the
-            // forever-repeating animation until the view was rebuilt, which is the one case
-            // where they are most likely to be looking at it.
-            .onChange(of: reduceMotion) { _, _ in applyPulse() }
-            .accessibilityHidden(true)
-    }
-
-    private func applyPulse() {
-        guard IslandMotion.allowsPulse(reduceMotion: reduceMotion) else {
-            // Still visible, just still. Reset the scale too — turning the setting on
-            // mid-pulse would otherwise freeze the dot at whatever size it had reached.
-            withAnimation(.default) {
-                scale = 1
-                opacity = 1
+            .scaleEffect(isExpanded ? style.peakScale : 1)
+            // Still visible when it does not pulse, just still.
+            .opacity(isExpanded || !pulses ? 1 : style.restingOpacity)
+            .onAppear {
+                guard pulses else { return }
+                withAnimation(.easeInOut(duration: style.beat).repeatForever(autoreverses: true)) {
+                    isExpanded = true
+                }
             }
-            return
-        }
-        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-            scale = 1.25
-            opacity = 1.0
-        }
     }
 }

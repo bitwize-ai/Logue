@@ -15,9 +15,10 @@ struct IslandControlCopyTests {
         [
             IslandControlCopy.microphone(isRecording: false),
             IslandControlCopy.microphone(isRecording: true),
-            IslandControlCopy.send(canSend: false, isGenerating: false),
-            IslandControlCopy.send(canSend: true, isGenerating: false),
-            IslandControlCopy.send(canSend: false, isGenerating: true),
+            IslandControlCopy.send(canSend: false, isGenerating: false, isBusy: false),
+            IslandControlCopy.send(canSend: true, isGenerating: false, isBusy: false),
+            IslandControlCopy.send(canSend: true, isGenerating: false, isBusy: true),
+            IslandControlCopy.send(canSend: false, isGenerating: true, isBusy: false),
             IslandControlCopy.openInLogue,
             IslandControlCopy.close,
             IslandControlCopy.newConversation,
@@ -59,16 +60,29 @@ struct IslandControlCopyTests {
     func stopIsNamedForWhatItDoes() {
         // A control that keeps the name "Send" while it cancels is how someone stops a run
         // they meant to let finish.
-        let sending = IslandControlCopy.send(canSend: true, isGenerating: false)
-        let stopping = IslandControlCopy.send(canSend: false, isGenerating: true)
+        let sending = IslandControlCopy.send(canSend: true, isGenerating: false, isBusy: false)
+        let stopping = IslandControlCopy.send(canSend: false, isGenerating: true, isBusy: false)
         #expect(sending.label == "Send")
         #expect(stopping.label == "Stop")
     }
 
     @Test("A send that cannot fire says why")
     func disabledSendExplainsItself() {
-        let idle = IslandControlCopy.send(canSend: false, isGenerating: false)
-        let ready = IslandControlCopy.send(canSend: true, isGenerating: false)
+        let idle = IslandControlCopy.send(canSend: false, isGenerating: false, isBusy: false)
+        let ready = IslandControlCopy.send(canSend: true, isGenerating: false, isBusy: false)
         #expect(idle.hint != ready.hint)
+    }
+
+    @Test("A send blocked by other work does not claim it will send")
+    func busySendExplainsItself() {
+        // The button is disabled while the engine runs something else. Its hint used to
+        // read "Send this message" regardless — the tooltip contradicting the control.
+        let ready = IslandControlCopy.send(canSend: true, isGenerating: false, isBusy: false)
+        let busy = IslandControlCopy.send(canSend: true, isGenerating: false, isBusy: true)
+        #expect(busy.hint != ready.hint)
+        #expect(busy.label == "Send")
+        // Nothing typed is the nearer reason, and the one the user can do something about.
+        let empty = IslandControlCopy.send(canSend: false, isGenerating: false, isBusy: true)
+        #expect(empty.hint == IslandControlCopy.send(canSend: false, isGenerating: false, isBusy: false).hint)
     }
 }

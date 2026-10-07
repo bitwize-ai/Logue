@@ -29,6 +29,8 @@ struct ModeChip: View {
             }
             .buttonStyle(.plain)
             .help("Turn off \(title)")
+            // `.help` alone is the hint, not the name: VoiceOver would read the symbol.
+            .accessibilityLabel("Turn off \(title)")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)

@@ -45,9 +45,10 @@ struct DisplayTextTests {
         #expect(shown == "abcd")
     }
 
-    @Test("A zero-width joiner cannot pad a name out of view")
+    @Test("Zero-width characters cannot pad a name out of view")
     func stripsZeroWidth() {
-        #expect(DisplayText.singleLine("a\u{200B}\u{200D}\u{FEFF}b").contains("\u{200B}") == false)
+        // Zero-width space, zero-width joiner and the byte-order mark: all three, not one.
+        #expect(DisplayText.singleLine("a\u{200B}\u{200D}\u{FEFF}b") == "ab")
     }
 
     // MARK: - One line
@@ -95,5 +96,28 @@ struct DisplayTextTests {
     @Test("A cut value says it was cut")
     func cutValueIsMarked() {
         #expect(DisplayText.clamp("abcdefghij", to: 5) == "abcd…")
+    }
+
+    // MARK: - Clamping where the end matters
+
+    @Test("A middle cut keeps both ends, and more of the last one")
+    func middleClampKeepsTheEnd() {
+        #expect(DisplayText.clampMiddle("abcdefghijklmnopqrstuvwxyz", to: 10) == "abc…uvwxyz")
+        #expect(DisplayText.clampMiddle("short", to: 10) == "short")
+    }
+
+    @Test("A start cut keeps the end")
+    func startClampKeepsTheEnd() {
+        #expect(DisplayText.clampStart("abcdefghij", to: 5) == "…ghij")
+        #expect(DisplayText.clampStart("short", to: 10) == "short")
+    }
+
+    @Test("Neither of them exceeds its limit")
+    func endKeepingClampsStayInsideTheBudget() {
+        let long = String(repeating: "x", count: 100)
+        for limit in 0 ... 40 {
+            #expect(DisplayText.clampMiddle(long, to: limit).count <= limit, "middle, limit \(limit)")
+            #expect(DisplayText.clampStart(long, to: limit).count <= limit, "start, limit \(limit)")
+        }
     }
 }

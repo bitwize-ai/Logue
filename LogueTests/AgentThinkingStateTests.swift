@@ -50,18 +50,69 @@ struct AgentThinkingStateTests {
         #expect(shows(processing: true, streaming: true, pending: "", toolCard: true) == false)
     }
 
-    @Test("The previous answer does not suppress the next gap")
-    func previousAnswerIsNotThePendingOne() {
-        // The bug this input shape avoids: reading "the last assistant message" instead of
-        // the answer being produced now means the indicator never shows again after the
-        // first reply, because that message is non-empty for the whole of every later gap.
-        #expect(shows(processing: true, pending: ""))
+    @Test("Streaming alone is enough to be working")
+    func streamingWithoutProcessingStillShows() {
+        // Either flag means a run is in flight. Requiring `isProcessing` would leave the gap
+        // blank on any path that raises the streaming flag first.
+        #expect(shows(streaming: true))
+        #expect(shows(streaming: true, toolCard: true) == false)
     }
 
-    @Test("The label follows what the agent is doing")
-    func labelTracksTheTool() {
-        #expect(AgentThinkingState.label(activeToolName: nil) == UICopy.Status.thinking)
-        #expect(AgentThinkingState.label(activeToolName: "web_search") == UICopy.Status.searching)
-        #expect(AgentThinkingState.label(activeToolName: "get_transcript") == UICopy.Status.reading)
+    // MARK: - What counts as a tool card
+
+    private func approvalCall() -> AgentMessage {
+        AgentMessage(
+            role: .toolCall,
+            content: "",
+            toolCalls: [AgentToolCall(toolName: "delete_document", arguments: "{}", status: .needsConfirmation)]
+        )
+    }
+
+    @Test("A call waiting for approval is a card explaining the pause")
+    func pendingApprovalCounts() {
+        // The pause is the user's. "Thinking…" beside Approve would be untrue for as long
+        // as they take to answer.
+        let messages = [AgentMessage(role: .user, content: "delete it"), approvalCall()]
+        #expect(AgentThinkingState.hasToolCard(activeToolCalls: [], messages: messages))
+    }
+
+    @Test("An approval abandoned in an earlier turn does not silence this one")
+    func abandonedApprovalDoesNotCount() {
+        // Stop a run while its card is up and the call stays unanswered for good. Counted,
+        // it would hide the thinking row for every later send in the thread.
+        let messages = [
+            AgentMessage(role: .user, content: "delete it"),
+            approvalCall(),
+            AgentMessage(role: .user, content: "something else"),
+        ]
+        #expect(AgentThinkingState.hasToolCard(activeToolCalls: [], messages: messages) == false)
+    }
+
+    @Test("The conversation is not read once the answer has started")
+    func toolCardIsNotAskedWhenItCannotMatter() {
+        // Answering it walks the conversation, and this runs on every render while tokens
+        // stream — so it is asked last, and only if nothing else has already said no.
+        var asked = 0
+        let card = { () -> Bool in
+            asked += 1
+            return false
+        }
+        _ = AgentThinkingState.showsThinking(
+            isProcessing: true, isStreaming: true, pendingAnswerText: "The answer", hasActiveToolCard: card()
+        )
+        _ = AgentThinkingState.showsThinking(
+            isProcessing: false, isStreaming: false, pendingAnswerText: "", hasActiveToolCard: card()
+        )
+        #expect(asked == 0)
+        _ = AgentThinkingState.showsThinking(
+            isProcessing: true, isStreaming: false, pendingAnswerText: "", hasActiveToolCard: card()
+        )
+        #expect(asked == 1)
+    }
+
+    @Test("A plain conversation has no tool card")
+    func plainConversationHasNone() {
+        let messages = [AgentMessage(role: .user, content: "hello")]
+        #expect(AgentThinkingState.hasToolCard(activeToolCalls: [], messages: messages) == false)
     }
 }
