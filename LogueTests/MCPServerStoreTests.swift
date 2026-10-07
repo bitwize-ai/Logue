@@ -158,7 +158,7 @@ struct MCPToolOutputTests {
         // Otherwise the model reports a cut-off list as a complete one — "there were exactly
         // 40 results" when there were four thousand.
         let prepared = MCPToolOutput.prepare(String(repeating: "a", count: 200_000))
-        #expect(prepared.contains(MCPToolOutput.truncationNotice.trimmingCharacters(in: .newlines)))
+        #expect(prepared.contains(DelimitedContent.truncationNotice.trimmingCharacters(in: .newlines)))
     }
 
     @Test("A response that fits is not annotated")
