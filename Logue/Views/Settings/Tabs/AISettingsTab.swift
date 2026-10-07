@@ -16,6 +16,11 @@ struct AISettingsTab: View {
                 Divider()
                 toolsSection
                 Divider()
+                // Right after the built-in tool list, because a server's tools join the same
+                // registry and obey the same per-tool switches — putting them in a different
+                // tab would suggest they are a different kind of thing.
+                MCPServersSection()
+                Divider()
                 inferenceSection
                 Divider()
                 memorySection

@@ -65,6 +65,14 @@ final class MCPCatalog {
                 }
             }
             for await (id, result) in group {
+                // The server list is read again here, not only when the group was built. A
+                // refresh takes as long as the slowest server, and the user can remove one
+                // while it runs — `forget(id:)` would clear its entries and this loop would
+                // then write them straight back, for a server that no longer exists. Nothing
+                // would offer those tools, because `MCPRegistryPlan` walks the store, but
+                // they would be held for the rest of the session.
+                guard store.servers.contains(where: { $0.id == id }) else { continue }
+
                 switch result {
                 case let .success(descriptors):
                     discovered[id] = descriptors
