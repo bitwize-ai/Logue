@@ -74,6 +74,7 @@ struct DeepResearchProgressView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Dismiss")
+                .accessibilityLabel("Dismiss Deep Research progress")
             }
         }
     }

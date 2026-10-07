@@ -44,7 +44,7 @@ extension CommandCenterChatView {
                     if NSEvent.modifierFlags.contains(.shift) {
                         inputText += "\n"
                         return .handled
-                    } else if canSend, !LLMEngineStatus.shared.isBusy {
+                    } else if canSendNow {
                         // The same condition the Send button is disabled on. Without it
                         // Return sent while the button beside it refused to, which reads as
                         // the button being broken.
@@ -65,7 +65,21 @@ extension CommandCenterChatView {
             }
             .buttonStyle(.plain)
             .disabled(isGenerating)
-            .help(voiceManager.isRecording ? "Stop voice input" : "Voice input")
+            .islandControl(IslandControlCopy.microphone(isRecording: voiceManager.isRecording))
+
+            // What Return will do, once it will do anything.
+            //
+            // Shown only when there is something to send: a hint that is always there is
+            // chrome, and the island has one line to spend. Shift-Return for a newline is
+            // deliberately not advertised — it is the escape hatch from the hint, not a
+            // second thing to learn.
+            if canSendNow {
+                Text("↩")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+            }
 
             // Send / Stop
             if isGenerating {
@@ -77,37 +91,36 @@ extension CommandCenterChatView {
                         .background(Circle().fill(AppThemeConstants.error))
                 }
                 .buttonStyle(.plain)
+                .islandControl(IslandControlCopy.send(canSend: canSend, isGenerating: true, isBusy: false))
             } else {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(canSend && !LLMEngineStatus.shared.isBusy ? .white : .white.opacity(0.25))
+                        .foregroundStyle(canSendNow ? .white : .white.opacity(0.25))
                         .frame(width: 32, height: 32)
                         .background(
                             Circle().fill(
-                                canSend && !LLMEngineStatus.shared.isBusy
-                                    ? AppThemeConstants.brandPrimary
-                                    : Color.white.opacity(0.08)
+                                canSendNow ? AppThemeConstants.brandPrimary : Color.white.opacity(0.08)
                             )
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(!canSend || LLMEngineStatus.shared.isBusy)
+                .disabled(!canSendNow)
                 .keyboardShortcut(.return, modifiers: .command)
+                .islandControl(
+                    IslandControlCopy.send(
+                        canSend: canSend,
+                        isGenerating: false,
+                        isBusy: LLMEngineStatus.shared.isBusy
+                    )
+                )
             }
         }
+        .animation(IslandMotion.control(reduceMotion: reduceMotion), value: canSendNow)
         .padding(.leading, 14)
         .padding(.trailing, 10)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 0.92)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
+        .islandSurface(cornerRadius: 22)
         // Dropping onto the pill is the same intake as the picker, so a file arrives the
         // same way whichever route the user takes.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -120,53 +133,167 @@ extension CommandCenterChatView {
         }
     }
 
+    /// Something to ask, on an island with nothing in it yet.
+    ///
+    /// The same chips Home offers, from the same rule and the same reading of the workspace —
+    /// so the island suggests summarising the meeting you have not summarised rather than a
+    /// hardcoded list that goes stale. Hidden until the stores report, because offering
+    /// first-run chips to a returning user is worse than offering nothing.
+    @ViewBuilder
+    var starters: some View {
+        let chips = starterChips
+        if HomeSuggestions.storesAreLoaded, !chips.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(chips) { chip in
+                    Button {
+                        inputText = chip.prompt
+                        isInputFocused = true
+                    } label: {
+                        Text(chip.label)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .islandSurface(cornerRadius: Self.chipCornerRadius, isElevated: false)
+                    }
+                    .buttonStyle(.plain)
+                    .help(chip.prompt)
+                }
+            }
+            .padding(.bottom, 10)
+        }
+    }
+
+    /// Past half the height of any chip here, so the surface's rounded rectangle is a capsule.
+    private static let chipCornerRadius: CGFloat = 14
+
+    private var starterChips: [HomeSuggestions.Chip] {
+        HomeSuggestions.chips(
+            for: HomeSuggestions.currentInputs(overdueCount: insights.actionItemStats.overdue)
+        )
+    }
+
+    /// Whether a send would go through right now — the one answer the Return key, the Return
+    /// hint and the Send button all read.
+    ///
+    /// `canSend` is about this composer; the engine being busy with something else entirely
+    /// (a summary, a grammar pass) is not. Asked separately in three places, the hint ended
+    /// up advertising a Return the handler beside it would swallow.
+    private var canSendNow: Bool {
+        canSend && !LLMEngineStatus.shared.isBusy
+    }
+
     /// What is staged for the next send, with a way to take each one back off.
-    var attachmentChips: some View {
-        HStack(spacing: 6) {
-            if isDeepResearchOnce {
-                ModeChip(
+    ///
+    /// Part of the island's layout rather than an overlay floating above the pill. As an
+    /// overlay it took no space, so with a conversation on screen it drew over the bottom of
+    /// the transcript — and nothing bounded it, so six files ran the row off both ends.
+    var stagedChips: some View {
+        let layout = ComposerChipRow.layout(
+            modeCount: activeModes.count,
+            attachmentCount: attachments.count
+        )
+        let shown = attachments.prefix(layout.attachments)
+
+        return HStack(spacing: 6) {
+            ForEach(activeModes) { mode in
+                ModeChip(title: mode.title, systemImage: mode.systemImage, tint: mode.tint) {
+                    mode.turnOff()
+                }
+                .islandSurface(cornerRadius: Self.chipCornerRadius, isElevated: false)
+            }
+            ForEach(shown) { attachment in
+                attachmentChip(attachment)
+            }
+            if layout.showsOverflow {
+                let names = hiddenNames(after: layout.attachments)
+                Text("+\(layout.hidden) more")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .islandSurface(cornerRadius: Self.chipCornerRadius, isElevated: false)
+                    .help(names)
+                    .accessibilityLabel("\(layout.hidden) more attachments: \(names)")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// The names behind the counter, so nothing is unreachable — hover, or VoiceOver, reads
+    /// them out. A chip that hides a file with no way to find out which one is worse than a
+    /// row that overflows.
+    private func hiddenNames(after shown: Int) -> String {
+        attachments.dropFirst(shown).map(\.displayName).joined(separator: ", ")
+    }
+
+    private func attachmentChip(_ attachment: TempAttachment) -> some View {
+        HStack(spacing: 4) {
+            // The attachment's own icon, as the main window shows it. Hardcoding
+            // "doc" here made a PDF and a spreadsheet look identical on the island
+            // and different in the main window — per-surface drift in a chip that
+            // was copied rather than shared.
+            Image(systemName: attachment.iconName)
+                .font(.caption2)
+            Text(attachment.displayName)
+                .font(.caption2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Button {
+                attachments.removeAll { $0.id == attachment.id }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(attachment.displayName)")
+        }
+        .foregroundStyle(.white.opacity(0.8))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .islandSurface(cornerRadius: Self.chipCornerRadius, isElevated: false)
+    }
+
+    /// The per-send modes that are on, in the order they are drawn.
+    ///
+    /// Modelled so the count is a number `ComposerChipRow` can be handed rather than two
+    /// booleans the row has to remember to add up.
+    private var activeModes: [ComposerMode] {
+        var modes: [ComposerMode] = []
+        if isDeepResearchOnce {
+            modes.append(
+                ComposerMode(
+                    id: "deepResearch",
                     title: UICopy.Input.deepResearch,
                     systemImage: "sparkle.magnifyingglass",
                     tint: AppThemeConstants.brandPrimary
-                ) {
-                    isDeepResearchOnce = false
-                }
-            }
-            if isWebSearchOnce {
-                ModeChip(
+                ) { isDeepResearchOnce = false }
+            )
+        }
+        if isWebSearchOnce {
+            modes.append(
+                ComposerMode(
+                    id: "search",
                     title: UICopy.Input.webSearch,
                     systemImage: "globe",
                     tint: AppThemeConstants.brandPrimary
-                ) {
-                    isWebSearchOnce = false
-                }
-            }
-            ForEach(attachments) { attachment in
-                HStack(spacing: 4) {
-                    // The attachment's own icon, as the main window shows it. Hardcoding
-                    // "doc" here made a PDF and a spreadsheet look identical on the island
-                    // and different in the main window — per-surface drift in a chip that
-                    // was copied rather than shared.
-                    Image(systemName: attachment.iconName)
-                        .font(.caption2)
-                    Text(attachment.displayName)
-                        .font(.caption2)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Button {
-                        attachments.removeAll { $0.id == attachment.id }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(attachment.displayName)")
-                }
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.white.opacity(0.12)))
-            }
+                ) { isWebSearchOnce = false }
+            )
         }
+        return modes
     }
+}
+
+/// One per-send mode, as the island's chip row draws it.
+///
+/// A value rather than two booleans read in three places, so the row can count them and the
+/// order they appear in is stated once.
+private struct ComposerMode: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let turnOff: () -> Void
 }

@@ -15,6 +15,8 @@ struct ModeChip: View {
     /// that set it.
     let onDismiss: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
@@ -27,12 +29,19 @@ struct ModeChip: View {
             }
             .buttonStyle(.plain)
             .help("Turn off \(title)")
+            // `.help` alone is the hint, not the name: VoiceOver would read the symbol.
+            .accessibilityLabel("Turn off \(title)")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .foregroundStyle(tint)
         .background(Capsule().fill(tint.opacity(0.14)))
         .overlay(Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 0.5))
-        .transition(.scale.combined(with: .opacity))
+        // A scale is a transition, not a pulse — so it follows `entrance`.
+        .transition(
+            IslandMotion.entrance(reduceMotion: reduceMotion) == .slideAndFade
+                ? .scale.combined(with: .opacity)
+                : .opacity
+        )
     }
 }

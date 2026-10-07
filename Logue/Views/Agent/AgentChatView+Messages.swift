@@ -25,8 +25,10 @@ extension AgentChatView {
         let onRegenerateFromUserMessage: (UUID, String) -> Void
 
         /// Currently-editing user message ID (only one at a time). Nil = not editing.
-        @State private var editingMessageID: UUID?
-        @State private var editingText: String = ""
+        @State
+        private var editingMessageID: UUID?
+        @State
+        private var editingText: String = ""
 
         var body: some View {
             ScrollViewReader { proxy in
@@ -44,11 +46,22 @@ extension AgentChatView {
                                 .id("active-\(call.id.uuidString)")
                         }
 
-                        // Processing indicator (only when not streaming and no tool calls active)
-                        if isProcessing, activeToolCalls.isEmpty, !isStreaming {
+                        // When to show this, and what it says, are both shared with the
+                        // island — see `AgentThinkingState`. It is the only "Thinking…" in
+                        // the list: the empty placeholder an assistant turn starts as draws
+                        // nothing of its own, or the gap would be announced twice.
+                        if AgentThinkingState.showsThinking(
+                            isProcessing: isProcessing,
+                            isStreaming: isStreaming,
+                            pendingAnswerText: streamingText,
+                            hasActiveToolCard: AgentThinkingState.hasToolCard(
+                                activeToolCalls: activeToolCalls,
+                                messages: messages
+                            )
+                        ) {
                             HStack(spacing: 8) {
                                 PulsingDot()
-                                Text("Thinking…")
+                                Text(AgentThinkingState.label)
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                             }
@@ -258,20 +271,12 @@ extension AgentChatView {
         private func assistantRow(_ message: AgentMessage) -> some View {
             let isLastAssistant = message.id == messages.last(where: { $0.role == .assistant })?.id
             let isLiveStream = isLastAssistant && isStreaming
-            let isAwaitingFirstToken = isLiveStream && message.content.isEmpty
 
-            VStack(alignment: .leading, spacing: 6) {
-                if isAwaitingFirstToken {
-                    // No tokens yet — show a richer pulse instead of a bare spinner.
-                    HStack(spacing: 8) {
-                        PulsingDot()
-                        Text("Thinking…")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                } else if !message.content.isEmpty {
+            // An assistant turn starts as an empty placeholder. It draws nothing — not even
+            // an empty stack, which the list would still space around, leaving a gap above
+            // the thinking row that closes when the placeholder is replaced.
+            if !message.content.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
                     MarkdownTextView(text: message.content)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -298,9 +303,9 @@ extension AgentChatView {
                         assistantActionRow(content: message.content)
                     }
                 }
+                .padding(.horizontal, 16)
+                .animation(.easeInOut(duration: 0.2), value: isLiveStream)
             }
-            .padding(.horizontal, 16)
-            .animation(.easeInOut(duration: 0.2), value: isLiveStream)
         }
 
         private func assistantActionRow(content: String) -> some View {

@@ -46,8 +46,16 @@ struct ToolExecutionCard: View {
                     // Summary text
                     Text(summaryText)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .foregroundStyle(
+                            toolCall.status == .needsConfirmation ? .primary : .secondary
+                        )
+                        .fontWeight(toolCall.status == .needsConfirmation ? .medium : .regular)
+                        // An approval sentence names a thing the user owns, and a title cut
+                        // in half is how you approve the wrong one. Everything else is a
+                        // record of something that already happened, and stays on one line.
+                        .lineLimit(toolCall.status == .needsConfirmation ? 2 : 1)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Spacer()
 
@@ -58,8 +66,14 @@ struct ToolExecutionCard: View {
                             conversationID: conversationID,
                             clearance: toolCall.clearance
                         )
+                        // How to refuse must never be what gets compressed. The summary beside
+                        // it is already truncating, so it is the one that should give way.
+                        .fixedSize()
+                        .layoutPriority(1)
                     } else {
                         statusBadge
+                            .fixedSize()
+                            .layoutPriority(1)
                     }
                 }
                 .padding(.vertical, 6)
@@ -82,11 +96,13 @@ struct ToolExecutionCard: View {
                                 .fontDesign(.monospaced)
                                 .foregroundStyle(.secondary)
 
-                            if !toolCall.arguments.isEmpty, toolCall.arguments != "{}" {
-                                Text(formatArguments(toolCall.arguments))
+                            let arguments = ToolArgumentSummary.summary(fromJSON: toolCall.arguments)
+                            if !arguments.isEmpty {
+                                Text(arguments)
                                     .font(.caption)
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
                         }
 
@@ -134,15 +150,16 @@ struct ToolExecutionCard: View {
         return completedSummary(from: result.output)
     }
 
+    /// What is about to happen, and to what.
+    ///
+    /// Every destructive tool takes a UUID, so the old wording — "Agent wants to delete a
+    /// document" — was the whole of what the user was told before being asked for Touch ID.
+    /// Which document was not knowable from the card.
     private var pendingApprovalText: String {
-        switch toolCall.toolName {
-        case "update_document": "Agent wants to update a document"
-        case "delete_document": "Agent wants to delete a document"
-        case "rename_space": "Agent wants to rename a space"
-        case "delete_space": "Agent wants to delete a space"
-        case "create_calendar_event": "Agent wants to create a calendar event"
-        default: "Agent wants to run \(toolCall.toolName)"
-        }
+        ToolApprovalTargetResolver.sentence(
+            toolNamed: toolCall.toolName,
+            arguments: toolCall.arguments
+        )
     }
 
     private var runningText: String {
@@ -346,11 +363,4 @@ struct ToolExecutionCard: View {
     }
 
     // MARK: - Helpers
-
-    private func formatArguments(_ json: String) -> String {
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return json }
-        return dict.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-    }
 }

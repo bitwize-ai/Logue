@@ -17,7 +17,12 @@ extension CommandCenterChatView {
     func islandRow(_ row: IslandRow) -> some View {
         switch row {
         case let .message(message):
-            messageBubble(message)
+            // The assistant turn being written starts empty, and the thinking row speaks for
+            // it until it has words. Drawn empty it is a zero-height row the list still
+            // spaces around — a gap above the thinking row that closes on the first token.
+            if message.isUser || !message.content.isEmpty {
+                messageBubble(message)
+            }
         case let .tool(entry):
             ToolExecutionCard(toolCall: entry.call, result: entry.result, conversationID: nil)
         }
@@ -43,7 +48,7 @@ extension CommandCenterChatView {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .fill(AppThemeConstants.brandPrimary)
                         )
-                } else {
+                } else if !message.content.isEmpty {
                     markdownContent(message)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -64,10 +69,69 @@ extension CommandCenterChatView {
         }
     }
 
-    @ViewBuilder
+    /// The pulsing row the main window shows in the gap before the first token.
+    ///
+    /// The island had nothing here. Between a send and the first token it showed the user's
+    /// own bubble and empty space — which is the moment someone concludes the send did not
+    /// land and presses Return again.
+    var thinkingRow: some View {
+        HStack(spacing: 8) {
+            PulsingDot()
+            Text(AgentThinkingState.label)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(AgentThinkingState.label)
+    }
+
+    /// Says when a send failed.
+    ///
+    /// The island had this and lost it when it moved onto the coordinator: the old bare
+    /// completion caught its own error and wrote "No AI model loaded" into the bubble, and
+    /// that path went away with the `chatStream` call. Without this the most likely failure
+    /// a first-time user hits — no model set up yet — makes the send appear to vanish.
+    ///
+    /// Narrower than the main window's banner because the pill is narrow: the same
+    /// dismissable shape, without the second line of detail there is no room for.
+    func errorBanner(_ message: String, onDismiss: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(AppThemeConstants.error)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 0)
+
+            Button {
+                withAnimation(IslandMotion.control(reduceMotion: reduceMotion), onDismiss)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(3)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(AppThemeConstants.error.opacity(AppThemeConstants.hoverOpacity))
+    }
+
     private func markdownContent(_ message: EphemeralChatMessage) -> some View {
-        let displayText = message.content.isEmpty && message.isStreaming ? "..." : message.content
-        StructuredText(markdown: displayText)
+        // No placeholder. An empty streaming bubble used to render a literal "..." through
+        // the markdown renderer; the thinking row says the same thing properly, and saying it
+        // twice put a grey box under it with three dots in it.
+        StructuredText(markdown: message.content)
             .font(AppThemeConstants.chatMessageFont)
             .textual.structuredTextStyle(.gitHub)
             .textual.inlineStyle(.gitHub)

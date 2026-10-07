@@ -91,6 +91,13 @@ struct FetchWebPageTool: AgentTool {
         guard url.scheme?.lowercased() == "https" else {
             throw AgentToolError.invalidParameter("url", "Only HTTPS URLs are allowed")
         }
+        // `https://anything:here@host/` hands `anything:here` to that host on an auth
+        // challenge. A page fetch has no use for credentials, and the approval card names
+        // the host without them — so an address carrying any is one that would send more
+        // than the user was shown.
+        guard url.user == nil, url.password == nil else {
+            throw AgentToolError.invalidParameter("url", "URLs with embedded credentials are not allowed")
+        }
 
         do {
             let content = try await WebSearchService.shared.fetchPage(url: url)
